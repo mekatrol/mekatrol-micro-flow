@@ -118,6 +118,8 @@ The function block categories above describe the intended capabilities. Individu
 
 Mekatrol Micro Flow is designed around a modular architecture that separates automation logic from the underlying hardware.
 
+See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the authoritative repository layout, dependency direction, and ownership of each folder. Other documentation should reference that file rather than repeat its structural descriptions.
+
 ### Core Engine
 
 Responsible for:
