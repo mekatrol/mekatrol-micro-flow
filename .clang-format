@@ -1,3 +1,49 @@
+
 BasedOnStyle: Google
+Language: Cpp
+Standard: c++11
+
+# No maximum line length
 ColumnLimit: 0
+
+# Preserve include ordering
 SortIncludes: Never
+
+# Align consecutive #define values
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+# Align consecutive variable assignments
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+# Align consecutive declarations
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+# Pointer formatting
+PointerAlignment: Right
+DerivePointerAlignment: false
+
+# Indentation
+IndentWidth: 4
+ContinuationIndentWidth: 4
+UseTab: Never
+
+# Braces
+BreakBeforeBraces: Attach
+
+# Keep short functions readable
+AllowShortFunctionsOnASingleLine: Empty
+
+# Preserve blank lines
+MaxEmptyLinesToKeep: 2
+
+# Preprocessor formatting
+IndentPPDirectives: None
