@@ -1,0 +1,24 @@
+{
+  "C_Cpp.default.cStandard": "c11",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/host-debug/compile_commands.json",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/include",
+    "${workspaceFolder}/src/runtime/include"
+  ],
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.arguments": [
+    "--compile-commands-dir=build/host-debug"
+  ],
+  "clangd.fallbackFlags": [
+    "-xc",
+    "-std=c11",
+    "-Iinclude",
+    "-Isrc/runtime/include"
+  ],
+  "editor.semanticHighlighting.enabled": true,
+  "cmake.configureOnOpen": true,
+  "cmake.useCMakePresets": "always",
+  "files.associations": {
+    "*.h": "c"
+  }
+}
