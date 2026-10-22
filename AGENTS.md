@@ -75,6 +75,9 @@ for every imported boot artifact or register definition.
 
 Use CMake with Ninja as the preferred local and CI backend.
 
+- Keep host builds and tests supported on Windows, macOS, and Linux. Do not
+  introduce platform-specific shell commands, APIs, path assumptions, or
+  compiler flags into the common host build without a guarded equivalent.
 - Put compiler selection in CMake toolchain files.
 - Represent chips and boards with targets and presets, not scattered global
   preprocessor conditionals.

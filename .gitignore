@@ -53,3 +53,24 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Out-of-source CMake builds
+/build/
+
+# CMake and CTest output from non-standard or accidental in-source builds
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+DartConfiguration.tcl
+Testing/
+compile_commands.json
+
+# Ninja output from non-standard or accidental in-source builds
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Developer-local CMake presets
+CMakeUserPresets.json

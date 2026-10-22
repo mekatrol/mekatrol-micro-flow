@@ -181,6 +181,9 @@ Develop custom controllers with configurable logic instead of fixed, application
 
 Mekatrol Micro Flow is intended to be integrated directly into an embedded firmware project as a C library.
 
+For the current host prerequisites, configuration settings, build and test
+commands, and clean procedures, see [BUILD.md](BUILD.md).
+
 Depending on the target platform and build system, integration may involve:
 
 1. Adding the library source and header files to the firmware project.
@@ -189,7 +192,7 @@ Depending on the target platform and build system, integration may involve:
 4. Initializing the flow engine.
 5. Invoking the engine from the application's main loop or scheduler.
 
-Detailed build instructions, API documentation, and working examples will be added as the implementation develops.
+API documentation and working examples will be added as the implementation develops.
 
 ## Design Principles
 
