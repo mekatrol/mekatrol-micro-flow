@@ -33,6 +33,12 @@ Mekatrol Micro Flow is intended to support a wide range of embedded platforms.
 | STM32 | ARM Cortex-M | Planned |
 | Generic Embedded Systems | Platform-dependent | Planned |
 
+Initial partial firmware builds are available for the Waveshare RP2040-Zero,
+ESP32-C6-Zero, and ESP32-S3-Zero. They compile a standalone onboard RGB LED
+test but have not yet completed hardware conformance. See
+[PROJECT_SETUP.md](PROJECT_SETUP.md) to prepare a clean machine and
+[BUILD.md](BUILD.md) for preset names, artifacts, and the hardware-test caveat.
+
 The engine is designed to remain independent of any particular microcontroller, SDK, RTOS, or hardware abstraction framework.
 
 Platform support and hardware requirements will depend on the available memory, processing resources, and implemented platform interfaces.
@@ -181,8 +187,10 @@ Develop custom controllers with configurable logic instead of fixed, application
 
 Mekatrol Micro Flow is intended to be integrated directly into an embedded firmware project as a C library.
 
-For the current host prerequisites, configuration settings, build and test
-commands, and clean procedures, see [BUILD.md](BUILD.md).
+For tool installation and clean-machine preparation, see
+[PROJECT_SETUP.md](PROJECT_SETUP.md). For configuration settings, build and
+test commands, generated artifacts, and clean procedures, see
+[BUILD.md](BUILD.md).
 
 Depending on the target platform and build system, integration may involve:
 

@@ -8,6 +8,7 @@ project(
 
 option(MICROFLOW_BUILD_TESTS "Build host tests" ON)
 option(MICROFLOW_ENABLE_SANITIZERS "Enable supported host sanitizers" OFF)
+set(MICROFLOW_BOARD "" CACHE STRING "Standalone firmware board")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(MicroflowSanitizers)
@@ -27,7 +28,9 @@ target_link_libraries(
         Microflow::runtime
 )
 
-if(MICROFLOW_BUILD_TESTS)
+if(MICROFLOW_BOARD)
+    include("${PROJECT_SOURCE_DIR}/cmake/boards/${MICROFLOW_BOARD}.cmake")
+elseif(MICROFLOW_BUILD_TESTS)
     include(CTest)
     add_subdirectory(ports/host)
     add_subdirectory(tests)

@@ -11,7 +11,10 @@ print_usage()
         "" \
         "Available targets:" \
         "  host-debug    Debug build with tests and supported sanitizers" \
-        "  host-release  Optimized release build with tests"
+        "  host-release  Optimized release build with tests" \
+        "  waveshare-rp2040-zero-debug  RP2040-Zero LED firmware" \
+        "  waveshare-esp32-c6-zero-debug  ESP32-C6-Zero LED firmware" \
+        "  waveshare-esp32-s3-zero-debug  ESP32-S3-Zero LED firmware"
 }
 
 if [ "$#" -ne 1 ]; then
@@ -20,7 +23,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 case "$1" in
-    host-debug|host-release)
+    host-debug|host-release|waveshare-rp2040-zero-debug|waveshare-esp32-c6-zero-debug|waveshare-esp32-s3-zero-debug)
         build_target=$1
         ;;
     *)

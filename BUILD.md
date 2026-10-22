@@ -2,69 +2,22 @@
 
 ## Prerequisites
 
-Install the following tools before configuring the project:
+Start with [PROJECT_SETUP.md](PROJECT_SETUP.md). It is the canonical setup guide
+for clean Windows, macOS, and Linux machines and covers host tools, pinned Arm
+and Espressif cross-compilers, esptool, environment activation, USB access, and
+installation verification.
 
-- CMake 3.25 or newer
-- Ninja
-- A C11 compiler: GCC, Clang, Apple Clang, or Microsoft Visual C++
-
-`ctest` is installed with CMake. The configure, build, test, and clean commands
-in this document work from PowerShell, Command Prompt, and POSIX-compatible
-shells unless a platform-specific command is shown.
-
-### Windows
-
-Install CMake and Ninja and ensure both are on `PATH`. Install Microsoft Visual
-C++ Build Tools with the C++ build tools workload, or provide GCC or Clang.
-
-When using Microsoft Visual C++, run the build from a Developer PowerShell or
-Developer Command Prompt so that CMake can find `cl`. Check the tools with:
-
-```powershell
-cmake --version
-ninja --version
-cl
-```
-
-The final `cl` command prints compiler information and may also report that no
-source files were supplied; that is sufficient to confirm that the compiler is
-available.
-
-### macOS
-
-Install the Xcode Command Line Tools to provide Apple Clang:
-
-```sh
-xcode-select --install
-```
-
-Install CMake and Ninja separately and ensure both are on `PATH`. Check the
-tools with:
-
-```sh
-cmake --version
-ninja --version
-clang --version
-```
-
-### Linux
-
-Install CMake, Ninja, and either GCC or Clang using the package manager for your
-distribution. Check the tools with:
-
-```sh
-cmake --version
-ninja --version
-cc --version
-```
-
-On every platform, run the remaining commands from the repository root.
+The commands below assume those prerequisites are installed, the required
+cross-compiler is on `PATH`, and the current directory is the repository root.
+`ctest` is installed with CMake. Except where a shell is named explicitly, the
+CMake and CTest commands work in PowerShell, Command Prompt, and POSIX shells.
 
 ## Clean build scripts
 
 The repository provides scripts that completely remove `build/`, configure one
-implemented target, and compile it. The accepted targets are `host-debug` and
-`host-release`.
+implemented target, and compile it. Accepted targets are the two host presets
+and the three Waveshare firmware presets documented in
+[PROJECT_SETUP.md](PROJECT_SETUP.md).
 
 On Linux or macOS, run:
 
@@ -113,7 +66,7 @@ In that command:
 - `--list-presets=all` lists configure, build, and test presets without
   configuring or building anything.
 
-The two preset names are `host-debug` and `host-release`. A preset stores the
+The host preset names are `host-debug` and `host-release`. A preset stores the
 generator, output directory, build type, and project option values so they do
 not have to be repeated on every command.
 
@@ -200,6 +153,50 @@ cmake --build --preset host-debug --target help
 
 The special Ninja `help` target prints available target names; it does not
 compile them.
+
+## Waveshare status-LED firmware
+
+Configure and build one board at a time:
+
+```sh
+cmake --preset waveshare-rp2040-zero-debug
+cmake --build --preset waveshare-rp2040-zero-debug
+
+cmake --preset waveshare-esp32-c6-zero-debug
+cmake --build --preset waveshare-esp32-c6-zero-debug
+
+cmake --preset waveshare-esp32-s3-zero-debug
+cmake --build --preset waveshare-esp32-s3-zero-debug
+```
+
+Each image cycles the onboard WS2812 through dim red, green, blue, and off.
+The logical status-LED calls are shared; the boards select GPIO16, GPIO8, and
+GPIO21 respectively. The RP2040 preset produces ELF, map, BIN, and UF2 files.
+Each ESP preset produces ELF, map, and Espressif BIN files.
+
+The output files are under `build/<preset>/`. These initial firmware targets
+are partial rather than supported: compilation and image conversion have been
+verified, but the generated images have not yet passed on-device boot or LED
+timing tests. Do not treat a successful build as hardware-conformance evidence.
+
+For the RP2040-Zero, hold BOOT while connecting or resetting the board, then
+copy `microflow-waveshare-rp2040-zero.uf2` to the exposed mass-storage volume.
+
+The ESP BIN files are standalone RAM-loaded images intended for the ROM boot
+boundary. Flashing is deliberately not part of a normal build. After backing
+up existing flash and placing the board in download mode, the initial test
+commands are:
+
+```sh
+esptool --chip esp32c6 --port <port> write-flash 0x0 build/waveshare-esp32-c6-zero-debug/microflow-waveshare-esp32-c6-zero.bin
+esptool --chip esp32s3 --port <port> write-flash 0x0 build/waveshare-esp32-s3-zero-debug/microflow-waveshare-esp32-s3-zero.bin
+```
+
+Writing at offset `0x0` replaces the existing ESP boot boundary. Restore the
+backup or reflash the vendor/ESP-IDF bootloader and application to return the
+board to its prior software. Hardware verification must confirm ROM loading,
+CPU-clock assumptions, WS2812 timing, and reset behaviour before these targets
+can be promoted beyond partial status.
 
 ## Generated files and output locations
 

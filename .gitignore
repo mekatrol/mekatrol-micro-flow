@@ -74,3 +74,6 @@ build.ninja
 
 # Developer-local CMake presets
 CMakeUserPresets.json
+
+# Developer-local Python environments
+.venv/

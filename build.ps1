@@ -5,7 +5,10 @@ param(
 
 $availableTargets = @(
     'host-debug',
-    'host-release'
+    'host-release',
+    'waveshare-rp2040-zero-debug',
+    'waveshare-esp32-c6-zero-debug',
+    'waveshare-esp32-s3-zero-debug'
 )
 
 function Show-Usage {
@@ -16,6 +19,9 @@ function Show-Usage {
     Write-Host 'Available targets:'
     Write-Host '  host-debug    Debug build with tests and supported sanitizers'
     Write-Host '  host-release  Optimized release build with tests'
+    Write-Host '  waveshare-rp2040-zero-debug  RP2040-Zero LED firmware'
+    Write-Host '  waveshare-esp32-c6-zero-debug  ESP32-C6-Zero LED firmware'
+    Write-Host '  waveshare-esp32-s3-zero-debug  ESP32-S3-Zero LED firmware'
 }
 
 if (($args.Count -ne 0) -or ([string]::IsNullOrWhiteSpace($Target)) -or

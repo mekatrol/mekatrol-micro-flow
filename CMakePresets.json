@@ -31,6 +31,39 @@
         "CMAKE_BUILD_TYPE": "Release",
         "MICROFLOW_ENABLE_SANITIZERS": "OFF"
       }
+    },
+    {
+      "name": "waveshare-rp2040-zero-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MICROFLOW_BOARD": "waveshare-rp2040-zero",
+        "MICROFLOW_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "waveshare-esp32-c6-zero-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/riscv32-esp-elf-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MICROFLOW_BOARD": "waveshare-esp32-c6-zero",
+        "MICROFLOW_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "waveshare-esp32-s3-zero-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/xtensa-esp32s3-elf-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MICROFLOW_BOARD": "waveshare-esp32-s3-zero",
+        "MICROFLOW_BUILD_TESTS": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -41,6 +74,18 @@
     {
       "name": "host-release",
       "configurePreset": "host-release"
+    },
+    {
+      "name": "waveshare-rp2040-zero-debug",
+      "configurePreset": "waveshare-rp2040-zero-debug"
+    },
+    {
+      "name": "waveshare-esp32-c6-zero-debug",
+      "configurePreset": "waveshare-esp32-c6-zero-debug"
+    },
+    {
+      "name": "waveshare-esp32-s3-zero-debug",
+      "configurePreset": "waveshare-esp32-s3-zero-debug"
     }
   ],
   "testPresets": [

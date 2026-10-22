@@ -47,6 +47,7 @@ Pico, DevKit, or other physical-board pin assignments.
 AGENTS.md
 PLANS.md
 PROJECT_STRUCTURE.md
+PROJECT_SETUP.md
 README.md
 LICENSE
 CMakeLists.txt
@@ -116,6 +117,13 @@ new top-level subsystem or a materially different source category is added.
 This is the single source of truth for repository structure. Other README and
 guidance files should link here and document only their local usage, setup, or
 constraints instead of repeating the general folder descriptions.
+
+### `PROJECT_SETUP.md`
+
+Contains clean-machine setup instructions for Windows, macOS, and Linux. It is
+the authoritative list of required host tools, pinned cross-toolchains,
+environment activation, and installation verification. Build workflows should
+link to it instead of duplicating operating-system setup instructions.
 
 ### `README.md`
 
