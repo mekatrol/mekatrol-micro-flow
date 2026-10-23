@@ -83,7 +83,7 @@ static void microflow_rp2040_ws2812_byte(uint32_t mask, uint8_t value) {
 void microflow_rp2040_initialize(void) {
     const uint32_t resets =
         RP2040_RESET_IO_BANK0 | RP2040_RESET_PADS_BANK0 |
-        RP2040_RESET_TIMER;
+        RP2040_RESET_TIMER | RP2040_RESET_UART0;
 
     /* Start external crystal oscillator */
     RP2040_XOSC_STARTUP = RP2040_XOSC_STARTUP_COUNT;
@@ -103,6 +103,34 @@ void microflow_rp2040_initialize(void) {
 
     while ((RP2040_RESETS_DONE & resets) != resets) {
     }
+}
+
+void microflow_rp2040_uart0_initialize(uint32_t baud_rate) {
+    if (baud_rate == 0U) return;
+    RP2040_CLK_PERI_CTRL = RP2040_CLK_PERI_ENABLE;
+    RP2040_GPIO_CTRL(0U) = RP2040_IO_FUNC_UART;
+    RP2040_GPIO_CTRL(1U) = RP2040_IO_FUNC_UART;
+    RP2040_UART0_CR = 0U;
+    const uint32_t divisor_x64 =
+        (RP2040_XOSC_FREQUENCY_HZ * 4U + baud_rate / 2U) / baud_rate;
+    RP2040_UART0_IBRD = divisor_x64 / 64U;
+    RP2040_UART0_FBRD = divisor_x64 % 64U;
+    RP2040_UART0_LCR_H = RP2040_UART_LCR_H_FEN | RP2040_UART_LCR_H_WLEN_8;
+    RP2040_UART0_IFLS = 0U;
+    RP2040_UART0_ICR = 0x7FFU;
+    RP2040_UART0_IMSC = RP2040_UART_INT_RX | RP2040_UART_INT_RT;
+    RP2040_UART0_CR = RP2040_UART_CR_UARTEN | RP2040_UART_CR_TXE | RP2040_UART_CR_RXE;
+    RP2040_NVIC_ICPR = 1U << RP2040_IRQ_UART0;
+    RP2040_NVIC_ISER = 1U << RP2040_IRQ_UART0;
+}
+
+bool microflow_rp2040_uart0_read_ready(void) { return (RP2040_UART0_FR & RP2040_UART_FR_RXFE) == 0U; }
+uint8_t microflow_rp2040_uart0_read(void) { return (uint8_t)RP2040_UART0_DR; }
+bool microflow_rp2040_uart0_write_ready(void) { return (RP2040_UART0_FR & RP2040_UART_FR_TXFF) == 0U; }
+void microflow_rp2040_uart0_write(uint8_t value) { RP2040_UART0_DR = value; }
+void microflow_rp2040_uart0_set_transmit_interrupt(bool enabled) {
+    if (enabled) RP2040_UART0_IMSC |= RP2040_UART_INT_TX;
+    else RP2040_UART0_IMSC &= ~RP2040_UART_INT_TX;
 }
 
 void microflow_rp2040_gpio_output_initialize(uint32_t pin) {
@@ -203,7 +231,11 @@ void microflow_rp2040_timer0_irq_handler(void) {
     microflow_rp2040_timer_alarm0_event();
 }
 
-void microflow_rp2040_uart0_irq_handler(void) { microflow_rp2040_uart0_event(); }
+void microflow_rp2040_uart0_irq_handler(void) {
+    const uint32_t status = RP2040_UART0_MIS;
+    RP2040_UART0_ICR = status;
+    microflow_rp2040_uart0_event();
+}
 void microflow_rp2040_usbctrl_irq_handler(void) { microflow_rp2040_usb_event(); }
 
 void microflow_rp2040_wait_until(

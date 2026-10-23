@@ -29,6 +29,7 @@ function(microflow_add_rp2040_firmware target board_name)
         "${soc_dir}/rp2040_startup.S"
         "${soc_dir}/rp2040.c"
         "${board_dir}/supervisor.c"
+        "${board_dir}/upload_transport.c"
         "${boot2_padded}"
     )
     # Cortex-M0+ has no hardware divider. Resolve circular references between

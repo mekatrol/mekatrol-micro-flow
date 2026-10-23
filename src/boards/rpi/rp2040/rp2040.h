@@ -15,6 +15,12 @@ void microflow_rp2040_wait_until(
     const volatile uint32_t *wake_events, bool has_deadline, uint32_t deadline);
 void microflow_rp2040_watchdog_initialize(uint32_t timeout_microseconds);
 void microflow_rp2040_watchdog_service(void);
+void microflow_rp2040_uart0_initialize(uint32_t baud_rate);
+bool microflow_rp2040_uart0_read_ready(void);
+uint8_t microflow_rp2040_uart0_read(void);
+bool microflow_rp2040_uart0_write_ready(void);
+void microflow_rp2040_uart0_write(uint8_t value);
+void microflow_rp2040_uart0_set_transmit_interrupt(bool enabled);
 uint32_t microflow_rp2040_interrupt_lock(void);
 void microflow_rp2040_interrupt_unlock(uint32_t state);
 void microflow_rp2040_timer_alarm0_event(void);

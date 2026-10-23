@@ -119,6 +119,11 @@ remain hardware validation activities and are not inferred from compilation.
 
 ## Stage 2: UART0 flow-upload transport
 
+Implementation status: complete in source. Host regression and firmware-build
+verification cover the bounded protocol implementation. Physical UART upload,
+overflow, disconnect, and sustained-board tests remain hardware validation
+activities, so the Stage 2 exit criteria are not yet claimed complete.
+
 ### Work
 
 - Implement project-owned RP2040 UART0 register support.
@@ -146,6 +151,32 @@ must be designed and tested explicitly.
 - UART queue overflow and host disconnect recovery are verified.
 - Flow validation completes before activation and malformed data never enters
   execution.
+
+### Implementation evidence
+
+- Project-owned RP2040 UART0 register support configures GPIO0/GPIO1 for
+  115200 8N1 operation and uses the existing UART0 interrupt vector.
+- Board-owned RX and TX SPSC rings keep interrupt work bounded; parsing,
+  staging, validation, and activation run as a supervisor service.
+- Version 1 `MFLO` framing, sequence rules, CRC-32, status codes, the bounded
+  2048-byte staging slot, and the `MFFL` RAM image envelope are documented in
+  `docs/WAVESHARE_RP2040_ZERO_UART_PROTOCOL.md`.
+- Candidate data cannot replace the active RAM slot until ordering, total
+  length, image CRC, and image-envelope validation all pass. Abort and receive
+  timeout discard staging without modifying the active slot.
+- `microflow-upload-transport-test` covers valid upload and activation, abort,
+  corrupt CRC, duplicate/out-of-order sequence, invalid offset, incomplete
+  upload, oversized framing, parser resynchronization, and receive timeout.
+- `tools/microflow_uart_upload.py` probes and performs chunked, acknowledged
+  uploads through any pyserial-supported host port.
+- Current firmware compile measurement is 5,468 bytes text, 0 bytes initialized
+  data, and 5,012 bytes BSS with GNU Arm Embedded 13.2.1. The two 2,048-byte
+  RAM slots intentionally dominate BSS. This is compile evidence, not an
+  on-device throughput or reliability result.
+- The payload remains opaque after its validated envelope because the portable
+  engine does not yet define serialized flow semantics. Activation is safe RAM
+  image replacement, not execution; unvalidated bytes are never presented as
+  an executable flow.
 
 ## Stage 3: native USB CDC debug console
 
