@@ -1,5 +1,9 @@
 # Building Mekatrol Micro Flow
 
+This guide covers configuration, compilation, firmware artifacts, and cleaning.
+For the complete test inventory and instructions for running individual tests,
+see [TEST.md](TEST.md).
+
 ## Prerequisites
 
 Start with [PROJECT_SETUP.md](PROJECT_SETUP.md). It is the canonical setup guide
@@ -367,6 +371,9 @@ outputs. They do not delete source files because all generated output is kept
 under the explicitly named `build/` directory.
 
 ## Typical verification before submitting a change
+
+See [TEST.md](TEST.md) for individual-test commands, sanitizer details,
+supervisor-test coverage, firmware compile checks, and hardware-test evidence.
 
 Run both supported configurations from a clean or already configured tree:
 

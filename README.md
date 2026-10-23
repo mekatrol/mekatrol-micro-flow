@@ -37,7 +37,8 @@ Initial partial firmware builds are available for the Waveshare RP2040-Zero,
 ESP32-C6-Zero, and ESP32-S3-Zero. They compile a standalone onboard RGB LED
 test but have not yet completed hardware conformance. See
 [PROJECT_SETUP.md](PROJECT_SETUP.md) to prepare a clean machine and
-[BUILD.md](BUILD.md) for preset names, artifacts, and the hardware-test caveat.
+[BUILD.md](BUILD.md) for preset names and artifacts, and [TEST.md](TEST.md) for
+the test suite and hardware-test caveat.
 
 The engine is designed to remain independent of any particular microcontroller, SDK, RTOS, or hardware abstraction framework.
 

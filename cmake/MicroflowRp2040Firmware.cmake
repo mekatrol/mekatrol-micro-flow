@@ -28,6 +28,7 @@ function(microflow_add_rp2040_firmware target board_name)
         "${board_dir}/board.c"
         "${soc_dir}/rp2040_startup.S"
         "${soc_dir}/rp2040.c"
+        "${board_dir}/supervisor.c"
         "${boot2_padded}"
     )
     # Cortex-M0+ has no hardware divider. Resolve circular references between
@@ -45,7 +46,7 @@ function(microflow_add_rp2040_firmware target board_name)
     )
     target_include_directories(${target} PRIVATE "${soc_dir}")
     target_compile_options(
-        ${target} PRIVATE -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding
+        ${target} PRIVATE -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding -fno-builtin
         -ffunction-sections -fdata-sections
     )
     target_compile_options(

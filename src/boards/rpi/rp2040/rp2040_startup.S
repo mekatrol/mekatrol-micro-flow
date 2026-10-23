@@ -7,7 +7,19 @@
 microflow_vectors:
   .word __stack_top
   .word microflow_reset_handler
-  .rept 46
+  .rept 14
+  .word microflow_default_handler
+  .endr
+  .word microflow_rp2040_timer0_irq_handler
+  .rept 4
+  .word microflow_default_handler
+  .endr
+  .word microflow_rp2040_usbctrl_irq_handler
+  .rept 14
+  .word microflow_default_handler
+  .endr
+  .word microflow_rp2040_uart0_irq_handler
+  .rept 5
   .word microflow_default_handler
   .endr
 

@@ -72,6 +72,10 @@ UART0 and does not consume GPIO0 or GPIO1.
 
 ## Stage 1: supervisor and interrupt foundation
 
+Implementation status: complete in source. Host regression and firmware-build
+verification are in place; the physical-board soak and repeated warm-reset run
+remain hardware validation activities and are not inferred from compilation.
+
 ### Work
 
 - Add the board-owned supervisor, service table, event flags, and fault state.
@@ -91,6 +95,27 @@ UART0 and does not consume GPIO0 or GPIO1.
 - Timer wraparound and repeated warm resets are exercised.
 - Idle execution waits for interrupts rather than continuously polling.
 - Queue overflow is observable and produces no memory corruption or deadlock.
+
+### Implementation evidence
+
+- Board-owned `supervisor.c/.h` provides the fixed service table, event flags,
+  fault state, SPSC byte/event queues, priority dispatch, heartbeat, runtime
+  metrics, queue high-water marks, and watchdog service points.
+- RP2040 startup dispatches Timer 0, USB controller, and UART0 vectors. Alarm 0
+  supplies a wrap-safe deadline wake, and the idle path closes the event/sleep
+  race before executing `WFI`.
+- Queue full policy rejects the newest item, preserves unread data, increments
+  an observable counter, and raises a deferred supervisor fault when the
+  supervisor-aware producer API is used.
+- `microflow-supervisor-test` exercises queue saturation, ordering, timing,
+  wraparound, idle waiting, watchdog servicing, fault delivery, and repeated
+  initialization without allocation.
+- Verified commands: `cmake --build --preset host-debug && ctest --preset
+  host-debug`, the equivalent `host-release` build/test, and `cmake --build
+  --preset waveshare-rp2040-zero-debug`.
+- Current compile measurement: 2,376 bytes text, 0 bytes initialized data, and
+  292 bytes BSS (GNU Arm Embedded 13.2.1). This is compile evidence, not an
+  on-device timing or soak result.
 
 ## Stage 2: UART0 flow-upload transport
 

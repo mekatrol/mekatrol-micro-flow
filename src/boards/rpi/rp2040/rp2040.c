@@ -1,7 +1,10 @@
 #include "rp2040.h"
 #include "rp2040_regs.h"
 
+#include <stddef.h>
 #include <stdint.h>
+
+static uint32_t microflow_rp2040_watchdog_load;
 
 /* -------------------------------------------------------------------------- */
 /* Internal helpers                                                           */
@@ -28,6 +31,16 @@ static inline void microflow_rp2040_interrupt_disable(void) {
 
 static inline void microflow_rp2040_interrupt_restore(uint32_t state) {
     __asm volatile("msr primask, %0" : : "r"(state) : "memory");
+}
+
+uint32_t microflow_rp2040_interrupt_lock(void) {
+    const uint32_t state = microflow_rp2040_interrupt_state();
+    microflow_rp2040_interrupt_disable();
+    return state;
+}
+
+void microflow_rp2040_interrupt_unlock(uint32_t state) {
+    microflow_rp2040_interrupt_restore(state);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -175,4 +188,52 @@ void microflow_rp2040_delay_ms(uint32_t milliseconds) {
 
         --milliseconds;
     }
+}
+
+void microflow_rp2040_timer_alarm0_event(void) __attribute__((weak));
+void microflow_rp2040_uart0_event(void) __attribute__((weak));
+void microflow_rp2040_usb_event(void) __attribute__((weak));
+void microflow_rp2040_timer_alarm0_event(void) {}
+void microflow_rp2040_uart0_event(void) {}
+void microflow_rp2040_usb_event(void) {}
+
+void microflow_rp2040_timer0_irq_handler(void) {
+    RP2040_TIMER_INTR = RP2040_TIMER_ALARM0_BIT;
+    RP2040_TIMER_INTE &= ~RP2040_TIMER_ALARM0_BIT;
+    microflow_rp2040_timer_alarm0_event();
+}
+
+void microflow_rp2040_uart0_irq_handler(void) { microflow_rp2040_uart0_event(); }
+void microflow_rp2040_usbctrl_irq_handler(void) { microflow_rp2040_usb_event(); }
+
+void microflow_rp2040_wait_until(
+    const volatile uint32_t *wake_events, bool has_deadline, uint32_t deadline) {
+    const uint32_t interrupt_state = microflow_rp2040_interrupt_state();
+    microflow_rp2040_interrupt_disable();
+    if (has_deadline) {
+        RP2040_TIMER_INTR = RP2040_TIMER_ALARM0_BIT;
+        RP2040_TIMER_ALARM0 = deadline;
+        RP2040_TIMER_INTE |= RP2040_TIMER_ALARM0_BIT;
+        RP2040_NVIC_ICPR = 1U << RP2040_IRQ_TIMER0;
+        RP2040_NVIC_ISER = 1U << RP2040_IRQ_TIMER0;
+    }
+    const bool deadline_arrived = has_deadline &&
+        ((int32_t)(RP2040_TIMER_TIMERAWL - deadline) >= 0);
+    if (((wake_events == NULL) || (*wake_events == 0U)) && !deadline_arrived)
+        /* A masked interrupt becoming pending wakes WFI. Keeping PRIMASK set
+         * until after WFI closes the check/sleep race; restore then dispatches. */
+        __asm volatile("dsb\n wfi" ::: "memory");
+    microflow_rp2040_interrupt_restore(interrupt_state);
+}
+
+void microflow_rp2040_watchdog_initialize(uint32_t timeout_microseconds) {
+    if (timeout_microseconds > 0x7FFFFFU) timeout_microseconds = 0x7FFFFFU;
+    microflow_rp2040_watchdog_load = timeout_microseconds * 2U;
+    RP2040_WATCHDOG_TICK = RP2040_WATCHDOG_TICK_ENABLE | RP2040_WATCHDOG_TICK_CYCLES;
+    RP2040_WATCHDOG_LOAD = microflow_rp2040_watchdog_load;
+    RP2040_WATCHDOG_CTRL = RP2040_WATCHDOG_CTRL_ENABLE;
+}
+
+void microflow_rp2040_watchdog_service(void) {
+    RP2040_WATCHDOG_LOAD = microflow_rp2040_watchdog_load;
 }
