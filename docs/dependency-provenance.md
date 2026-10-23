@@ -3,7 +3,7 @@
 ## RP2040 second-stage boot
 
 The project-owned
-`src/boards/rpi/common/boot2_generic_03h.S` is derived from Raspberry
+`src/boards/rpi/rp2040/boot2_generic_03h.S` is derived from Raspberry
 Pi's `boot2_generic_03h.S` in pico-sdk 2.2.0, licensed BSD-3-Clause.
 
 - Source: <https://github.com/raspberrypi/pico-sdk/blob/2.2.0/src/rp2_common/boot_stage2/boot2_generic_03h.S>

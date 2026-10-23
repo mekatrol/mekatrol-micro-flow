@@ -5,6 +5,6 @@ RISC-V architectures. They currently produce compile/link smoke-test ELF, map,
 and BIN files only. The binaries do not yet contain the RP2350 boot ROM image
 definition and must not be flashed or described as bootable firmware.
 
-The two targets share physical board ownership here while retaining separate
-startup and linker files. GPIO, clock, timer, boot metadata, UF2 packaging, and
-hardware conformance remain planned work.
+The physical board entry point is kept here. Architecture-specific startup and
+linker files belong to the shared `rpi/rp2350` SoC support. GPIO, clock, timer,
+boot metadata, UF2 packaging, and hardware conformance remain planned work.

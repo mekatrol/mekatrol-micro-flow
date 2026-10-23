@@ -4,10 +4,11 @@
   "C_Cpp.default.includePath": [
     "${workspaceFolder}/src/lib/include",
     "${workspaceFolder}/src/lib/runtime/include",
-    "${workspaceFolder}/src/boards/rpi/common",
+    "${workspaceFolder}/src/boards/rpi/rp2040",
+    "${workspaceFolder}/src/boards/rpi/rp2350",
     "${workspaceFolder}/src/boards/esp32/common",
-    "${workspaceFolder}/src/boards/esp32/waveshare-esp32-c6-zero",
-    "${workspaceFolder}/src/boards/esp32/waveshare-esp32-s3-zero"
+    "${workspaceFolder}/src/boards/esp32/esp32-c6",
+    "${workspaceFolder}/src/boards/esp32/esp32-s3"
   ],
   "C_Cpp.intelliSenseEngine": "disabled",
   "clangd.arguments": [
@@ -18,10 +19,9 @@
     "-std=c11",
     "-Isrc/lib/include",
     "-Isrc/lib/runtime/include",
-    "-Isrc/boards/rpi/common",
-    "-Isrc/boards/esp32/common",
-    "-Isrc/boards/esp32/waveshare-esp32-c6-zero",
-    "-Isrc/boards/esp32/waveshare-esp32-s3-zero"
+    "-Isrc/boards/rpi/rp2040",
+    "-Isrc/boards/rpi/rp2350",
+    "-Isrc/boards/esp32/common"
   ],
   "editor.semanticHighlighting.enabled": true,
   "cmake.configureOnOpen": true,

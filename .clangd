@@ -3,7 +3,25 @@ CompileFlags:
     - -Wno-empty-translation-unit
     - -I../../src/lib/include
     - -I../../src/lib/runtime/include
-    - -I../../src/boards/rpi/common
+    - -I../../src/boards/rpi/rp2040
     - -I../../src/boards/esp32/common
-    - -I../../src/boards/esp32/waveshare-esp32-c6-zero
-    - -I../../src/boards/esp32/waveshare-esp32-s3-zero
+
+---
+If:
+  PathMatch: src/boards/.*
+CompileFlags:
+  Remove:
+    - -Werror
+    - -fsanitize=*
+    - -fno-omit-frame-pointer
+
+---
+# The common ESP32 implementation is compiled once per selected SoC. Use the
+# ESP32-C6 register configuration when clangd analyzes it outside a firmware
+# compilation database.
+If:
+  PathMatch: src/boards/esp32/common/.*
+CompileFlags:
+  Add:
+    - -I../../src/boards/esp32/esp32-c6
+    - -Wno-int-to-pointer-cast

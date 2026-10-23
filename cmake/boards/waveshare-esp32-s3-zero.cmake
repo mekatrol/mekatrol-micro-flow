@@ -4,6 +4,7 @@ microflow_add_esp_firmware(
     microflow-waveshare-esp32-s3-zero
     esp32s3
     4MB
+    esp32-s3
     waveshare-esp32-s3-zero
     esp32-s3.ld
 )

@@ -4,6 +4,7 @@ microflow_add_esp_firmware(
     microflow-waveshare-esp32-c6-zero
     esp32c6
     8MB
+    esp32-c6
     waveshare-esp32-c6-zero
     esp32-c6.ld
 )

@@ -7,22 +7,24 @@ complete board integrations. Both live under `src/` so source ownership is
 visible in one place and a board build does not have to assemble parallel
 `ports`, `soc`, `boards`, and `examples` trees.
 
-The dependency direction is:
+Firmware is composed from separate physical-board, SoC, and optional
+family-common layers. The dependency direction is:
 
 ```text
-src/boards/<family>/<board>  --->  src/boards/<family>/common
+src/boards/<family>/<board>  --->  src/boards/<family>/<soc>
+             |                              |
+             +----------> src/boards/<family>/common
              |                              |
              +------------------------------+
-                            |
                             v
                          src/lib
 ```
 
-The library never depends on board code. Family-common code never contains
-physical-board pin assignments. A concrete board folder owns the complete
-standalone firmware composition: entry point, startup, chip-specific support,
-linker layout, and physical resource mapping. Files can move into a family
-`common/` folder only when two implemented boards genuinely share them.
+The library never depends on board code. SoC and family-common code never
+contain physical-board pin assignments. A concrete board folder owns the entry
+point and physical resource mapping. Its SoC folder owns chip-specific startup,
+register support, and linker layouts. Files can move into a family `common/`
+folder only when two implemented SoCs genuinely share them.
 
 ## Repository layout
 
@@ -47,19 +49,10 @@ src/
     runtime/
     host/
   boards/
-    rpi/
-      common/
-      <specific-board>/
-    esp32/
-      common/
-      <specific-board>/
-    ch32/
-      common/
-      ch32v003/
-      ch32v203/
-    stm32/
-      common/
-      stm32f407-discovery/
+    <family>/
+      common/           Optional cross-SoC implementation
+      <soc>/            Chip startup, registers, and linker layout
+      <specific-board>/ Entry point and physical resource mapping
 tests/
   unit/
   integration/
@@ -105,14 +98,30 @@ host support.
 
 ## `src/boards/`
 
-Boards are grouped first by vendor or closely related microcontroller family,
-then by exact physical board. The maintained family names are `rpi`, `esp32`,
-`ch32`, and `stm32`.
+Board support is grouped first by vendor or closely related microcontroller
+family, then separated into SoC support and exact physical boards. The
+maintained family names are `rpi`, `esp32`, `ch32`, and `stm32`.
 
-Each family may contain `common/` for code proven to be shared within that
-family. A common folder must not become a second abstraction framework: keep
-chip register differences and physical-board facts in the specific board
-folder unless sharing removes actual duplication without condition-heavy code.
+Each family may contain SoC folders such as `rp2040`, `rp2350`, `esp32-s3`, or
+`esp32-c6`. Startup, linker layouts, register definitions, and chip drivers
+belong to these folders so multiple boards using the same SoC can reuse them.
+
+Each family may also contain `common/` for code proven to be shared by multiple
+implemented SoCs in that family. A common folder must not become a second
+abstraction framework: keep register differences in the SoC folder and
+physical-board facts in the specific board folder. Do not create placeholder
+`common/` or SoC folders before they own real shared implementation or required
+SoC documentation.
+
+A typical SoC folder may contain:
+
+```text
+src/boards/<family>/<soc>/
+  startup.S           Reset and architecture startup for the SoC
+  <soc>.c/.h          Register-level chip support
+  <soc>.ld            Linker and memory layout
+  README.md           SoC implementation status and constraints
+```
 
 A specific board folder may contain:
 
@@ -120,9 +129,6 @@ A specific board folder may contain:
 src/boards/<family>/<board>/
   main.c              Standalone demonstration/runtime entry point
   board.c             Logical resources and physical pin mapping
-  startup.S           Reset and architecture startup used by this board
-  <chip>.c/.h         Required register-level chip support
-  <chip>.ld           Linker and memory layout
   README.md           Hardware, flashing, debugging, and status
 ```
 

@@ -8,10 +8,11 @@
       "includePath": [
         "${workspaceFolder}/src/lib/include",
         "${workspaceFolder}/src/lib/runtime/include",
-        "${workspaceFolder}/src/boards/rpi/common",
+        "${workspaceFolder}/src/boards/rpi/rp2040",
+        "${workspaceFolder}/src/boards/rpi/rp2350",
         "${workspaceFolder}/src/boards/esp32/common",
-        "${workspaceFolder}/src/boards/esp32/waveshare-esp32-c6-zero",
-        "${workspaceFolder}/src/boards/esp32/waveshare-esp32-s3-zero"
+        "${workspaceFolder}/src/boards/esp32/esp32-c6",
+        "${workspaceFolder}/src/boards/esp32/esp32-s3"
       ],
       "browse": {
         "path": [
