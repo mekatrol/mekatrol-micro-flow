@@ -17,7 +17,10 @@ if len(source) > 252:
 
 padded = source + bytes(252 - len(source))
 crc_input = bytes(bit_reverse(value, 8) for value in padded)
-checksum = bit_reverse((binascii.crc32(crc_input, 0xFFFFFFFF) ^ 0xFFFFFFFF) & 0xFFFFFFFF, 32)
+# binascii.crc32() uses the reflected CRC-32 algorithm with an implicit
+# all-ones initial register and final XOR. Reverse each byte/result to match
+# the RP2040 ROM's non-reflected CRC, and undo only the final XOR.
+checksum = bit_reverse((binascii.crc32(crc_input) ^ 0xFFFFFFFF) & 0xFFFFFFFF, 32)
 output = padded + struct.pack("<L", checksum)
 
 assembly = [

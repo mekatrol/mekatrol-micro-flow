@@ -69,7 +69,8 @@ static void microflow_rp2040_ws2812_byte(uint32_t mask, uint8_t value) {
 
 void microflow_rp2040_initialize(void) {
     const uint32_t resets =
-        RP2040_RESET_IO_BANK0 | RP2040_RESET_PADS_BANK0;
+        RP2040_RESET_IO_BANK0 | RP2040_RESET_PADS_BANK0 |
+        RP2040_RESET_TIMER;
 
     /* Start external crystal oscillator */
     RP2040_XOSC_STARTUP = RP2040_XOSC_STARTUP_COUNT;
@@ -84,7 +85,7 @@ void microflow_rp2040_initialize(void) {
     while ((RP2040_CLK_REF_SELECTED & RP2040_CLK_REF_SELECTED_XOSC) == 0U) {
     }
 
-    /* Release IO_BANK0 and PADS_BANK0 from reset */
+    /* Release every peripheral used by the board support code from reset. */
     RP2040_RESETS_RESET &= ~resets;
 
     while ((RP2040_RESETS_DONE & resets) != resets) {

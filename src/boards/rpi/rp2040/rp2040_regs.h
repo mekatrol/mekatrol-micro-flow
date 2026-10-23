@@ -40,6 +40,7 @@
 /* Reset bits */
 #define RP2040_RESET_IO_BANK0   (1U << 5U)
 #define RP2040_RESET_PADS_BANK0 (1U << 8U)
+#define RP2040_RESET_TIMER      (1U << 21U)
 
 
 /* XOSC configuration */
