@@ -1,5 +1,6 @@
 # Raspberry Pi family common code
 
-Place code here only after it is shared by at least two implemented Raspberry
-Pi microcontroller boards. RP2040 and RP2350 register maps remain board-local
-unless a shared implementation is verified.
+This folder contains the RP2040 startup, linker layout, register-level support,
+and second-stage flash boot implementation shared by the Raspberry Pi Pico and
+Waveshare RP2040-Zero targets. Physical LED mappings remain in each board
+folder. RP2350 support remains separate.

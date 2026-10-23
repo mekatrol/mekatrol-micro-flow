@@ -3,7 +3,7 @@
 ## RP2040 second-stage boot
 
 The project-owned
-`src/boards/rpi/waveshare-rp2040-zero/boot2_generic_03h.S` is derived from Raspberry
+`src/boards/rpi/common/boot2_generic_03h.S` is derived from Raspberry
 Pi's `boot2_generic_03h.S` in pico-sdk 2.2.0, licensed BSD-3-Clause.
 
 - Source: <https://github.com/raspberrypi/pico-sdk/blob/2.2.0/src/rp2_common/boot_stage2/boot2_generic_03h.S>
@@ -12,7 +12,7 @@ Pi's `boot2_generic_03h.S` in pico-sdk 2.2.0, licensed BSD-3-Clause.
   constants; the position-independent boot and vector handoff are retained.
 - Update procedure: compare the pinned upstream file and RP2040 datasheet,
   update the local constants deliberately, then rebuild and test cold boot on
-  the RP2040-Zero. `tools/pad_boot2.py` pads the result and calculates the
+  the Raspberry Pi Pico and RP2040-Zero. `tools/pad_boot2.py` pads the result and calculates the
   checksum expected by the RP2040 boot ROM.
 
 No Espressif source or binary is linked into the ESP32 application images.

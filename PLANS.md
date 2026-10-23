@@ -16,6 +16,7 @@ Expected initial CMake presets are:
 host-debug
 host-release
 waveshare-rp2040-zero-debug
+raspberry-pi-pico-debug
 raspberry-pi-pico-2-arm-debug
 raspberry-pi-pico-2-riscv-debug
 esp32-s3-debug

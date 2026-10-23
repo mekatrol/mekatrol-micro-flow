@@ -135,7 +135,7 @@ The initial board inventory is:
 | Family | Board folder | Status |
 |---|---|---|
 | `rpi` | `waveshare-rp2040-zero` | Partial firmware target |
-| `rpi` | `raspberry-pi-pico` | Planned RP2040 target |
+| `rpi` | `raspberry-pi-pico` | Partial firmware target |
 | `rpi` | `raspberry-pi-pico-2` | Experimental Arm and RISC-V compile targets |
 | `esp32` | `waveshare-esp32-s3-zero` | Partial firmware target |
 | `esp32` | `waveshare-esp32-c6-zero` | Partial firmware target |

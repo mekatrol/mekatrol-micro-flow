@@ -44,6 +44,17 @@
       }
     },
     {
+      "name": "raspberry-pi-pico-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MICROFLOW_BOARD": "raspberry-pi-pico",
+        "MICROFLOW_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "raspberry-pi-pico-2-arm-debug",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
@@ -100,6 +111,10 @@
     {
       "name": "waveshare-rp2040-zero-debug",
       "configurePreset": "waveshare-rp2040-zero-debug"
+    },
+    {
+      "name": "raspberry-pi-pico-debug",
+      "configurePreset": "raspberry-pi-pico-debug"
     },
     {
       "name": "raspberry-pi-pico-2-arm-debug",

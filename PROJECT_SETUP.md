@@ -298,6 +298,13 @@ cmake --preset waveshare-rp2040-zero-debug
 cmake --build --preset waveshare-rp2040-zero-debug
 ```
 
+Build the Raspberry Pi Pico image:
+
+```sh
+cmake --preset raspberry-pi-pico-debug
+cmake --build --preset raspberry-pi-pico-debug
+```
+
 Build either experimental Pico 2 architecture target:
 
 ```sh

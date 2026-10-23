@@ -1,4 +1,5 @@
 # Raspberry Pi Pico
 
-Planned RP2040 reference-board target. This folder does not yet define a CMake
-target and must not be described as supported.
+Partial RP2040 firmware target. It produces ELF, map, BIN, and UF2 files and
+blinks the onboard GPIO25 LED. The image has not yet passed on-device boot or
+hardware-conformance testing and must not be described as supported.

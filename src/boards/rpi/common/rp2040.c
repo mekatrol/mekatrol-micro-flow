@@ -91,6 +91,28 @@ void microflow_rp2040_initialize(void) {
     }
 }
 
+void microflow_rp2040_gpio_output_initialize(uint32_t pin) {
+    if (pin >= RP2040_GPIO_COUNT) {
+        return;
+    }
+
+    RP2040_GPIO_CTRL(pin)   = RP2040_IO_FUNC_SIO;
+    RP2040_SIO_GPIO_OUT_CLR = 1U << pin;
+    RP2040_SIO_GPIO_OE_SET  = 1U << pin;
+}
+
+void microflow_rp2040_gpio_write(uint32_t pin, bool high) {
+    if (pin >= RP2040_GPIO_COUNT) {
+        return;
+    }
+
+    if (high) {
+        RP2040_SIO_GPIO_OUT_SET = 1U << pin;
+    } else {
+        RP2040_SIO_GPIO_OUT_CLR = 1U << pin;
+    }
+}
+
 /* -------------------------------------------------------------------------- */
 /* WS2812 public functions                                                    */
 /* -------------------------------------------------------------------------- */

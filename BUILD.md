@@ -171,6 +171,9 @@ Configure and build one board at a time:
 cmake --preset waveshare-rp2040-zero-debug
 cmake --build --preset waveshare-rp2040-zero-debug
 
+cmake --preset raspberry-pi-pico-debug
+cmake --build --preset raspberry-pi-pico-debug
+
 cmake --preset waveshare-esp32-c6-zero-debug
 cmake --build --preset waveshare-esp32-c6-zero-debug
 
@@ -178,9 +181,10 @@ cmake --preset waveshare-esp32-s3-zero-debug
 cmake --build --preset waveshare-esp32-s3-zero-debug
 ```
 
-Each image cycles the onboard WS2812 through dim red, green, blue, and off.
-The logical status-LED calls are shared; the boards select GPIO16, GPIO8, and
-GPIO21 respectively. The RP2040 preset produces ELF, map, BIN, and UF2 files.
+The Pico blinks its single-colour onboard LED on GPIO25. Each Waveshare image
+cycles its onboard WS2812 through dim red, green, blue, and off. The logical
+status-LED calls are shared; the Waveshare boards select GPIO16, GPIO8, and
+GPIO21 respectively. Both RP2040 presets produce ELF, map, BIN, and UF2 files.
 Each ESP preset produces ELF, map, and Espressif BIN files.
 
 The output files are under `build/<preset>/`. These initial firmware targets
@@ -188,8 +192,8 @@ are partial rather than supported: compilation and image conversion have been
 verified, but the generated images have not yet passed on-device boot or LED
 timing tests. Do not treat a successful build as hardware-conformance evidence.
 
-For the RP2040-Zero, hold BOOT while connecting or resetting the board, then
-copy `microflow-waveshare-rp2040-zero.uf2` to the exposed mass-storage volume.
+For either RP2040 board, hold BOOTSEL/BOOT while connecting or resetting the
+board, then copy its `microflow-*.uf2` file to the exposed mass-storage volume.
 
 The ESP BIN files are standalone RAM-loaded images intended for the ROM boot
 boundary. Flashing is deliberately not part of a normal build. After backing
