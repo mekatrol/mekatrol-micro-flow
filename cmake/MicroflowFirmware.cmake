@@ -6,7 +6,7 @@ function(microflow_add_firmware target)
     target_include_directories(
         ${target}
         PRIVATE
-            "${PROJECT_SOURCE_DIR}/src/runtime/include"
+            "${PROJECT_SOURCE_DIR}/src/lib/runtime/include"
     )
     target_link_libraries(${target} PRIVATE Microflow::microflow)
     microflow_set_warnings(${target})

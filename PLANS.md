@@ -15,15 +15,18 @@ Expected initial CMake presets are:
 ```text
 host-debug
 host-release
-pico-rp2040-debug
-pico2-rp2350-arm-debug
+waveshare-rp2040-zero-debug
+raspberry-pi-pico-2-arm-debug
+raspberry-pi-pico-2-riscv-debug
 esp32-s3-debug
 esp32-c3-debug
 esp32-c6-debug
 ch32v003-debug
 ```
 
-Add an RP2350 RISC-V preset after the initial Arm port is stable.
+Both RP2350 architecture presets exist as compile/link smoke tests. Promote
+them to firmware targets only after boot metadata, packaging, board drivers,
+and conformance are implemented.
 
 ## Target strategy
 
@@ -86,6 +89,22 @@ Espressif RISC-V implementations.
 Implement startup, linker layout, clock, monotonic timer, GPIO, polling UART,
 watchdog, and single-wire debug/flashing. This target defines the initial
 minimum-footprint configuration.
+
+Use the WCH vendor CH32V003 development board as the physical target, stored as
+`src/boards/ch32/ch32v003`.
+
+### CH32V203
+
+Add the WCH vendor CH32V203 development board after the CH32V003 port has made
+the shared QingKe and peripheral assumptions explicit. Share code through
+`src/boards/ch32/common` only where both implementations are verified to match.
+
+### STM32F407
+
+Use the STM32F407 Discovery kit for the first STM32 target. Keep its Cortex-M
+startup, register-level drivers, linker layout, and physical resource mapping
+together in `src/boards/stm32/stm32f407-discovery`; extract family-common code
+only when another STM32 board needs it.
 
 ## Phase 1: portable core and build foundation
 
@@ -155,6 +174,8 @@ Status: Not started
 3. Add ESP32-C6 using proven Espressif RISC-V infrastructure.
 4. Add RP2350 RISC-V after the initial matrix is stable.
 5. Run conformance and publish memory/timing results for every target.
+6. Add the CH32V203 vendor board and STM32F407 Discovery kit after the initial
+   target matrix is stable.
 
 Exit criterion: every initial target builds reproducibly, boots from a clean
 device using documented tools, passes conformance, and has a maintained board.

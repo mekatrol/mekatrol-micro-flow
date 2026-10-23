@@ -44,6 +44,28 @@
       }
     },
     {
+      "name": "raspberry-pi-pico-2-arm-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MICROFLOW_BOARD": "raspberry-pi-pico-2-arm",
+        "MICROFLOW_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "raspberry-pi-pico-2-riscv-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/riscv32-unknown-elf-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MICROFLOW_BOARD": "raspberry-pi-pico-2-riscv",
+        "MICROFLOW_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "waveshare-esp32-c6-zero-debug",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
@@ -78,6 +100,14 @@
     {
       "name": "waveshare-rp2040-zero-debug",
       "configurePreset": "waveshare-rp2040-zero-debug"
+    },
+    {
+      "name": "raspberry-pi-pico-2-arm-debug",
+      "configurePreset": "raspberry-pi-pico-2-arm-debug"
+    },
+    {
+      "name": "raspberry-pi-pico-2-riscv-debug",
+      "configurePreset": "raspberry-pi-pico-2-riscv-debug"
     },
     {
       "name": "waveshare-esp32-c6-zero-debug",

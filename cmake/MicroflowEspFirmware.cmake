@@ -1,20 +1,22 @@
 include(MicroflowFirmware)
 
-function(microflow_add_esp_firmware target chip flash_size soc architecture board linker_script)
+function(microflow_add_esp_firmware target chip flash_size board linker_script)
     find_program(ESPTOOL_EXECUTABLE NAMES esptool esptool.py REQUIRED)
+
+    set(board_dir "${PROJECT_SOURCE_DIR}/src/boards/esp32/${board}")
 
     microflow_add_firmware(
         ${target}
-        "${PROJECT_SOURCE_DIR}/examples/status_blink.c"
-        "${PROJECT_SOURCE_DIR}/ports/${architecture}"
-        "${PROJECT_SOURCE_DIR}/soc/esp32-common/esp32.c"
-        "${PROJECT_SOURCE_DIR}/boards/${board}/board.c"
+        "${board_dir}/main.c"
+        "${board_dir}/startup.S"
+        "${PROJECT_SOURCE_DIR}/src/boards/esp32/common/esp32.c"
+        "${board_dir}/board.c"
     )
     target_include_directories(
         ${target}
         PRIVATE
-            "${PROJECT_SOURCE_DIR}/soc/esp32-common"
-            "${PROJECT_SOURCE_DIR}/soc/${soc}"
+            "${PROJECT_SOURCE_DIR}/src/boards/esp32/common"
+            "${board_dir}"
     )
     target_compile_options(
         ${target}
@@ -31,7 +33,7 @@ function(microflow_add_esp_firmware target chip flash_size soc architecture boar
             -Wl,--gc-sections
             -Wl,--build-id=none
             -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${target}.map
-            -T${PROJECT_SOURCE_DIR}/${linker_script}
+            -T${board_dir}/${linker_script}
     )
 
     set(image "${CMAKE_CURRENT_BINARY_DIR}/${target}.bin")

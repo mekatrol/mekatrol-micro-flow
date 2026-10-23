@@ -2,6 +2,74 @@
 
 set -eu
 
+add_installed_tool_to_path()
+{
+    tool_name=$1
+    prefer_discovered=${2:-no}
+
+    if [ "$prefer_discovered" = no ] && command -v "$tool_name" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    for search_root in \
+        "${IDF_TOOLS_PATH:-}" \
+        "${IDF_TOOLS_PATH:+$IDF_TOOLS_PATH/tools}" \
+        "$HOME/.espressif/tools" \
+        "$HOME/.pico-sdk" \
+        "$HOME/.mcuxpressotools" \
+        "$HOME/.local/bin" \
+        "$HOME/tools" \
+        /opt
+    do
+        if [ ! -d "$search_root" ]; then
+            continue
+        fi
+
+        tool_path=$(find "$search_root" -type f -name "$tool_name" -perm -u+x -print 2>/dev/null |
+            sort -r | sed -n '1p')
+        if [ -n "$tool_path" ]; then
+            tool_dir=$(dirname -- "$tool_path")
+            PATH="$tool_dir:$PATH"
+            export PATH
+            printf 'Using discovered %s: %s\n' "$tool_name" "$tool_path"
+            return 0
+        fi
+    done
+
+    if command -v "$tool_name" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    printf 'Required tool not found: %s\n' "$tool_name" >&2
+    printf 'Install it or add its directory to PATH, then try again.\n' >&2
+    return 1
+}
+
+prepare_build_tools()
+{
+    add_installed_tool_to_path ninja
+
+    case "$1" in
+        waveshare-rp2040-zero-debug)
+            add_installed_tool_to_path arm-none-eabi-gcc
+            ;;
+        raspberry-pi-pico-2-arm-debug)
+            add_installed_tool_to_path arm-none-eabi-gcc
+            ;;
+        raspberry-pi-pico-2-riscv-debug)
+            add_installed_tool_to_path riscv32-unknown-elf-gcc
+            ;;
+        waveshare-esp32-c6-zero-debug)
+            add_installed_tool_to_path riscv32-esp-elf-gcc
+            add_installed_tool_to_path esptool yes
+            ;;
+        waveshare-esp32-s3-zero-debug)
+            add_installed_tool_to_path xtensa-esp32s3-elf-gcc
+            add_installed_tool_to_path esptool yes
+            ;;
+    esac
+}
+
 print_usage()
 {
     printf '%s\n' \
@@ -13,6 +81,8 @@ print_usage()
         "  host-debug    Debug build with tests and supported sanitizers" \
         "  host-release  Optimized release build with tests" \
         "  waveshare-rp2040-zero-debug  RP2040-Zero LED firmware" \
+        "  raspberry-pi-pico-2-arm-debug  RP2350 Cortex-M33 compile target" \
+        "  raspberry-pi-pico-2-riscv-debug  RP2350 Hazard3 RISC-V compile target" \
         "  waveshare-esp32-c6-zero-debug  ESP32-C6-Zero LED firmware" \
         "  waveshare-esp32-s3-zero-debug  ESP32-S3-Zero LED firmware"
 }
@@ -23,7 +93,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 case "$1" in
-    host-debug|host-release|waveshare-rp2040-zero-debug|waveshare-esp32-c6-zero-debug|waveshare-esp32-s3-zero-debug)
+    host-debug|host-release|waveshare-rp2040-zero-debug|raspberry-pi-pico-2-arm-debug|raspberry-pi-pico-2-riscv-debug|waveshare-esp32-c6-zero-debug|waveshare-esp32-s3-zero-debug)
         build_target=$1
         ;;
     *)
@@ -35,6 +105,8 @@ esac
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$script_dir"
+
+prepare_build_tools "$build_target"
 
 cmake -E remove_directory "$script_dir/build"
 cmake --preset "$build_target"

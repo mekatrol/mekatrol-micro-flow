@@ -18,6 +18,8 @@ only to compile and package the project-owned bare-metal code.
 | Host build | C11 compiler | Current GCC, Clang, Apple Clang, or MSVC |
 | Firmware helper scripts | Python | 3.9 or newer |
 | RP2040 firmware | Arm GNU Toolchain | 13.2.Rel1, `arm-none-eabi` target |
+| RP2350 Arm firmware | Arm GNU Toolchain | 13.2.Rel1, `arm-none-eabi` target |
+| RP2350 RISC-V firmware | Raspberry Pi RISC-V toolchain | `riscv32-unknown-elf` target |
 | ESP32-C6 firmware | Espressif GCC | 15.2.0_20251204, `riscv32-esp-elf` target |
 | ESP32-S3 firmware | Espressif GCC | 15.2.0_20251204, `xtensa-esp32s3-elf` target |
 | ESP image creation and flashing | esptool | 5.1.0 |
@@ -296,6 +298,20 @@ cmake --preset waveshare-rp2040-zero-debug
 cmake --build --preset waveshare-rp2040-zero-debug
 ```
 
+Build either experimental Pico 2 architecture target:
+
+```sh
+cmake --preset raspberry-pi-pico-2-arm-debug
+cmake --build --preset raspberry-pi-pico-2-arm-debug
+
+cmake --preset raspberry-pi-pico-2-riscv-debug
+cmake --build --preset raspberry-pi-pico-2-riscv-debug
+```
+
+The RISC-V build requires Raspberry Pi's `riscv32-unknown-elf` toolchain. The
+wrappers search `~/.pico-sdk` automatically; direct CMake use requires its
+`bin` directory on `PATH`.
+
 After activating the ESP-IDF tool environment, build both ESP images:
 
 ```sh
@@ -331,6 +347,11 @@ The CMake toolchain files search `PATH`; they do not contain developer-specific
 absolute paths. Confirm the exact executable named in the tool summary works in
 the current terminal. ESP-IDF environment activation applies only to the
 current terminal session and must be repeated after opening a new one.
+
+The supplied `build.sh` and `build.ps1` wrappers also search standard
+Espressif/EIM per-user tool directories when the selected ESP compiler is not
+on `PATH`. Direct `cmake --preset` commands still require an activated
+environment or an explicitly configured `PATH`.
 
 ### esptool is not found
 

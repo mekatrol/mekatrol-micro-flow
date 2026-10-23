@@ -5,7 +5,7 @@ target_compile_features(microflow-core PUBLIC c_std_11)
 target_include_directories(
     microflow-core
     PUBLIC
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/lib/include>
         $<INSTALL_INTERFACE:include>
 )
 
