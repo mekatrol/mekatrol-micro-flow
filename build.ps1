@@ -13,6 +13,39 @@ $availableTargets = @(
     'waveshare-esp32-s3-zero-debug'
 )
 
+$picoSdkRequiredVersion = '2.3.1'
+
+function Initialize-PicoSdk {
+    if (-not [string]::IsNullOrWhiteSpace($env:PICO_SDK_PATH)) {
+        $sdkInit = Join-Path $env:PICO_SDK_PATH 'pico_sdk_init.cmake'
+        if (Test-Path -LiteralPath $sdkInit -PathType Leaf) {
+            Write-Host "Using Pico SDK: $env:PICO_SDK_PATH"
+            return $true
+        }
+
+        Write-Error "PICO_SDK_PATH does not contain pico_sdk_init.cmake: $env:PICO_SDK_PATH"
+        return $false
+    }
+
+    $sdkCandidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        $sdkCandidates += Join-Path $env:USERPROFILE ".pico-sdk\sdk\$picoSdkRequiredVersion"
+        $sdkCandidates += Join-Path $env:USERPROFILE "sdk\pico-sdk-$picoSdkRequiredVersion"
+    }
+
+    foreach ($sdkPath in $sdkCandidates) {
+        $sdkInit = Join-Path $sdkPath 'pico_sdk_init.cmake'
+        if (Test-Path -LiteralPath $sdkInit -PathType Leaf) {
+            $env:PICO_SDK_PATH = $sdkPath
+            Write-Host "Using discovered Pico SDK: $env:PICO_SDK_PATH"
+            return $true
+        }
+    }
+
+    Write-Error "Required Pico SDK $picoSdkRequiredVersion was not found. Install it with the Raspberry Pi Pico VS Code extension or follow PROJECT_SETUP.md."
+    return $false
+}
+
 function Add-InstalledToolToPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -79,6 +112,7 @@ function Initialize-BuildTools {
 
     switch ($BuildTarget) {
         'waveshare-rp2040-zero-debug' {
+            if (-not (Initialize-PicoSdk)) { return $false }
             if (-not (Add-InstalledToolToPath 'arm-none-eabi-gcc')) { return $false }
         }
         'raspberry-pi-pico-2-arm-debug' {

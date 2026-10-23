@@ -51,25 +51,38 @@ events through bounded structures with documented concurrency rules.
 
 ## Vendor dependency policy
 
-Direct register-level hardware control is preferred over vendor abstraction
-libraries. The project may use vendor documentation, compilers, linkers,
-debuggers, host-side flashing/image tools, raw register definitions, CMSIS-Core,
-compiler runtime helpers, and narrowly scoped boot artifacts.
+The portable flow library remains independent of vendor SDKs. Code under
+`src/lib`, its public headers, portable blocks, common runtime contracts, and
+logical capability interfaces must not include vendor headers, expose vendor
+types, or call vendor runtime APIs.
 
-Normal standalone targets must not link vendor HAL or SDK runtime libraries.
-Any exception must be documented per target, confined to the boot boundary, and
-removable without changes to `microflow-core`.
+SoC and board integrations under `src/boards` may use and link a chip vendor's
+native SDK, HAL, CMSIS components, boot support, or maintained middleware when
+that improves correctness, hardware coverage, or long-term reliability. This
+includes mature USB device stacks such as TinyUSB supplied through the
+Raspberry Pi Pico SDK. Direct register-level drivers remain acceptable for
+small, well-bounded peripherals, but are not preferred over a mature native
+implementation merely to avoid an SDK dependency.
 
-Permitted initial boot boundaries are:
+Keep every native dependency behind the SoC or board boundary. Adapt it to
+project-owned logical interfaces; do not let SDK types, global configuration,
+allocation policy, or lifecycle assumptions leak into `src/lib`. Select only
+the SDK components required by the target, disable unused services, and retain
+bounded queues and supervisor-context policy where determinism requires them.
 
-- RP2040: official second-stage flash boot implementation
-- RP2350: official boot metadata and narrowly required boot code
-- ESP32 family: Espressif ROM loader, second-stage bootloader, image utilities,
-  and flashing tools, but no ESP-IDF runtime services in the application
-- CH32V003: WCH compiler and debug tools, but project-owned runtime drivers
+Permitted initial integration boundaries include:
 
-Record the source, pinned version, licence, modifications, and update procedure
-for every imported boot artifact or register definition.
+- RP2040 and RP2350: Pico SDK startup, clocks, reset, boot support, hardware
+  services, and TinyUSB device support in the SoC/board firmware
+- ESP32 family: ESP-IDF boot, SoC, driver, and protocol components in the
+  SoC/board firmware
+- CH32 family: WCH startup, device support, and driver components in the
+  SoC/board firmware
+
+Record the source, pinned version, licence, enabled components, local
+modifications, and update procedure for every linked SDK, imported artifact,
+middleware component, or register definition. SDK upgrades require affected
+host tests, firmware builds, size measurements, and hardware conformance tests.
 
 ## Build system
 

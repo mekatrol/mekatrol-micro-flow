@@ -36,7 +36,6 @@
       "name": "waveshare-rp2040-zero-debug",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "MICROFLOW_BOARD": "waveshare-rp2040-zero",

@@ -33,9 +33,19 @@ microflow_set_warnings(microflow-upload-transport-test)
 microflow_enable_sanitizers(microflow-upload-transport-test)
 add_test(NAME microflow.upload-transport COMMAND microflow-upload-transport-test)
 
+add_executable(microflow-console-test
+    console_test.c
+    ${PROJECT_SOURCE_DIR}/src/boards/rpi/waveshare-rp2040-zero/supervisor.c
+    ${PROJECT_SOURCE_DIR}/src/boards/rpi/waveshare-rp2040-zero/console.c)
+target_include_directories(microflow-console-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/boards/rpi/waveshare-rp2040-zero)
+microflow_set_warnings(microflow-console-test)
+microflow_enable_sanitizers(microflow-console-test)
+add_test(NAME microflow.console COMMAND microflow-console-test)
+
 if(MICROFLOW_ENABLE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set_tests_properties(
-        microflow.version microflow.scheduler microflow.supervisor microflow.upload-transport
+        microflow.version microflow.scheduler microflow.supervisor microflow.upload-transport microflow.console
         PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0"
     )
 endif()

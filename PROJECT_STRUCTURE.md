@@ -105,6 +105,10 @@ maintained family names are `rpi`, `esp32`, `ch32`, and `stm32`.
 Each family may contain SoC folders such as `rp2040`, `rp2350`, `esp32-s3`, or
 `esp32-c6`. Startup, linker layouts, register definitions, and chip drivers
 belong to these folders so multiple boards using the same SoC can reuse them.
+These layers may link pinned native SDK components and maintained middleware,
+including vendor USB stacks, provided the dependency remains private to board
+firmware and is adapted to project-owned interfaces. Vendor headers and types
+must not cross into `src/lib` or public Micro Flow APIs.
 
 Each family may also contain `common/` for code proven to be shared by multiple
 implemented SoCs in that family. A common folder must not become a second

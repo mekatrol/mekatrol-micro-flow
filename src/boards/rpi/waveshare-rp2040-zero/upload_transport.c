@@ -186,3 +186,10 @@ bool microflow_upload_transport_expire(microflow_upload_transport_t *t,
     t->receive_tick_valid = false;
     return true;
 }
+
+void microflow_upload_transport_erase_staging(microflow_upload_transport_t *t) {
+    if (t == NULL) return;
+    bytes_zero(t->staging, sizeof(t->staging));
+    t->upload_active = false; t->image_length = 0U; t->image_checksum = 0U;
+    t->received_length = 0U; t->receive_tick_valid = false; reset_parser(t);
+}

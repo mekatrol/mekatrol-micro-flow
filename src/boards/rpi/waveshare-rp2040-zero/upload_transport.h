@@ -68,6 +68,7 @@ void microflow_upload_transport_service(microflow_upload_transport_t *transport,
                                         uint32_t now);
 bool microflow_upload_transport_expire(microflow_upload_transport_t *transport,
                                        uint32_t now, uint32_t timeout);
+void microflow_upload_transport_erase_staging(microflow_upload_transport_t *transport);
 uint32_t microflow_upload_crc32(const uint8_t *data, size_t length);
 
 #endif

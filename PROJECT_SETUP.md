@@ -4,9 +4,11 @@ This guide prepares a clean Windows, macOS, or Linux machine to build and test
 Mekatrol Micro Flow. Install the common tools first, then install only the
 cross-compilers required for the boards you intend to build.
 
-The project does not link Raspberry Pi Pico SDK or ESP-IDF runtime libraries
-into firmware. Their compiler distributions and host-side image tools are used
-only to compile and package the project-owned bare-metal code.
+The portable Micro Flow library does not depend on Raspberry Pi Pico SDK,
+ESP-IDF, or another vendor runtime. Standalone board firmware may link pinned
+native SDK components for startup, SoC support, peripheral drivers, and mature
+protocol stacks such as TinyUSB. These dependencies remain private to
+`src/boards` and are adapted to Micro Flow's vendor-neutral interfaces.
 
 ## Tool summary
 
@@ -17,6 +19,7 @@ only to compile and package the project-owned bare-metal code.
 | Build backend | Ninja | Current supported release |
 | Host build | C11 compiler | Current GCC, Clang, Apple Clang, or MSVC |
 | Firmware helper scripts | Python | 3.9 or newer |
+| RP2040/RP2350 native board support | Raspberry Pi Pico SDK | 2.3.1 |
 | RP2040 firmware | Arm GNU Toolchain | 13.2.Rel1, `arm-none-eabi` target |
 | RP2350 Arm firmware | Arm GNU Toolchain | 13.2.Rel1, `arm-none-eabi` target |
 | RP2350 RISC-V firmware | Raspberry Pi RISC-V toolchain | `riscv32-unknown-elf` target |
@@ -28,6 +31,42 @@ Arm GNU Toolchain 13.2.Rel1, Espressif GCC 15.2.0_20251204, and esptool
 5.1.0 are the versions used for the initial verified builds. Do not silently
 change these versions for release or CI builds; update the dependency record
 and repeat hardware tests first.
+
+## Vendor SDK installations
+
+Vendor SDKs are external prerequisites, not repository contents. Install each
+SDK independently at its pinned version and point the build at that installation.
+Do not reference an SDK checkout nested in Klipper or any other unrelated
+project: its revision, patches, and update lifecycle are outside Micro Flow's
+control. This rule applies to every vendor SDK.
+
+The Waveshare RP2040 Zero target requires Pico SDK 2.3.1 with TinyUSB. If it is
+not installed, create a dedicated checkout on Linux or macOS:
+
+```sh
+mkdir -p "$HOME/sdk"
+git clone --branch 2.3.1 --depth 1 \
+  https://github.com/raspberrypi/pico-sdk.git "$HOME/sdk/pico-sdk-2.3.1"
+git -C "$HOME/sdk/pico-sdk-2.3.1" submodule update --init lib/tinyusb
+export PICO_SDK_PATH="$HOME/sdk/pico-sdk-2.3.1"
+```
+
+On Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\sdk"
+git clone --branch 2.3.1 --depth 1 `
+  https://github.com/raspberrypi/pico-sdk.git "$HOME\sdk\pico-sdk-2.3.1"
+git -C "$HOME\sdk\pico-sdk-2.3.1" submodule update --init lib/tinyusb
+$env:PICO_SDK_PATH = "$HOME\sdk\pico-sdk-2.3.1"
+```
+
+Set `PICO_SDK_PATH` in every build terminal or define it persistently using the
+normal mechanism for your operating system. Configuration rejects SDK versions
+other than 2.3.1. The build never searches another source tree for an SDK and
+does not download one implicitly. ESP targets follow the same rule: use a
+dedicated ESP-IDF installation made by Espressif's installer or the commands
+below, then activate that installation in the current terminal.
 
 ## Windows 10 or 11
 
@@ -75,9 +114,10 @@ Install Espressif's ESP-IDF Installation Manager:
 winget install --id Espressif.EIM --exact
 ```
 
-Use it to install ESP-IDF v6.0.2 and its tools. The project does not link
-ESP-IDF, but this is the supported way to obtain the pinned RISC-V and Xtensa
-compilers and esptool together.
+Use it to install ESP-IDF v6.0.2 and its tools. ESP32 board firmware may link
+selected ESP-IDF components; the portable library remains independent of them.
+This installation also provides the pinned RISC-V and Xtensa compilers and
+esptool.
 
 For each ESP build session, use EIM's **Open IDF Terminal** action for the
 v6.0.2 installation. EIM also displays the exact activation-script command if
@@ -294,6 +334,7 @@ On Windows PowerShell, the same `cmake` and `ctest` commands work unchanged.
 Build the RP2040-Zero image:
 
 ```sh
+export PICO_SDK_PATH="$HOME/sdk/pico-sdk-2.3.1"
 cmake --preset waveshare-rp2040-zero-debug
 cmake --build --preset waveshare-rp2040-zero-debug
 ```

@@ -180,13 +180,21 @@ must be designed and tested explicitly.
 
 ## Stage 3: native USB CDC debug console
 
+Implementation status: in progress. The bounded board-owned console and its
+host regression tests are implemented. The failed project-owned USB controller
+has been removed and replaced with pinned Pico SDK 2.3.1 TinyUSB CDC support.
+Firmware builds successfully; enumeration, reconnect, concurrent-load, and
+cross-platform hardware validation remain outstanding.
+
 ### Work
 
-- Implement the minimum project-owned USB device-controller support required
-  for one CDC ACM interface, or document and approve a narrowly scoped imported
-  USB component with pinned source, version, licence, modifications, and update
-  procedure.
-- Do not introduce the Raspberry Pi Pico SDK runtime into the application.
+- Use the pinned Raspberry Pi Pico SDK and its maintained TinyUSB device stack
+  for one CDC ACM interface. Link only the components required by this board
+  firmware and record their source, version, licence, configuration, local
+  modifications, and update procedure.
+- Keep Pico SDK and TinyUSB headers and types inside the RP2040 SoC and
+  Waveshare board layers. The portable library and its public interfaces remain
+  independent of both dependencies.
 - Keep USB endpoint interrupt work bounded; transfer console bytes through
   static queues to supervisor context.
 - Provide line editing with fixed buffers and explicit truncation behaviour.
@@ -223,6 +231,30 @@ reboot
 - Flooded debug output cannot block the supervisor or flow execution; excess
   diagnostics are dropped with a visible counter.
 - Invalid and overlong commands cannot escape fixed buffers.
+
+### Current implementation evidence
+
+- Pico SDK 2.3.1 now supplies startup, clocks, RP2040 peripheral support, and
+  TinyUSB CDC. The custom failed USB controller has been removed. A clean build
+  produces ELF, map, BIN, and UF2 artifacts without downloading dependencies.
+- The board-owned console provides the planned commands, fixed 80-byte line
+  editing, backspace handling, and deterministic discard/recovery for overlong
+  input. Unsupported GPIO resources are reported until Stage 4 assigns logical
+  resources.
+- Responses use `OK`/`ERR` records and asynchronous diagnostics use `LOG`
+  records. Output never waits for the host; full transmit storage drops bytes
+  and increments the visible `usb-tx-dropped` counter reported by `queues`.
+- Flow start requires the currently active RAM image to pass the same image
+  validator used by UART activation. `flow erase-staging` clears and aborts the
+  UART transport's single staging slot rather than introducing another update
+  path.
+- `microflow-console-test` covers command dispatch, numeric GPIO arguments,
+  invalid commands, reboot dispatch, and overlong-line recovery.
+- Verified commands: `cmake --build --preset host-debug && ctest --preset
+  host-debug` and `cmake --build --preset waveshare-rp2040-zero-debug`.
+- Current firmware compile measurement: 12,752 bytes text, 0 bytes initialized
+  data, and 5,896 bytes BSS with GNU Arm Embedded 13.2.1. This is compile
+  evidence, not proof of enumeration or USB electrical behavior.
 
 ## Stage 4: board hardware interface
 

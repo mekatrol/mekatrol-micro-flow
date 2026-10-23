@@ -2,6 +2,40 @@
 
 set -eu
 
+PICO_SDK_REQUIRED_VERSION=2.3.1
+
+prepare_pico_sdk()
+{
+    if [ -n "${PICO_SDK_PATH:-}" ]; then
+        if [ -f "$PICO_SDK_PATH/pico_sdk_init.cmake" ]; then
+            printf 'Using Pico SDK: %s\n' "$PICO_SDK_PATH"
+            return 0
+        fi
+        printf 'PICO_SDK_PATH does not contain pico_sdk_init.cmake: %s\n' \
+            "$PICO_SDK_PATH" >&2
+        return 1
+    fi
+
+    for sdk_path in \
+        "$HOME/.pico-sdk/sdk/$PICO_SDK_REQUIRED_VERSION" \
+        "$HOME/sdk/pico-sdk-$PICO_SDK_REQUIRED_VERSION"
+    do
+        if [ -f "$sdk_path/pico_sdk_init.cmake" ]; then
+            PICO_SDK_PATH=$sdk_path
+            export PICO_SDK_PATH
+            printf 'Using discovered Pico SDK: %s\n' "$PICO_SDK_PATH"
+            return 0
+        fi
+    done
+
+    printf 'Required Pico SDK %s was not found.\n' "$PICO_SDK_REQUIRED_VERSION" >&2
+    printf 'The VS Code extension is installed, but its SDK payload is not present at:\n' >&2
+    printf '  %s\n' "$HOME/.pico-sdk/sdk/$PICO_SDK_REQUIRED_VERSION" >&2
+    printf 'Install SDK %s using "Raspberry Pi Pico: New Pico Project", or follow PROJECT_SETUP.md.\n' \
+        "$PICO_SDK_REQUIRED_VERSION" >&2
+    return 1
+}
+
 add_installed_tool_to_path()
 {
     tool_name=$1
@@ -51,6 +85,7 @@ prepare_build_tools()
 
     case "$1" in
         waveshare-rp2040-zero-debug)
+            prepare_pico_sdk
             add_installed_tool_to_path arm-none-eabi-gcc
             ;;
         raspberry-pi-pico-2-arm-debug)
