@@ -161,6 +161,10 @@ void microflow_rp2040_ws2812_write(
 /* Timing                                                                      */
 /* -------------------------------------------------------------------------- */
 
+uint32_t microflow_rp2040_monotonic_microseconds(void) {
+    return RP2040_TIMER_TIMERAWL;
+}
+
 void microflow_rp2040_delay_ms(uint32_t milliseconds) {
     while (milliseconds != 0U) {
         const uint32_t start = RP2040_TIMER_TIMERAWL;

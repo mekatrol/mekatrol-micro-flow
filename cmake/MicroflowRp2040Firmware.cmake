@@ -30,6 +30,19 @@ function(microflow_add_rp2040_firmware target board_name)
         "${soc_dir}/rp2040.c"
         "${boot2_padded}"
     )
+    # Cortex-M0+ has no hardware divider. Resolve circular references between
+    # static project libraries and compiler-provided arithmetic helpers while
+    # the firmware otherwise remains freestanding.
+    set_property(
+        TARGET ${target}
+        PROPERTY LINK_LIBRARIES
+            "-Wl,--start-group"
+            Microflow::core
+            Microflow::blocks
+            Microflow::runtime
+            gcc
+            "-Wl,--end-group"
+    )
     target_include_directories(${target} PRIVATE "${soc_dir}")
     target_compile_options(
         ${target} PRIVATE -mcpu=cortex-m0plus -mthumb -O2 -ffreestanding

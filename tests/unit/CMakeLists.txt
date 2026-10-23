@@ -6,9 +6,17 @@ microflow_enable_sanitizers(microflow-version-test)
 
 add_test(NAME microflow.version COMMAND microflow-version-test)
 
+add_executable(microflow-scheduler-test scheduler_test.c)
+target_link_libraries(microflow-scheduler-test PRIVATE Microflow::runtime)
+
+microflow_set_warnings(microflow-scheduler-test)
+microflow_enable_sanitizers(microflow-scheduler-test)
+
+add_test(NAME microflow.scheduler COMMAND microflow-scheduler-test)
+
 if(MICROFLOW_ENABLE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set_tests_properties(
-        microflow.version
+        microflow.version microflow.scheduler
         PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0"
     )
 endif()

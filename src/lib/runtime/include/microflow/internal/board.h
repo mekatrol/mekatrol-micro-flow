@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 void microflow_board_initialize(void);
+uint32_t microflow_board_monotonic_ticks(void);
 void microflow_board_status_rgb(uint8_t red, uint8_t green, uint8_t blue);
 void microflow_board_delay_ms(uint32_t milliseconds);
 
