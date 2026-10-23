@@ -2,8 +2,12 @@
   "C_Cpp.default.cStandard": "c11",
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/host-debug/compile_commands.json",
   "C_Cpp.default.includePath": [
-    "${workspaceFolder}/include",
-    "${workspaceFolder}/src/runtime/include"
+    "${workspaceFolder}/src/lib/include",
+    "${workspaceFolder}/src/lib/runtime/include",
+    "${workspaceFolder}/src/boards/rpi/common",
+    "${workspaceFolder}/src/boards/esp32/common",
+    "${workspaceFolder}/src/boards/esp32/waveshare-esp32-c6-zero",
+    "${workspaceFolder}/src/boards/esp32/waveshare-esp32-s3-zero"
   ],
   "C_Cpp.intelliSenseEngine": "disabled",
   "clangd.arguments": [
@@ -12,8 +16,12 @@
   "clangd.fallbackFlags": [
     "-xc",
     "-std=c11",
-    "-Iinclude",
-    "-Isrc/runtime/include"
+    "-Isrc/lib/include",
+    "-Isrc/lib/runtime/include",
+    "-Isrc/boards/rpi/common",
+    "-Isrc/boards/esp32/common",
+    "-Isrc/boards/esp32/waveshare-esp32-c6-zero",
+    "-Isrc/boards/esp32/waveshare-esp32-s3-zero"
   ],
   "editor.semanticHighlighting.enabled": true,
   "cmake.configureOnOpen": true,

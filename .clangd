@@ -1,0 +1,8 @@
+CompileFlags:
+  Add:
+    - -I../../src/lib/include
+    - -I../../src/lib/runtime/include
+    - -I../../src/boards/rpi/common
+    - -I../../src/boards/esp32/common
+    - -I../../src/boards/esp32/waveshare-esp32-c6-zero
+    - -I../../src/boards/esp32/waveshare-esp32-s3-zero
