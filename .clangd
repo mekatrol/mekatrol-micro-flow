@@ -1,5 +1,6 @@
 CompileFlags:
   Add:
+    - -Wno-empty-translation-unit
     - -I../../src/lib/include
     - -I../../src/lib/runtime/include
     - -I../../src/boards/rpi/common
