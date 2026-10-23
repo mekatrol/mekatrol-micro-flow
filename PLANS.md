@@ -143,6 +143,12 @@ engine changes.
 
 Status: Not started
 
+The focused Waveshare RP2040 Zero supervisor, UART upload, native USB console,
+and logical-I/O bring-up that precedes this phase is specified in
+[`docs/WAVESHARE_RP2040_ZERO_SUPERVISOR_PLAN.md`](docs/WAVESHARE_RP2040_ZERO_SUPERVISOR_PLAN.md).
+Completing that plan provides implementation evidence for this phase but does
+not by itself satisfy the Raspberry Pi Pico exit criterion below.
+
 1. Boot Pico into `microflow_device_main()`.
 2. Bring up polling diagnostics, monotonic time, GPIO, reset, and watchdog.
 3. Execute a timer-to-digital-output flow.
