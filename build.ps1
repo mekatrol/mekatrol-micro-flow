@@ -6,147 +6,41 @@ param(
 $availableTargets = @(
     'host-debug',
     'host-release',
-    'waveshare-rp2040-zero-debug',
-    'raspberry-pi-pico-2-arm-debug',
-    'raspberry-pi-pico-2-riscv-debug',
-    'waveshare-esp32-c6-zero-debug',
-    'waveshare-esp32-s3-zero-debug'
+    'pico-debug',
+    'pico2-arm-debug',
+    'pico2-riscv-debug'
 )
-
-$picoSdkRequiredVersion = '2.3.1'
 
 function Initialize-PicoSdk {
     if (-not [string]::IsNullOrWhiteSpace($env:PICO_SDK_PATH)) {
-        $sdkInit = Join-Path $env:PICO_SDK_PATH 'pico_sdk_init.cmake'
-        if (Test-Path -LiteralPath $sdkInit -PathType Leaf) {
-            Write-Host "Using Pico SDK: $env:PICO_SDK_PATH"
-            return $true
-        }
-
-        Write-Error "PICO_SDK_PATH does not contain pico_sdk_init.cmake: $env:PICO_SDK_PATH"
-        return $false
-    }
-
-    $sdkCandidates = @()
-    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
-        $sdkCandidates += Join-Path $env:USERPROFILE ".pico-sdk\sdk\$picoSdkRequiredVersion"
-        $sdkCandidates += Join-Path $env:USERPROFILE "sdk\pico-sdk-$picoSdkRequiredVersion"
-    }
-
-    foreach ($sdkPath in $sdkCandidates) {
-        $sdkInit = Join-Path $sdkPath 'pico_sdk_init.cmake'
-        if (Test-Path -LiteralPath $sdkInit -PathType Leaf) {
-            $env:PICO_SDK_PATH = $sdkPath
-            Write-Host "Using discovered Pico SDK: $env:PICO_SDK_PATH"
-            return $true
-        }
-    }
-
-    Write-Error "Required Pico SDK $picoSdkRequiredVersion was not found. Install it with the Raspberry Pi Pico VS Code extension or follow PROJECT_SETUP.md."
-    return $false
-}
-
-function Add-InstalledToolToPath {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Command,
-
-        [switch]$PreferDiscovered
-    )
-
-    if (-not $PreferDiscovered -and
-        (Get-Command $Command -CommandType Application -ErrorAction SilentlyContinue)) {
-        return $true
-    }
-
-    $searchRoots = @()
-    if (-not [string]::IsNullOrWhiteSpace($env:IDF_TOOLS_PATH)) {
-        $searchRoots += $env:IDF_TOOLS_PATH
-        $searchRoots += Join-Path $env:IDF_TOOLS_PATH 'tools'
+        $import = Join-Path $env:PICO_SDK_PATH 'external\pico_sdk_import.cmake'
+        if (Test-Path -LiteralPath $import -PathType Leaf) { return $true }
     }
     if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
-        $searchRoots += Join-Path $env:USERPROFILE '.espressif\tools'
-        $searchRoots += Join-Path $env:USERPROFILE '.pico-sdk'
-        $searchRoots += Join-Path $env:USERPROFILE '.mcuxpressotools'
-        $searchRoots += Join-Path $env:USERPROFILE '.local\bin'
-        $searchRoots += Join-Path $env:USERPROFILE 'tools'
-    }
-    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-        $searchRoots += Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'
-    }
-
-    $candidateNames = @($Command, "$Command.exe", "$Command.cmd", "$Command.ps1", "$Command.py")
-    foreach ($searchRoot in ($searchRoots | Select-Object -Unique)) {
-        if (-not (Test-Path -LiteralPath $searchRoot -PathType Container)) {
-            continue
-        }
-
-        $tool = Get-ChildItem -LiteralPath $searchRoot -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -in $candidateNames } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-        if ($null -ne $tool) {
-            $env:Path = "$($tool.DirectoryName)$([IO.Path]::PathSeparator)$env:Path"
-            Write-Host "Using discovered ${Command}: $($tool.FullName)"
-            return $true
+        foreach ($candidate in @(
+            (Join-Path $env:USERPROFILE '.pico-sdk\sdk\2.3.1'),
+            (Join-Path $env:USERPROFILE 'sdk\pico-sdk-2.3.1'))) {
+            $import = Join-Path $candidate 'external\pico_sdk_import.cmake'
+            if (Test-Path -LiteralPath $import -PathType Leaf) {
+                $env:PICO_SDK_PATH = $candidate
+                Write-Host "Using Pico SDK: $candidate"
+                return $true
+            }
         }
     }
-
-    if (Get-Command $Command -CommandType Application -ErrorAction SilentlyContinue) {
-        return $true
-    }
-
-    Write-Error "Required tool not found: $Command. Install it or add its directory to PATH, then try again."
+    Write-Error 'Pico SDK 2.3.1 not found; set PICO_SDK_PATH.'
     return $false
-}
-
-function Initialize-BuildTools {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$BuildTarget
-    )
-
-    if (-not (Add-InstalledToolToPath 'ninja')) {
-        return $false
-    }
-
-    switch ($BuildTarget) {
-        'waveshare-rp2040-zero-debug' {
-            if (-not (Initialize-PicoSdk)) { return $false }
-            if (-not (Add-InstalledToolToPath 'arm-none-eabi-gcc')) { return $false }
-        }
-        'raspberry-pi-pico-2-arm-debug' {
-            if (-not (Add-InstalledToolToPath 'arm-none-eabi-gcc')) { return $false }
-        }
-        'raspberry-pi-pico-2-riscv-debug' {
-            if (-not (Add-InstalledToolToPath 'riscv32-unknown-elf-gcc')) { return $false }
-        }
-        'waveshare-esp32-c6-zero-debug' {
-            if (-not (Add-InstalledToolToPath 'riscv32-esp-elf-gcc')) { return $false }
-            if (-not (Add-InstalledToolToPath 'esptool' -PreferDiscovered)) { return $false }
-        }
-        'waveshare-esp32-s3-zero-debug' {
-            if (-not (Add-InstalledToolToPath 'xtensa-esp32s3-elf-gcc')) { return $false }
-            if (-not (Add-InstalledToolToPath 'esptool' -PreferDiscovered)) { return $false }
-        }
-    }
-
-    return $true
 }
 
 function Show-Usage {
     Write-Host 'Usage: .\build.ps1 <target>'
     Write-Host ''
-    Write-Host 'Deletes the build directory, configures the selected target, and builds it.'
+    Write-Host 'Deletes build/, configures the selected target, and builds it.'
     Write-Host ''
     Write-Host 'Available targets:'
-    Write-Host '  host-debug    Debug build with tests and supported sanitizers'
-    Write-Host '  host-release  Optimized release build with tests'
-    Write-Host '  waveshare-rp2040-zero-debug  RP2040-Zero LED firmware'
-    Write-Host '  raspberry-pi-pico-2-arm-debug  RP2350 Cortex-M33 compile target'
-    Write-Host '  raspberry-pi-pico-2-riscv-debug  RP2350 Hazard3 RISC-V compile target'
-    Write-Host '  waveshare-esp32-c6-zero-debug  ESP32-C6-Zero LED firmware'
-    Write-Host '  waveshare-esp32-s3-zero-debug  ESP32-S3-Zero LED firmware'
+    foreach ($name in $availableTargets) {
+        Write-Host "  $name"
+    }
 }
 
 if (($args.Count -ne 0) -or ([string]::IsNullOrWhiteSpace($Target)) -or
@@ -156,31 +50,38 @@ if (($args.Count -ne 0) -or ([string]::IsNullOrWhiteSpace($Target)) -or
         Write-Error "Unknown target: $Target" -ErrorAction Continue
         Write-Host ''
     }
-
     Show-Usage
     exit 2
 }
 
-Push-Location $PSScriptRoot
-try {
-    if (-not (Initialize-BuildTools $Target)) {
+$requiredCompiler = switch ($Target) {
+    { $_ -in 'pico-debug', 'pico2-arm-debug' } { 'arm-none-eabi-gcc' }
+    'pico2-riscv-debug' { 'riscv32-unknown-elf-gcc' }
+    default { $null }
+}
+
+$requiredTools = @('cmake', 'ninja')
+if ($null -ne $requiredCompiler) {
+    $requiredTools += $requiredCompiler
+}
+foreach ($tool in $requiredTools) {
+    if (-not (Get-Command $tool -CommandType Application -ErrorAction SilentlyContinue)) {
+        Write-Error "Required tool not found: $tool"
         exit 1
     }
+}
+if (($Target -eq 'pico-debug') -and (-not (Initialize-PicoSdk))) {
+    exit 1
+}
 
+Push-Location $PSScriptRoot
+try {
     & cmake -E remove_directory (Join-Path $PSScriptRoot 'build')
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
-
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & cmake --preset $Target
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
-
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & cmake --build --preset $Target
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 finally {
     Pop-Location

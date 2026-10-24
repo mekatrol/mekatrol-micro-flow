@@ -1,10 +1,6 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 25,
-    "patch": 0
-  },
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
   "configurePresets": [
     {
       "name": "host-base",
@@ -33,119 +29,50 @@
       }
     },
     {
-      "name": "waveshare-rp2040-zero-debug",
+      "name": "pico-base",
+      "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "MICROFLOW_BOARD": "waveshare-rp2040-zero",
         "MICROFLOW_BUILD_TESTS": "OFF"
       }
     },
     {
-      "name": "raspberry-pi-pico-debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
+      "name": "pico-debug",
+      "inherits": "pico-base",
+      "cacheVariables": { "MICROFLOW_BOARD": "raspberry-pi-pico" }
+    },
+    {
+      "name": "pico2-arm-debug",
+      "inherits": "pico-base",
       "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "MICROFLOW_BOARD": "raspberry-pi-pico",
-        "MICROFLOW_BUILD_TESTS": "OFF"
-      }
+      "cacheVariables": { "MICROFLOW_BOARD": "raspberry-pi-pico-2-arm" }
     },
     {
-      "name": "raspberry-pi-pico-2-arm-debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "MICROFLOW_BOARD": "raspberry-pi-pico-2-arm",
-        "MICROFLOW_BUILD_TESTS": "OFF"
-      }
-    },
-    {
-      "name": "raspberry-pi-pico-2-riscv-debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
+      "name": "pico2-riscv-debug",
+      "inherits": "pico-base",
       "toolchainFile": "${sourceDir}/cmake/toolchains/riscv32-unknown-elf-gcc.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "MICROFLOW_BOARD": "raspberry-pi-pico-2-riscv",
-        "MICROFLOW_BUILD_TESTS": "OFF"
-      }
-    },
-    {
-      "name": "waveshare-esp32-c6-zero-debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/riscv32-esp-elf-gcc.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "MICROFLOW_BOARD": "waveshare-esp32-c6-zero",
-        "MICROFLOW_BUILD_TESTS": "OFF"
-      }
-    },
-    {
-      "name": "waveshare-esp32-s3-zero-debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "${sourceDir}/cmake/toolchains/xtensa-esp32s3-elf-gcc.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "MICROFLOW_BOARD": "waveshare-esp32-s3-zero",
-        "MICROFLOW_BUILD_TESTS": "OFF"
-      }
+      "cacheVariables": { "MICROFLOW_BOARD": "raspberry-pi-pico-2-riscv" }
     }
   ],
   "buildPresets": [
-    {
-      "name": "host-debug",
-      "configurePreset": "host-debug"
-    },
-    {
-      "name": "host-release",
-      "configurePreset": "host-release"
-    },
-    {
-      "name": "waveshare-rp2040-zero-debug",
-      "configurePreset": "waveshare-rp2040-zero-debug"
-    },
-    {
-      "name": "raspberry-pi-pico-debug",
-      "configurePreset": "raspberry-pi-pico-debug"
-    },
-    {
-      "name": "raspberry-pi-pico-2-arm-debug",
-      "configurePreset": "raspberry-pi-pico-2-arm-debug"
-    },
-    {
-      "name": "raspberry-pi-pico-2-riscv-debug",
-      "configurePreset": "raspberry-pi-pico-2-riscv-debug"
-    },
-    {
-      "name": "waveshare-esp32-c6-zero-debug",
-      "configurePreset": "waveshare-esp32-c6-zero-debug"
-    },
-    {
-      "name": "waveshare-esp32-s3-zero-debug",
-      "configurePreset": "waveshare-esp32-s3-zero-debug"
-    }
+    { "name": "host-debug", "configurePreset": "host-debug" },
+    { "name": "host-release", "configurePreset": "host-release" },
+    { "name": "pico-debug", "configurePreset": "pico-debug" },
+    { "name": "pico2-arm-debug", "configurePreset": "pico2-arm-debug" },
+    { "name": "pico2-riscv-debug", "configurePreset": "pico2-riscv-debug" }
   ],
   "testPresets": [
     {
       "name": "host-debug",
       "configurePreset": "host-debug",
-      "output": {
-        "outputOnFailure": true
-      }
+      "output": { "outputOnFailure": true }
     },
     {
       "name": "host-release",
       "configurePreset": "host-release",
-      "output": {
-        "outputOnFailure": true
-      }
+      "output": { "outputOnFailure": true }
     }
   ]
 }

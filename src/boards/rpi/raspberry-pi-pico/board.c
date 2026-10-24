@@ -1,12 +1,18 @@
 #include <microflow/internal/board.h>
 
-#include "rp2040.h"
+#include "rp2040_sdk.h"
+
+#include <stdbool.h>
 
 #define RASPBERRY_PI_PICO_STATUS_LED_PIN 25U
 
 void microflow_board_initialize(void) {
   microflow_rp2040_initialize();
   microflow_rp2040_gpio_output_initialize(RASPBERRY_PI_PICO_STATUS_LED_PIN);
+}
+
+uint32_t microflow_board_monotonic_ticks(void) {
+  return microflow_rp2040_monotonic_microseconds();
 }
 
 void microflow_board_status_rgb(uint8_t red, uint8_t green, uint8_t blue) {

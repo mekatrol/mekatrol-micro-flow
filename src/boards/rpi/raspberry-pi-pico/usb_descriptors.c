@@ -28,7 +28,7 @@ static const uint8_t configuration_descriptor[] = {
     TUD_CDC_DESCRIPTOR(0, 4, 0x81, 8, 0x02, 0x82, 64)};
 
 static const char *const string_descriptors[] = {
-    "", "Mekatrol", "Micro Flow RP2040 Zero", "0001", "Micro Flow Console"};
+    "", "Mekatrol", "Micro Flow Raspberry Pi Pico", "0001", "Micro Flow Console"};
 static uint16_t string_descriptor[32];
 
 const uint8_t *tud_descriptor_device_cb(void) {

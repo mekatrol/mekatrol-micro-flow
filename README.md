@@ -22,20 +22,16 @@ Designed for portability, efficiency, and minimal hardware dependencies, Mekatro
 
 ## Supported Platforms
 
-Mekatrol Micro Flow is intended to support a wide range of embedded platforms.
+Mekatrol Micro Flow deliberately maintains a small hardware target matrix.
 
 | Platform | Architecture | Target |
 |---|---|---|
-| Raspberry Pi Pico / Pico W | ARM Cortex-M0+ (RP2040) | Planned |
-| Raspberry Pi Pico 2 / Pico 2 W | ARM Cortex-M33 / RISC-V (RP2350) | Planned |
-| ESP32 | Xtensa / RISC-V | Planned |
-| CH32V003 | RISC-V | Planned |
-| STM32 | ARM Cortex-M | Planned |
-| Generic Embedded Systems | Platform-dependent | Planned |
+| Raspberry Pi Pico | ARM Cortex-M0+ (RP2040) | Partial firmware target |
+| Raspberry Pi Pico 2 | ARM Cortex-M33 (RP2350) | Experimental compile target |
+| Raspberry Pi Pico 2 | Hazard3 RISC-V (RP2350) | Experimental compile target |
+| Host | Platform-dependent | Regression target |
 
-Initial partial firmware builds are available for the Waveshare RP2040-Zero,
-ESP32-C6-Zero, and ESP32-S3-Zero. They compile a standalone onboard RGB LED
-test but have not yet completed hardware conformance. See
+Pico 2 retains separate Arm and RISC-V builds. See
 [PROJECT_SETUP.md](PROJECT_SETUP.md) to prepare a clean machine and
 [BUILD.md](BUILD.md) for preset names and artifacts, and [TEST.md](TEST.md) for
 the test suite and hardware-test caveat.

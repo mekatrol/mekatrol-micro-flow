@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Probe or upload an in-RAM flow to the Waveshare RP2040 Zero supervisor."""
+"""Probe or upload an in-RAM flow to the Raspberry Pi Pico supervisor."""
 
 import argparse
 import binascii
