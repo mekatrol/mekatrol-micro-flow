@@ -258,6 +258,13 @@ reboot
 
 ## Stage 4: board hardware interface
 
+Implementation status: complete in source for the initial GPIO map. Host
+regression and firmware-build verification cover resource validation and safe
+state transitions. Electrical GPIO tests and the WS2812/UART/USB interference
+measurement remain physical-hardware activities. Executing GPIO from a flow
+also remains blocked on the portable serialized-flow and capability contracts;
+the current `MFFL` payload is intentionally opaque.
+
 ### Work
 
 - Define board-local logical resources independently of RP2040 pin numbers.
@@ -279,7 +286,36 @@ reboot
   cause unacceptable communication latency.
 - GPIO capability rejection and reset-to-safe-state behaviour are tested.
 
+### Current implementation evidence
+
+- Board-local logical GPIO resources 0 through 3 map to GPIO2 through GPIO5.
+  The physical mapping is private to the board layer. GPIO0/GPIO1 (UART0),
+  GPIO16 (status WS2812), USB, flash, and debug resources are not in the map.
+- GPIO direction, read, write, and safe-state operations use a board-owned
+  adapter over the RP2040 SoC driver. Output configuration latches low before
+  enabling drive. Writes to an input and access to nonexistent resources fail.
+- Startup and `flow stop` return every general-purpose logical resource to an
+  unpulled input with a low output latch. The status LED remains a separate
+  board-owned logical indicator rather than an ordinary GPIO resource.
+- The USB console lists and operates the same logical-resource adapter; it does
+  not accept physical RP2040 pin numbers.
+- `microflow-board-gpio-test` covers mapping, unsupported resources, direction
+  enforcement, reads/writes, and reset-to-safe-state behavior.
+- Verified commands: host debug and release build/test, plus
+  `cmake --build --preset waveshare-rp2040-zero-debug`.
+- Current debug compile measurement with Pico SDK/TinyUSB debug enabled:
+  45,956 bytes flash text, 0 bytes initialized data, and 9,448 bytes BSS (GNU
+  Arm Embedded 13.2.1). The firmware build now reports and enforces the board's
+  2 MiB flash and 264 KiB SRAM limits. This is compile evidence, not electrical
+  or timing validation.
+
 ## Stage 5: integrated demonstration and measurements
+
+Implementation status: partially instrumented. Queue high-water/drop counters,
+per-service dispatch counts and maximum observed runtime, supervisor heartbeat,
+watchdog service count, and build-time flash/static-RAM limits are observable.
+Stack high-water instrumentation and all latency, throughput, jitter, reset,
+and soak measurements still require implementation or physical hardware.
 
 ### Demonstration
 

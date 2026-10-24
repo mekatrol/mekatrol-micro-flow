@@ -1,11 +1,13 @@
 set(board_dir "${PROJECT_SOURCE_DIR}/src/boards/rpi/waveshare-rp2040-zero")
 set(soc_dir "${PROJECT_SOURCE_DIR}/src/boards/rpi/rp2040")
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_program(MICROFLOW_SIZE_TOOL arm-none-eabi-size REQUIRED)
 
 add_executable(
     microflow-waveshare-rp2040-zero
     "${board_dir}/main.c"
     "${board_dir}/board_sdk.c"
+    "${board_dir}/board_gpio.c"
     "${board_dir}/supervisor.c"
     "${board_dir}/upload_transport.c"
     "${board_dir}/console.c"
@@ -57,6 +59,11 @@ add_custom_command(
             "$<TARGET_FILE:microflow-waveshare-rp2040-zero>" "${firmware_binary}"
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/bin_to_uf2.py"
             "${firmware_binary}" "${firmware_uf2}"
-    COMMAND "${CMAKE_SIZE}" "$<TARGET_FILE:microflow-waveshare-rp2040-zero>"
+    COMMAND "${MICROFLOW_SIZE_TOOL}" "$<TARGET_FILE:microflow-waveshare-rp2040-zero>"
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/check_elf_size.py"
+            --size-tool "${MICROFLOW_SIZE_TOOL}"
+            --elf "$<TARGET_FILE:microflow-waveshare-rp2040-zero>"
+            --flash-limit 2097152
+            --ram-limit 270336
     VERBATIM
 )

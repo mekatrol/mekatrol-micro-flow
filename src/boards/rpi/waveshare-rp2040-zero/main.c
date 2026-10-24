@@ -1,6 +1,7 @@
 #include <microflow/internal/board.h>
 #include "rp2040_sdk.h"
 #include "rp2040_usb_cdc_sdk.h"
+#include "board_gpio.h"
 #include "supervisor.h"
 #include "upload_transport.h"
 #include "console.h"
@@ -30,6 +31,7 @@ static uint8_t usb_driver_receive[USB_QUEUE_CAPACITY];
 static uint8_t usb_driver_transmit[USB_QUEUE_CAPACITY];
 static microflow_byte_ring_t console_receive;
 static microflow_console_t console;
+static microflow_board_gpio_t board_gpio;
 
 static bool validate_flow(void *context, const uint8_t *image, size_t length);
 
@@ -57,11 +59,22 @@ static void console_status(void *context) {
 }
 static void console_tasks(void *context) {
   (void)context; usb_write_text("OK services="); usb_write_u32((uint32_t)supervisor.service_count);
-  usb_write_text(" heartbeat="); usb_write_u32(supervisor.heartbeat); usb_write_text("\r\n");
+  usb_write_text(" heartbeat="); usb_write_u32(supervisor.heartbeat);
+  usb_write_text(" watchdog="); usb_write_u32(supervisor.watchdog_service_count);
+  for (size_t index = 0U; index < supervisor.service_count; ++index) {
+    usb_write_text(" s"); usb_write_u32((uint32_t)index);
+    usb_write_text("-runs=");
+    usb_write_u32(supervisor.services[index].dispatch_count);
+    usb_write_text("-max-us=");
+    usb_write_u32(supervisor.services[index].observed_maximum_runtime);
+  }
+  usb_write_text("\r\n");
 }
 static void console_queues(void *context) {
   (void)context; usb_write_text("OK uart-rx-high="); usb_write_u32(uart_receive.high_water);
   usb_write_text(" uart-tx-high="); usb_write_u32(uart_transmit.high_water);
+  usb_write_text(" uart-rx-dropped="); usb_write_u32(uart_receive.rejected);
+  usb_write_text(" uart-tx-dropped="); usb_write_u32(uart_transmit.rejected);
   usb_write_text(" usb-rx-high="); usb_write_u32(usb_cdc.receive_high_water);
   usb_write_text(" usb-tx-high="); usb_write_u32(usb_cdc.transmit_high_water);
   usb_write_text(" usb-rx-dropped="); usb_write_u32(usb_cdc.receive_dropped);
@@ -78,14 +91,28 @@ static bool console_flow_validate(void *context) {
 static bool console_flow_start(void *context) {
   (void)context; if (!console_flow_validate(NULL)) return false; flow_running = true; return true;
 }
-static bool console_flow_stop(void *context) { (void)context; flow_running = false; return true; }
+static bool console_flow_stop(void *context) {
+  (void)context;
+  flow_running = false;
+  microflow_board_gpio_reset_safe(&board_gpio);
+  return true;
+}
 static void console_flow_erase(void *context) { (void)context; microflow_upload_transport_erase_staging(&upload_transport); }
-static void console_gpio_list(void *context) { (void)context; usb_write_text("OK none (Stage 4)\r\n"); }
+static void console_gpio_list(void *context) {
+  (void)context;
+  usb_write_text("OK 0 1 2 3 status-led\r\n");
+}
 static bool console_gpio_read(void *context, uint32_t resource, bool *value) {
-  (void)context; (void)resource; (void)value; return false;
+  (void)context;
+  return microflow_board_gpio_read(&board_gpio, resource, value);
 }
 static bool console_gpio_write(void *context, uint32_t resource, bool value) {
-  (void)context; (void)resource; (void)value; return false;
+  (void)context;
+  if (!microflow_board_gpio_configure(
+          &board_gpio, resource, MICROFLOW_BOARD_GPIO_OUTPUT)) {
+    return false;
+  }
+  return microflow_board_gpio_write(&board_gpio, resource, value);
 }
 static void console_reboot(void *context) { (void)context; microflow_rp2040_reboot(); }
 static const microflow_console_operations_t console_operations = {
@@ -96,6 +123,29 @@ static const microflow_console_operations_t console_operations = {
     .flow_stop = console_flow_stop, .flow_erase_staging = console_flow_erase,
     .gpio_list = console_gpio_list, .gpio_read = console_gpio_read,
     .gpio_write = console_gpio_write, .reboot = console_reboot};
+
+static void board_gpio_configure(
+    void *context, uint32_t pin, microflow_board_gpio_direction_t direction) {
+  (void)context;
+  if (direction == MICROFLOW_BOARD_GPIO_OUTPUT) {
+    microflow_rp2040_gpio_output_initialize(pin);
+  } else {
+    microflow_rp2040_gpio_input_initialize(pin);
+  }
+}
+static bool board_gpio_read_pin(void *context, uint32_t pin) {
+  (void)context;
+  return microflow_rp2040_gpio_read(pin);
+}
+static void board_gpio_write_pin(void *context, uint32_t pin, bool value) {
+  (void)context;
+  microflow_rp2040_gpio_write(pin, value);
+}
+static const microflow_board_gpio_driver_t board_gpio_driver = {
+    .context = NULL,
+    .configure = board_gpio_configure,
+    .read = board_gpio_read_pin,
+    .write = board_gpio_write_pin};
 
 static uint32_t image_u32(const uint8_t *p) {
   return (uint32_t)p[0] | ((uint32_t)p[1] << 8U) | ((uint32_t)p[2] << 16U) |
@@ -178,6 +228,7 @@ void microflow_rp2040_usb_event(void) {
 
 int main(void) {
   microflow_board_initialize();
+  microflow_board_gpio_initialize(&board_gpio, &board_gpio_driver);
   microflow_byte_ring_initialize(&uart_receive);
   microflow_byte_ring_initialize(&uart_transmit);
   microflow_byte_ring_initialize(&console_receive);

@@ -43,9 +43,18 @@ microflow_set_warnings(microflow-console-test)
 microflow_enable_sanitizers(microflow-console-test)
 add_test(NAME microflow.console COMMAND microflow-console-test)
 
+add_executable(microflow-board-gpio-test
+    board_gpio_test.c
+    ${PROJECT_SOURCE_DIR}/src/boards/rpi/waveshare-rp2040-zero/board_gpio.c)
+target_include_directories(microflow-board-gpio-test PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/boards/rpi/waveshare-rp2040-zero)
+microflow_set_warnings(microflow-board-gpio-test)
+microflow_enable_sanitizers(microflow-board-gpio-test)
+add_test(NAME microflow.board-gpio COMMAND microflow-board-gpio-test)
+
 if(MICROFLOW_ENABLE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set_tests_properties(
-        microflow.version microflow.scheduler microflow.supervisor microflow.upload-transport microflow.console
+        microflow.version microflow.scheduler microflow.supervisor microflow.upload-transport microflow.console microflow.board-gpio
         PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0"
     )
 endif()

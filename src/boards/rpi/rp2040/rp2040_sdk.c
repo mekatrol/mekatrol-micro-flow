@@ -34,6 +34,14 @@ void microflow_rp2040_gpio_output_initialize(uint32_t pin) {
   gpio_set_dir(pin, GPIO_OUT);
 }
 
+void microflow_rp2040_gpio_input_initialize(uint32_t pin) {
+  gpio_init(pin);
+  gpio_disable_pulls(pin);
+  gpio_set_dir(pin, GPIO_IN);
+}
+
+bool microflow_rp2040_gpio_read(uint32_t pin) { return gpio_get(pin); }
+
 void microflow_rp2040_gpio_write(uint32_t pin, bool high) {
   gpio_put(pin, high);
 }

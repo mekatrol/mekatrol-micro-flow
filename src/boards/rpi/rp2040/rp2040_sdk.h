@@ -7,6 +7,8 @@
 void microflow_rp2040_initialize(void);
 uint32_t microflow_rp2040_monotonic_microseconds(void);
 void microflow_rp2040_gpio_output_initialize(uint32_t pin);
+void microflow_rp2040_gpio_input_initialize(uint32_t pin);
+bool microflow_rp2040_gpio_read(uint32_t pin);
 void microflow_rp2040_gpio_write(uint32_t pin, bool high);
 void microflow_rp2040_ws2812_initialize(uint32_t pin);
 void microflow_rp2040_ws2812_write(uint32_t pin, uint8_t red, uint8_t green,

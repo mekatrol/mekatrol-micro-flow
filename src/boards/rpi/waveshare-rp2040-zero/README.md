@@ -1,7 +1,8 @@
 # Waveshare RP2040 Zero
 
 This partial target implements the Stage 1 supervisor, Stage 2 UART upload,
-and the board-owned portion of the Stage 3 USB CDC console described in
+the board-owned portion of the Stage 3 USB CDC console, and the initial Stage 4
+logical GPIO adapter described in
 `docs/WAVESHARE_RP2040_ZERO_SUPERVISOR_PLAN.md`. It uses RP2040 Timer Alarm 0
 to wake the main-context supervisor, services the watchdog between dispatch
 passes, and sleeps with `WFI` while idle. GPIO16 remains the board-owned WS2812
@@ -30,8 +31,11 @@ Pico SDK 2.3.1 TinyUSB CDC device support behind the RP2040/board boundary.
 Hardware enumeration and soak-test evidence is still required before Stage 3
 is complete. Console lines remain bounded at 79 characters plus their
 terminator; command responses use `OK`/`ERR` records and asynchronous
-diagnostics use `LOG` records. GPIO commands intentionally report no resources
-until Stage 4 defines and validates the board's logical GPIO map.
+diagnostics use `LOG` records. Logical GPIO resources 0 through 3 map privately
+to GPIO2 through GPIO5. Console and future flow operations cannot address
+physical pins directly; UART GPIO0/GPIO1 and status-LED GPIO16 are reserved.
+General-purpose resources start as unpulled inputs and return to that safe state
+when a flow is stopped. The status WS2812 remains a separate logical indicator.
 
 Build with:
 
@@ -47,3 +51,8 @@ reset model. On-device UART upload, USB enumeration/reconnect across supported
 host systems, overflow, concurrent-load, extended-runtime, and repeated-reset
 evidence is still required before promoting this partial board target or
 claiming all stage exit criteria complete.
+
+The post-build size check reports flash and static RAM and fails above the
+RP2040's configured 2 MiB flash or 264 KiB SRAM limits. The `tasks` console
+command reports service dispatch/runtime maxima and watchdog servicing;
+`queues` reports UART and USB high-water/drop counters.
