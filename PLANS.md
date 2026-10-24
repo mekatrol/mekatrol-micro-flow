@@ -7,6 +7,7 @@ hardware-test, timing, and memory evidence as work is performed.
 
 - Host simulator and regression tests
 - Raspberry Pi Pico using RP2040
+- Waveshare RP2040-Zero compatibility variant using RP2040
 - Raspberry Pi Pico 2 using RP2350 Cortex-M33
 - Raspberry Pi Pico 2 using RP2350 Hazard3 RISC-V
 
@@ -47,6 +48,10 @@ changing it.
 
 Exit criterion: Pico passes hardware conformance and an extended runtime test
 without drift, memory growth, or watchdog failure.
+
+The Waveshare RP2040-Zero compatibility preset reuses this target while
+selecting its GPIO16 WS2812 status LED at compile time. Hardware evidence for
+the Pico does not substitute for RP2040-Zero hardware validation.
 
 ## Phase 4: Raspberry Pi Pico 2
 

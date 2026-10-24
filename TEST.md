@@ -41,6 +41,8 @@ Changes affecting firmware should build all applicable targets:
 ```sh
 cmake --preset pico-debug
 cmake --build --preset pico-debug
+cmake --preset waveshare-rp2040-zero-debug
+cmake --build --preset waveshare-rp2040-zero-debug
 cmake --preset pico2-arm-debug
 cmake --build --preset pico2-arm-debug
 cmake --preset pico2-riscv-debug

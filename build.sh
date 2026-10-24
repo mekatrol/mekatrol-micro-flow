@@ -31,6 +31,7 @@ print_usage()
         "  host-debug" \
         "  host-release" \
         "  pico-debug" \
+        "  waveshare-rp2040-zero-debug" \
         "  pico2-arm-debug" \
         "  pico2-riscv-debug"
 }
@@ -44,7 +45,7 @@ case "$1" in
     host-debug|host-release)
         required_compiler=
         ;;
-    pico-debug|pico2-arm-debug)
+    pico-debug|waveshare-rp2040-zero-debug|pico2-arm-debug)
         required_compiler=arm-none-eabi-gcc
         ;;
     pico2-riscv-debug)
@@ -64,7 +65,7 @@ for required_tool in cmake ninja $required_compiler; do
     fi
 done
 
-if [ "$1" = pico-debug ]; then
+if [ "$1" = pico-debug ] || [ "$1" = waveshare-rp2040-zero-debug ]; then
     prepare_pico_sdk
 fi
 

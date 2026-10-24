@@ -7,6 +7,7 @@ $availableTargets = @(
     'host-debug',
     'host-release',
     'pico-debug',
+    'waveshare-rp2040-zero-debug',
     'pico2-arm-debug',
     'pico2-riscv-debug'
 )
@@ -55,7 +56,9 @@ if (($args.Count -ne 0) -or ([string]::IsNullOrWhiteSpace($Target)) -or
 }
 
 $requiredCompiler = switch ($Target) {
-    { $_ -in 'pico-debug', 'pico2-arm-debug' } { 'arm-none-eabi-gcc' }
+    { $_ -in 'pico-debug', 'waveshare-rp2040-zero-debug', 'pico2-arm-debug' } {
+        'arm-none-eabi-gcc'
+    }
     'pico2-riscv-debug' { 'riscv32-unknown-elf-gcc' }
     default { $null }
 }
@@ -70,7 +73,8 @@ foreach ($tool in $requiredTools) {
         exit 1
     }
 }
-if (($Target -eq 'pico-debug') -and (-not (Initialize-PicoSdk))) {
+if (($Target -in 'pico-debug', 'waveshare-rp2040-zero-debug') -and
+    (-not (Initialize-PicoSdk))) {
     exit 1
 }
 

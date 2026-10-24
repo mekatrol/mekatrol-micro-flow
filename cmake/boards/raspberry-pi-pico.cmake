@@ -22,6 +22,10 @@ target_link_libraries(microflow-raspberry-pi-pico PRIVATE
     hardware_timer hardware_uart hardware_watchdog tinyusb_device tinyusb_board)
 target_compile_definitions(microflow-raspberry-pi-pico PRIVATE
     PICO_STDIO_USB=0 PICO_STDIO_UART=0)
+if(MICROFLOW_WAVESHARE_RP2040_ZERO)
+    target_compile_definitions(microflow-raspberry-pi-pico PRIVATE
+        MICROFLOW_WAVESHARE_RP2040_ZERO=1)
+endif()
 target_link_options(microflow-raspberry-pi-pico PRIVATE
     "-Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/microflow-raspberry-pi-pico.map")
 target_compile_options(microflow-raspberry-pi-pico PRIVATE -Wall -Wextra)

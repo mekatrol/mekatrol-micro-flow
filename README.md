@@ -27,11 +27,14 @@ Mekatrol Micro Flow deliberately maintains a small hardware target matrix.
 | Platform | Architecture | Target |
 |---|---|---|
 | Raspberry Pi Pico | ARM Cortex-M0+ (RP2040) | Partial firmware target |
+| Waveshare RP2040-Zero | ARM Cortex-M0+ (RP2040) | Partial Pico-compatible firmware variant |
 | Raspberry Pi Pico 2 | ARM Cortex-M33 (RP2350) | Experimental compile target |
 | Raspberry Pi Pico 2 | Hazard3 RISC-V (RP2350) | Experimental compile target |
 | Host | Platform-dependent | Regression target |
 
-Pico 2 retains separate Arm and RISC-V builds. See
+The Pico and Waveshare RP2040-Zero builds share the RP2040 firmware target but
+select the board LED implementation at compile time: GPIO25 for Pico and the
+GPIO16 WS2812 for RP2040-Zero. Pico 2 retains separate Arm and RISC-V builds. See
 [PROJECT_SETUP.md](PROJECT_SETUP.md) to prepare a clean machine and
 [BUILD.md](BUILD.md) for preset names and artifacts, and [TEST.md](TEST.md) for
 the test suite and hardware-test caveat.

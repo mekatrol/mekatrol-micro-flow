@@ -3,7 +3,8 @@
 ## Dependency direction
 
 Mekatrol Micro Flow has a portable library and two Raspberry Pi board
-integrations:
+integration directories. The RP2040 integration has compile-time mappings for
+the Raspberry Pi Pico and Waveshare RP2040-Zero:
 
 ```text
 src/boards/rpi/raspberry-pi-pico   ---> src/boards/rpi/rp2040
@@ -29,7 +30,7 @@ src/
   boards/rpi/
     rp2040/                  RP2040 startup, drivers, and linker layout
     rp2350/                  RP2350 Arm/RISC-V startup and linker layouts
-    raspberry-pi-pico/       Pico entry point and resource mapping
+    raspberry-pi-pico/       Pico/RP2040-Zero entry point and resource mappings
     raspberry-pi-pico-2/     Pico 2 entry point and resource mapping
 cmake/
   boards/                    Firmware target composition

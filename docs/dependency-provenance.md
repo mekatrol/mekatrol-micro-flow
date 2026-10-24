@@ -25,10 +25,10 @@ Pico 2 firmware targets.
 | Dependency | Raspberry Pi Pico SDK, including bundled TinyUSB |
 | Version | 2.3.1 |
 | Upstream | `https://github.com/raspberrypi/pico-sdk` |
-| Boundary | Raspberry Pi Pico RP2040 firmware only |
+| Boundary | Raspberry Pi Pico and Waveshare RP2040-Zero firmware only |
 | Enabled use | Startup, clocks, GPIO, IRQs, timer, UART, watchdog, and USB CDC |
 | Local modifications | None |
 
 Update the pinned SDK checkout and its TinyUSB submodule together, then run all
-host tests, build the Pico firmware, compare size output, and repeat Pico USB,
-GPIO, reset, UART, watchdog, and supervisor hardware validation.
+host tests, build both RP2040 board variants, compare size output, and repeat
+USB, GPIO, reset, UART, watchdog, and supervisor validation on each board.

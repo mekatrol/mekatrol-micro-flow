@@ -44,6 +44,14 @@
       "cacheVariables": { "MICROFLOW_BOARD": "raspberry-pi-pico" }
     },
     {
+      "name": "waveshare-rp2040-zero-debug",
+      "inherits": "pico-base",
+      "cacheVariables": {
+        "MICROFLOW_BOARD": "raspberry-pi-pico",
+        "MICROFLOW_WAVESHARE_RP2040_ZERO": "ON"
+      }
+    },
+    {
       "name": "pico2-arm-debug",
       "inherits": "pico-base",
       "toolchainFile": "${sourceDir}/cmake/toolchains/arm-none-eabi-gcc.cmake",
@@ -60,6 +68,7 @@
     { "name": "host-debug", "configurePreset": "host-debug" },
     { "name": "host-release", "configurePreset": "host-release" },
     { "name": "pico-debug", "configurePreset": "pico-debug" },
+    { "name": "waveshare-rp2040-zero-debug", "configurePreset": "waveshare-rp2040-zero-debug" },
     { "name": "pico2-arm-debug", "configurePreset": "pico2-arm-debug" },
     { "name": "pico2-riscv-debug", "configurePreset": "pico2-riscv-debug" }
   ],
