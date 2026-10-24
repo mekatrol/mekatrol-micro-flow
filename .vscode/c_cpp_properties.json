@@ -8,16 +8,13 @@
       "includePath": [
         "${workspaceFolder}/src/lib/include",
         "${workspaceFolder}/src/lib/runtime/include",
+        "${workspaceFolder}/src/boards/rpi/raspberry-pi-pico",
+        "${workspaceFolder}/src/boards/rpi/raspberry-pi-pico-2",
         "${workspaceFolder}/src/boards/rpi/rp2040",
-        "${workspaceFolder}/src/boards/rpi/rp2350",
-        "${workspaceFolder}/src/boards/esp32/common",
-        "${workspaceFolder}/src/boards/esp32/esp32-c6",
-        "${workspaceFolder}/src/boards/esp32/esp32-s3"
+        "${workspaceFolder}/src/boards/rpi/rp2350"
       ],
       "browse": {
         "path": [
-          "${workspaceFolder}/src/lib/include",
-          "${workspaceFolder}/src/lib/runtime/include",
           "${workspaceFolder}/src",
           "${workspaceFolder}/tests"
         ],

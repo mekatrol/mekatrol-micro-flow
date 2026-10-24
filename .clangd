@@ -1,27 +1,40 @@
+Diagnostics:
+  # Public umbrella headers are intentional in this project.
+  UnusedIncludes: None
+
 CompileFlags:
+  # CMake exports commands from this directory for the default host preset.
+  CompilationDatabase: build/host-debug
   Add:
     - -Wno-empty-translation-unit
+    # Fallback includes for headers and firmware sources absent from the host
+    # database. These paths are relative to its working directory.
     - -I../../src/lib/include
     - -I../../src/lib/runtime/include
+    - -I../../src/boards/rpi/raspberry-pi-pico
+    - -I../../src/boards/rpi/raspberry-pi-pico-2
     - -I../../src/boards/rpi/rp2040
-    - -I../../src/boards/esp32/common
+    - -I../../src/boards/rpi/rp2350
 
 ---
 If:
-  PathMatch: src/boards/.*
+  PathMatch: src/boards/rpi/(raspberry-pi-pico|rp2040)/.*
 CompileFlags:
+  # RP2040 firmware needs Pico SDK and TinyUSB compile definitions/includes.
+  CompilationDatabase: build/pico-debug
   Remove:
     - -Werror
     - -fsanitize=*
     - -fno-omit-frame-pointer
 
 ---
-# The common ESP32 implementation is compiled once per selected SoC. Use the
-# ESP32-C6 register configuration when clangd analyzes it outside a firmware
-# compilation database.
 If:
-  PathMatch: src/boards/esp32/common/.*
+  PathMatch: src/boards/rpi/(raspberry-pi-pico-2|rp2350)/.*
 CompileFlags:
-  Add:
-    - -I../../src/boards/esp32/esp32-c6
-    - -Wno-int-to-pointer-cast
+  # Pico 2 sources use the Arm preset by default; the RISC-V preset remains
+  # available when checking that architecture explicitly.
+  CompilationDatabase: build/pico2-arm-debug
+  Remove:
+    - -Werror
+    - -fsanitize=*
+    - -fno-omit-frame-pointer

@@ -1,27 +1,17 @@
 {
-  "C_Cpp.default.cStandard": "c11",
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/host-debug/compile_commands.json",
-  "C_Cpp.default.includePath": [
-    "${workspaceFolder}/src/lib/include",
-    "${workspaceFolder}/src/lib/runtime/include",
-    "${workspaceFolder}/src/boards/rpi/rp2040",
-    "${workspaceFolder}/src/boards/rpi/rp2350",
-    "${workspaceFolder}/src/boards/esp32/common",
-    "${workspaceFolder}/src/boards/esp32/esp32-c6",
-    "${workspaceFolder}/src/boards/esp32/esp32-s3"
-  ],
   "C_Cpp.intelliSenseEngine": "disabled",
   "clangd.arguments": [
-    "--compile-commands-dir=build/host-debug"
+    "--query-driver=**/arm-none-eabi-gcc,**/riscv32-unknown-elf-gcc"
   ],
   "clangd.fallbackFlags": [
     "-xc",
     "-std=c11",
-    "-Isrc/lib/include",
-    "-Isrc/lib/runtime/include",
-    "-Isrc/boards/rpi/rp2040",
-    "-Isrc/boards/rpi/rp2350",
-    "-Isrc/boards/esp32/common"
+    "-I${workspaceFolder}/src/lib/include",
+    "-I${workspaceFolder}/src/lib/runtime/include",
+    "-I${workspaceFolder}/src/boards/rpi/raspberry-pi-pico",
+    "-I${workspaceFolder}/src/boards/rpi/raspberry-pi-pico-2",
+    "-I${workspaceFolder}/src/boards/rpi/rp2040",
+    "-I${workspaceFolder}/src/boards/rpi/rp2350"
   ],
   "editor.semanticHighlighting.enabled": true,
   "cmake.configureOnOpen": true,
