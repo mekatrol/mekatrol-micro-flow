@@ -5,9 +5,9 @@
 #include <stdint.h>
 
 /* pid.codes community VID used by the project prototype. */
-#define USB_VID                        0x1209U
+#define USB_VID 0x1209U
 /* Product identifier chosen for the RP2040 Micro Flow device. */
-#define USB_PID                        0x2040U
+#define USB_PID 0x2040U
 /* Configuration length is exactly one configuration plus one CDC function. */
 #define USB_CONFIGURATION_TOTAL_LENGTH (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
 
@@ -59,7 +59,9 @@ const uint16_t *tud_descriptor_string_cb(uint8_t index, uint16_t language_id) {
         string_descriptor[0] = (uint16_t)((TUSB_DESC_STRING << 8U) | 4U);
         return string_descriptor;
     }
-    if (index >= (sizeof(string_descriptors) / sizeof(string_descriptors[0]))) return NULL;
+    if (index >= (sizeof(string_descriptors) / sizeof(string_descriptors[0]))) {
+        return NULL;
+    }
     const char *source = string_descriptors[index];
     size_t      length = 0U;
     while ((source[length] != '\0') && (length < 31U)) {
@@ -69,4 +71,4 @@ const uint16_t *tud_descriptor_string_cb(uint8_t index, uint16_t language_id) {
     string_descriptor[0] = (uint16_t)((TUSB_DESC_STRING << 8U) | (2U * length + 2U));
     return string_descriptor;
 }
-    /* Bound conversion to the shared 32-word descriptor scratch buffer. */
+/* Bound conversion to the shared 32-word descriptor scratch buffer. */

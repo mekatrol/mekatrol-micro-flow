@@ -17,13 +17,13 @@ extern "C" {
  */
 typedef uint32_t microflow_scheduler_tick_t;
 
-typedef struct microflow_scheduler microflow_scheduler_t;
+typedef struct microflow_scheduler      microflow_scheduler_t;
 typedef struct microflow_scheduler_task microflow_scheduler_task_t;
 
 typedef void (*microflow_scheduler_callback_t)(
-    microflow_scheduler_t *scheduler,
+    microflow_scheduler_t      *scheduler,
     microflow_scheduler_task_t *task,
-    void *context);
+    void                       *context);
 
 typedef enum {
     /* Operation completed and any requested state transition took effect. */
@@ -46,7 +46,7 @@ typedef enum {
 struct microflow_scheduler_task {
     /* Function and opaque caller state used when the deadline becomes ready. */
     microflow_scheduler_callback_t callback;
-    void *context;
+    void                          *context;
     /* Absolute next release and zero-for-one-shot recurrence interval. */
     microflow_scheduler_tick_t deadline;
     microflow_scheduler_tick_t period;
@@ -62,7 +62,7 @@ struct microflow_scheduler_task {
 struct microflow_scheduler {
     /* Caller-owned fixed array avoids allocation and makes memory measurable. */
     microflow_scheduler_task_t *tasks;
-    size_t capacity;
+    size_t                      capacity;
     /* Monotonic pass identity, with explicit handling when it wraps to zero. */
     uint32_t dispatch_id;
     /* Rejects recursive run_ready calls from task callbacks. */
@@ -71,24 +71,24 @@ struct microflow_scheduler {
 
 /* Associates caller storage and clears every task slot to an inactive state. */
 microflow_scheduler_result_t microflow_scheduler_initialize(
-    microflow_scheduler_t *scheduler,
+    microflow_scheduler_t      *scheduler,
     microflow_scheduler_task_t *task_storage,
-    size_t task_capacity);
+    size_t                      task_capacity);
 
 /* Lower numeric values run first. Equal priorities retain storage order. */
 microflow_scheduler_result_t microflow_scheduler_schedule(
-    microflow_scheduler_t *scheduler,
-    microflow_scheduler_tick_t now,
-    microflow_scheduler_tick_t delay,
-    microflow_scheduler_tick_t period,
-    uint8_t priority,
+    microflow_scheduler_t         *scheduler,
+    microflow_scheduler_tick_t     now,
+    microflow_scheduler_tick_t     delay,
+    microflow_scheduler_tick_t     period,
+    uint8_t                        priority,
     microflow_scheduler_callback_t callback,
-    void *context,
-    microflow_scheduler_task_t **task_out);
+    void                          *context,
+    microflow_scheduler_task_t   **task_out);
 
 /* Cancels an owned task; a currently running callback is allowed to finish. */
 microflow_scheduler_result_t microflow_scheduler_cancel(
-    microflow_scheduler_t *scheduler,
+    microflow_scheduler_t      *scheduler,
     microflow_scheduler_task_t *task);
 
 /*
@@ -97,13 +97,13 @@ microflow_scheduler_result_t microflow_scheduler_cancel(
  * bursts. Callbacks run to completion and must remain short and bounded.
  */
 size_t microflow_scheduler_run_ready(
-    microflow_scheduler_t *scheduler,
+    microflow_scheduler_t     *scheduler,
     microflow_scheduler_tick_t now);
 
 /* Finds the earliest active absolute deadline, or false when none exists. */
 bool microflow_scheduler_next_deadline(
     const microflow_scheduler_t *scheduler,
-    microflow_scheduler_tick_t *deadline_out);
+    microflow_scheduler_tick_t  *deadline_out);
 
 #ifdef __cplusplus
 }

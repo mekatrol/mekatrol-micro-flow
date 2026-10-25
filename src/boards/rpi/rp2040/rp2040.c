@@ -117,40 +117,53 @@ void microflow_rp2040_initialize(void) {
 
 /* Configure register-level UART0 as an interrupt-driven 8-N-1 transport. */
 void microflow_rp2040_uart0_initialize(uint32_t baud_rate) {
-    if (baud_rate == 0U) return;
+    if (baud_rate == 0U) {
+        return;
+    }
     RP2040_CLK_PERI_CTRL = RP2040_CLK_PERI_ENABLE;
     RP2040_GPIO_CTRL(0U) = RP2040_IO_FUNC_UART;
     RP2040_GPIO_CTRL(1U) = RP2040_IO_FUNC_UART;
-    RP2040_UART0_CR = 0U;
+    RP2040_UART0_CR      = 0U;
     const uint32_t divisor_x64 =
         (RP2040_XOSC_FREQUENCY_HZ * 4U + baud_rate / 2U) / baud_rate;
-    RP2040_UART0_IBRD = divisor_x64 / 64U;
-    RP2040_UART0_FBRD = divisor_x64 % 64U;
+    RP2040_UART0_IBRD  = divisor_x64 / 64U;
+    RP2040_UART0_FBRD  = divisor_x64 % 64U;
     RP2040_UART0_LCR_H = RP2040_UART_LCR_H_FEN | RP2040_UART_LCR_H_WLEN_8;
-    RP2040_UART0_IFLS = 0U;
-    RP2040_UART0_ICR = 0x7FFU;
-    RP2040_UART0_IMSC = RP2040_UART_INT_RX | RP2040_UART_INT_RT;
-    RP2040_UART0_CR = RP2040_UART_CR_UARTEN | RP2040_UART_CR_TXE | RP2040_UART_CR_RXE;
-    RP2040_NVIC_ICPR = 1U << RP2040_IRQ_UART0;
-    RP2040_NVIC_ISER = 1U << RP2040_IRQ_UART0;
+    RP2040_UART0_IFLS  = 0U;
+    RP2040_UART0_ICR   = 0x7FFU;
+    RP2040_UART0_IMSC  = RP2040_UART_INT_RX | RP2040_UART_INT_RT;
+    RP2040_UART0_CR    = RP2040_UART_CR_UARTEN | RP2040_UART_CR_TXE | RP2040_UART_CR_RXE;
+    RP2040_NVIC_ICPR   = 1U << RP2040_IRQ_UART0;
+    RP2040_NVIC_ISER   = 1U << RP2040_IRQ_UART0;
 }
 
 /* Tell interrupt code whether a UART read can complete immediately. */
-bool microflow_rp2040_uart0_read_ready(void) { return (RP2040_UART0_FR & RP2040_UART_FR_RXFE) == 0U; }
+bool microflow_rp2040_uart0_read_ready(void) {
+    return (RP2040_UART0_FR & RP2040_UART_FR_RXFE) == 0U;
+}
 
 /* Remove one known-available byte from UART0's receive FIFO. */
-uint8_t microflow_rp2040_uart0_read(void) { return (uint8_t)RP2040_UART0_DR; }
+uint8_t microflow_rp2040_uart0_read(void) {
+    return (uint8_t)RP2040_UART0_DR;
+}
 
 /* Tell interrupt code whether UART0 can accept a byte immediately. */
-bool microflow_rp2040_uart0_write_ready(void) { return (RP2040_UART0_FR & RP2040_UART_FR_TXFF) == 0U; }
+bool microflow_rp2040_uart0_write_ready(void) {
+    return (RP2040_UART0_FR & RP2040_UART_FR_TXFF) == 0U;
+}
 
 /* Place one known-writable byte into UART0's transmit FIFO. */
-void microflow_rp2040_uart0_write(uint8_t value) { RP2040_UART0_DR = value; }
+void microflow_rp2040_uart0_write(uint8_t value) {
+    RP2040_UART0_DR = value;
+}
 
 /* Arm TX service only while software has bytes, preventing empty IRQ churn. */
 void microflow_rp2040_uart0_set_transmit_interrupt(bool enabled) {
-    if (enabled) RP2040_UART0_IMSC |= RP2040_UART_INT_TX;
-    else RP2040_UART0_IMSC &= ~RP2040_UART_INT_TX;
+    if (enabled) {
+        RP2040_UART0_IMSC |= RP2040_UART_INT_TX;
+    } else {
+        RP2040_UART0_IMSC &= ~RP2040_UART_INT_TX;
+    }
 }
 
 /* Put one valid GPIO under SIO control with a low latch before output enable. */
@@ -266,12 +279,14 @@ void microflow_rp2040_timer0_irq_handler(void) {
 /* Acknowledge current UART causes before the board drains or fills its FIFOs. */
 void microflow_rp2040_uart0_irq_handler(void) {
     const uint32_t status = RP2040_UART0_MIS;
-    RP2040_UART0_ICR = status;
+    RP2040_UART0_ICR      = status;
     microflow_rp2040_uart0_event();
 }
 
 /* Forward USB controller IRQ notification to an optional board implementation. */
-void microflow_rp2040_usbctrl_irq_handler(void) { microflow_rp2040_usb_event(); }
+void microflow_rp2040_usbctrl_irq_handler(void) {
+    microflow_rp2040_usb_event();
+}
 
 /* Close the check/sleep race and wait for either pending work or timer alarm. */
 void microflow_rp2040_wait_until(
@@ -279,28 +294,31 @@ void microflow_rp2040_wait_until(
     const uint32_t interrupt_state = microflow_rp2040_interrupt_state();
     microflow_rp2040_interrupt_disable();
     if (has_deadline) {
-        RP2040_TIMER_INTR = RP2040_TIMER_ALARM0_BIT;
+        RP2040_TIMER_INTR   = RP2040_TIMER_ALARM0_BIT;
         RP2040_TIMER_ALARM0 = deadline;
         RP2040_TIMER_INTE |= RP2040_TIMER_ALARM0_BIT;
         RP2040_NVIC_ICPR = 1U << RP2040_IRQ_TIMER0;
         RP2040_NVIC_ISER = 1U << RP2040_IRQ_TIMER0;
     }
     const bool deadline_arrived = has_deadline &&
-        ((int32_t)(RP2040_TIMER_TIMERAWL - deadline) >= 0);
-    if (((wake_events == NULL) || (*wake_events == 0U)) && !deadline_arrived)
+                                  ((int32_t)(RP2040_TIMER_TIMERAWL - deadline) >= 0);
+    if (((wake_events == NULL) || (*wake_events == 0U)) && !deadline_arrived) {
         /* A masked interrupt becoming pending wakes WFI. Keeping PRIMASK set
          * until after WFI closes the check/sleep race; restore then dispatches. */
         __asm volatile("dsb\n wfi" ::: "memory");
+    }
     microflow_rp2040_interrupt_restore(interrupt_state);
 }
 
 /* Configure bounded watchdog timing and remember the load used by refreshes. */
 void microflow_rp2040_watchdog_initialize(uint32_t timeout_microseconds) {
-    if (timeout_microseconds > 0x7FFFFFU) timeout_microseconds = 0x7FFFFFU;
+    if (timeout_microseconds > 0x7FFFFFU) {
+        timeout_microseconds = 0x7FFFFFU;
+    }
     microflow_rp2040_watchdog_load = timeout_microseconds * 2U;
-    RP2040_WATCHDOG_TICK = RP2040_WATCHDOG_TICK_ENABLE | RP2040_WATCHDOG_TICK_CYCLES;
-    RP2040_WATCHDOG_LOAD = microflow_rp2040_watchdog_load;
-    RP2040_WATCHDOG_CTRL = RP2040_WATCHDOG_CTRL_ENABLE;
+    RP2040_WATCHDOG_TICK           = RP2040_WATCHDOG_TICK_ENABLE | RP2040_WATCHDOG_TICK_CYCLES;
+    RP2040_WATCHDOG_LOAD           = microflow_rp2040_watchdog_load;
+    RP2040_WATCHDOG_CTRL           = RP2040_WATCHDOG_CTRL_ENABLE;
 }
 
 /* Reload the watchdog after the supervisor demonstrates forward progress. */

@@ -11,23 +11,23 @@
 #include <stdint.h>
 
 /* Period between visible status changes and timer service releases. */
-#define HEARTBEAT_PERIOD_US      500000U
+#define HEARTBEAT_PERIOD_US 500000U
 /* Maximum unserviced interval before hardware resets stalled firmware. */
-#define WATCHDOG_TIMEOUT_US      2000000U
+#define WATCHDOG_TIMEOUT_US 2000000U
 /* Cooperative maximum intended execution time for status work. */
 #define STATUS_SERVICE_BUDGET_US 2000U
 /* Cooperative maximum intended execution time for UART work. */
-#define UART_SERVICE_BUDGET_US   5000U
+#define UART_SERVICE_BUDGET_US 5000U
 /* Conventional host-compatible debug/upload UART bit rate. */
-#define UART_BAUD_RATE           115200U
+#define UART_BAUD_RATE 115200U
 /* Abandon incomplete UART frames after one second without input. */
-#define UART_RECEIVE_TIMEOUT_US  1000000U
+#define UART_RECEIVE_TIMEOUT_US 1000000U
 /* Minimum byte count accepted by the current flow-envelope validator. */
-#define FLOW_IMAGE_HEADER_SIZE   16U
+#define FLOW_IMAGE_HEADER_SIZE 16U
 /* Cooperative maximum intended execution time for USB CDC work. */
-#define USB_SERVICE_BUDGET_US    5000U
+#define USB_SERVICE_BUDGET_US 5000U
 /* Fixed per-direction USB queue size; prevents dynamic allocation. */
-#define USB_QUEUE_CAPACITY       256U
+#define USB_QUEUE_CAPACITY 256U
 
 /* Static state keeps the firmware's RAM requirements link-time measurable. */
 static microflow_supervisor_t       supervisor;
@@ -54,7 +54,9 @@ static bool validate_flow(void *context, const uint8_t *image, size_t length);
 static void usb_write_text(const char *text) {
     /* Find the exact wire length; CDC writes are byte spans, not C strings. */
     size_t length = 0U;
-    while (text[length] != '\0') ++length;
+    while (text[length] != '\0') {
+        ++length;
+    }
     /* Best-effort delivery keeps diagnostics from blocking real-time services. */
     (void)microflow_rp2040_usb_cdc_write(&usb_cdc, (const uint8_t *)text, length);
 }
@@ -74,7 +76,9 @@ static void usb_write_u32(uint32_t value) {
         value /= 10U;
     } while (value != 0U);
     /* Reverse the temporary digits to emit conventional most-significant-first text. */
-    while (used != 0U) (void)microflow_rp2040_usb_cdc_write(&usb_cdc, &digits[--used], 1U);
+    while (used != 0U) {
+        (void)microflow_rp2040_usb_cdc_write(&usb_cdc, &digits[--used], 1U);
+    }
 }
 
 /* Route synchronous command replies from the generic console to USB CDC. */
@@ -176,7 +180,9 @@ static bool console_flow_validate(void *context) {
 static bool console_flow_start(void *context) {
     (void)context;
     /* Revalidate immediately before changing lifecycle state. */
-    if (!console_flow_validate(NULL)) return false;
+    if (!console_flow_validate(NULL)) {
+        return false;
+    }
     flow_running = true;
     return true;
 }
@@ -279,7 +285,9 @@ static bool validate_flow(void *context, const uint8_t *image, size_t length) {
         (image[1] != 'F') || (image[2] != 'F') || (image[3] != 'L') ||
         (image[4] != 1U) || (image[5] != 0U) ||
         (image[6] != FLOW_IMAGE_HEADER_SIZE) || (image[7] != 0U) ||
-        (image_u32(&image[8]) != length)) return false;
+        (image_u32(&image[8]) != length)) {
+        return false;
+    }
     /* Payload CRC detects corruption beyond the structurally checked header. */
     return image_u32(&image[12]) ==
            microflow_upload_crc32(&image[FLOW_IMAGE_HEADER_SIZE], length - FLOW_IMAGE_HEADER_SIZE);
@@ -291,10 +299,14 @@ static bool validate_flow(void *context, const uint8_t *image, size_t length) {
  */
 static bool activate_flow(void *context, const uint8_t *image, size_t length) {
     (void)context;
-    if (length > sizeof(active_flow)) return false;
+    if (length > sizeof(active_flow)) {
+        return false;
+    }
     /* Publish bytes and length atomically with respect to interrupt readers. */
     const uint32_t state = microflow_rp2040_interrupt_lock();
-    for (size_t i = 0U; i < length; ++i) active_flow[i] = image[i];
+    for (size_t i = 0U; i < length; ++i) {
+        active_flow[i] = image[i];
+    }
     active_flow_length = length;
     microflow_rp2040_interrupt_unlock(state);
     return true;
@@ -343,7 +355,7 @@ static void status_service(void *context, uint32_t events) {
     /* Timer work combines visible liveness with stalled-upload expiration. */
     static bool illuminated;
 #if defined(MICROFLOW_WAVESHARE_RP2040_ZERO)
-    static uint8_t colour;
+    static uint8_t       colour;
     static const uint8_t colours[][3] = {
         {12U, 0U, 0U},
         {0U, 12U, 0U},
@@ -386,8 +398,9 @@ static void usb_service(void *context, uint32_t events) {
     uint8_t value;
     /* Bridge TinyUSB's private ring into the console's supervisor byte ring. */
     microflow_rp2040_usb_cdc_task(&usb_cdc);
-    while (microflow_rp2040_usb_cdc_read(&usb_cdc, &value))
+    while (microflow_rp2040_usb_cdc_read(&usb_cdc, &value)) {
         (void)microflow_supervisor_byte_ring_push_from_isr(&supervisor, &console_receive, value);
+    }
     microflow_console_service(&console);
 }
 
@@ -412,9 +425,12 @@ void microflow_rp2040_uart0_event(void) {
         microflow_rp2040_uart0_write(value);
         events |= MICROFLOW_SUPERVISOR_EVENT_UART0_TX;
     }
-    if (microflow_byte_ring_count(&uart_transmit) == 0U)
+    if (microflow_byte_ring_count(&uart_transmit) == 0U) {
         microflow_rp2040_uart0_set_transmit_interrupt(false);
-    if (events != 0U) microflow_supervisor_signal_from_isr(&supervisor, events);
+    }
+    if (events != 0U) {
+        microflow_supervisor_signal_from_isr(&supervisor, events);
+    }
 }
 
 /* Coalesce a USB controller interrupt into one pending supervisor event bit. */
@@ -460,9 +476,10 @@ int main(void) {
     /* Peripheral interrupts start only after their supervisor state exists. */
     microflow_rp2040_uart0_initialize(UART_BAUD_RATE);
     if (!microflow_rp2040_usb_cdc_initialize(&usb_cdc, usb_driver_receive,
-                                             sizeof(usb_driver_receive), usb_driver_transmit, sizeof(usb_driver_transmit)))
+                                             sizeof(usb_driver_receive), usb_driver_transmit, sizeof(usb_driver_transmit))) {
         microflow_supervisor_report_fault(&supervisor,
                                           MICROFLOW_SUPERVISOR_FAULT_CONFIGURATION);
+    }
     /* The cooperative supervisor owns control for the remainder of execution. */
     microflow_supervisor_run(&supervisor);
 }

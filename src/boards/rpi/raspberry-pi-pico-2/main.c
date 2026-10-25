@@ -8,8 +8,8 @@
  */
 /* Hold the incomplete Pico 2 target safely instead of returning from firmware. */
 int main(void) {
-  /* Never return into an undefined embedded runtime exit path. */
-  for (;;) {
-    /* No services exist for this partial target yet. */
-  }
+    /* Never return into an undefined embedded runtime exit path. */
+    for (;;) {
+        /* No services exist for this partial target yet. */
+    }
 }

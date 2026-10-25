@@ -35,18 +35,18 @@ typedef struct {
 
 /* Parser buffer, injected operations, and observable command diagnostics. */
 typedef struct {
-    microflow_byte_ring_t *receive;
+    microflow_byte_ring_t         *receive;
     microflow_console_operations_t operations;
-    char line[MICROFLOW_CONSOLE_LINE_CAPACITY];
-    uint8_t line_length;
+    char                           line[MICROFLOW_CONSOLE_LINE_CAPACITY];
+    uint8_t                        line_length;
     /* Prevents a truncated overlong line from becoming a valid command. */
-    bool discarding;
+    bool     discarding;
     uint32_t commands, invalid_commands, overlong_commands;
 } microflow_console_t;
 
 /* Clears parser/metrics state and copies the supplied operation table. */
-void microflow_console_initialize(microflow_console_t *console,
-    microflow_byte_ring_t *receive, const microflow_console_operations_t *operations);
+void microflow_console_initialize(microflow_console_t   *console,
+                                  microflow_byte_ring_t *receive, const microflow_console_operations_t *operations);
 /* Drains bytes and dispatches every complete, non-empty command line. */
 void microflow_console_service(microflow_console_t *console);
 

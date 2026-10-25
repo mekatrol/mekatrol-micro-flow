@@ -66,7 +66,7 @@ static void fixture_fault(void *context, microflow_supervisor_fault_t fault) {
 
 /* Record service order/event delivery and advance time to model bounded work. */
 static void service(void *context, uint32_t events) {
-    fixture_t *f               = context;
+    fixture_t *f = context;
     /* Preserve dispatch order/event delivery, then model one tick of work. */
     f->order[f->order_count++] = (uint8_t)events;
     ++f->now;
@@ -94,8 +94,9 @@ static void test_queues_reject_newest(void) {
     microflow_byte_ring_initialize(&bytes);
 
     /* Fill every usable byte slot with a sequence that exposes reordering. */
-    for (uint32_t i = 0U; i < MICROFLOW_SUPERVISOR_BYTE_CAPACITY - 1U; ++i)
+    for (uint32_t i = 0U; i < MICROFLOW_SUPERVISOR_BYTE_CAPACITY - 1U; ++i) {
         CHECK(microflow_byte_ring_push_from_isr(&bytes, (uint8_t)i));
+    }
 
     /*
      * The next push is expected to fail because the ring is full.  Exactly one
@@ -115,8 +116,9 @@ static void test_queues_reject_newest(void) {
     /* Repeat the same policy check for the queue of structured events. */
     microflow_event_queue_t events;
     microflow_event_queue_initialize(&events);
-    for (uint32_t i = 0U; i < MICROFLOW_SUPERVISOR_EVENT_CAPACITY - 1U; ++i)
+    for (uint32_t i = 0U; i < MICROFLOW_SUPERVISOR_EVENT_CAPACITY - 1U; ++i) {
         CHECK(microflow_event_queue_push_from_isr(&events, (microflow_supervisor_event_t){i, i + 1U}));
+    }
 
     /* The full event queue rejects one new event and records its peak usage. */
     CHECK(!microflow_event_queue_push_from_isr(&events, (microflow_supervisor_event_t){99U, 99U}));
@@ -199,8 +201,9 @@ static void test_wraparound_warm_reset_and_fault(void) {
     /* Fill a byte ring, then use the supervisor-aware wrapper for overflow. */
     microflow_byte_ring_t ring;
     microflow_byte_ring_initialize(&ring);
-    for (uint32_t i = 0U; i < MICROFLOW_SUPERVISOR_BYTE_CAPACITY - 1U; ++i)
+    for (uint32_t i = 0U; i < MICROFLOW_SUPERVISOR_BYTE_CAPACITY - 1U; ++i) {
         CHECK(microflow_supervisor_byte_ring_push_from_isr(&s, &ring, (uint8_t)i));
+    }
     CHECK(!microflow_supervisor_byte_ring_push_from_isr(&s, &ring, 0U));
 
     /*

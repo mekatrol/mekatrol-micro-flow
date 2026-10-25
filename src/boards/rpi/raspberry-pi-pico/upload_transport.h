@@ -66,35 +66,35 @@ typedef enum {
 } microflow_upload_result_t;
 
 typedef bool (*microflow_upload_validate_t)(void *context, const uint8_t *image,
-                                             size_t length);
+                                            size_t length);
 typedef bool (*microflow_upload_activate_t)(void *context, const uint8_t *image,
-                                             size_t length);
+                                            size_t length);
 
 /* All parser, staging, transfer, and diagnostic state is statically bounded. */
 typedef struct {
-    microflow_byte_ring_t *receive;
-    microflow_byte_ring_t *transmit;
+    microflow_byte_ring_t      *receive;
+    microflow_byte_ring_t      *transmit;
     microflow_upload_validate_t validate;
     microflow_upload_activate_t activate;
-    void *callback_context;
-    uint8_t staging[MICROFLOW_UPLOAD_MAX_IMAGE_SIZE];
-    uint8_t frame_payload[MICROFLOW_UPLOAD_MAX_FRAME_PAYLOAD];
-    uint8_t header[MICROFLOW_UPLOAD_FRAME_OVERHEAD];
-    uint32_t expected_sequence, image_length, image_checksum, received_length;
-    uint32_t frames_received, frames_rejected, uploads_completed, uploads_aborted;
-    uint16_t header_used, payload_used;
-    uint32_t last_receive_tick;
-    bool upload_active, receive_tick_valid;
+    void                       *callback_context;
+    uint8_t                     staging[MICROFLOW_UPLOAD_MAX_IMAGE_SIZE];
+    uint8_t                     frame_payload[MICROFLOW_UPLOAD_MAX_FRAME_PAYLOAD];
+    uint8_t                     header[MICROFLOW_UPLOAD_FRAME_OVERHEAD];
+    uint32_t                    expected_sequence, image_length, image_checksum, received_length;
+    uint32_t                    frames_received, frames_rejected, uploads_completed, uploads_aborted;
+    uint16_t                    header_used, payload_used;
+    uint32_t                    last_receive_tick;
+    bool                        upload_active, receive_tick_valid;
 } microflow_upload_transport_t;
 
 /* Clears state and binds rings plus validation/activation policy callbacks. */
 void microflow_upload_transport_initialize(microflow_upload_transport_t *transport,
-    microflow_byte_ring_t *receive, microflow_byte_ring_t *transmit,
-    microflow_upload_validate_t validate, microflow_upload_activate_t activate,
-    void *callback_context);
+                                           microflow_byte_ring_t *receive, microflow_byte_ring_t *transmit,
+                                           microflow_upload_validate_t validate, microflow_upload_activate_t activate,
+                                           void *callback_context);
 /* Consumes all currently queued bytes and handles every complete frame. */
 void microflow_upload_transport_service(microflow_upload_transport_t *transport,
-                                        uint32_t now);
+                                        uint32_t                      now);
 /* Aborts partial parser/upload state after an unsigned wrap-safe timeout. */
 bool microflow_upload_transport_expire(microflow_upload_transport_t *transport,
                                        uint32_t now, uint32_t timeout);

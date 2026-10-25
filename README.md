@@ -35,8 +35,9 @@ Mekatrol Micro Flow deliberately maintains a small hardware target matrix.
 The Pico and Waveshare RP2040-Zero builds share the RP2040 firmware target but
 select the board LED implementation at compile time: GPIO25 for Pico and the
 GPIO16 WS2812 for RP2040-Zero. Pico 2 retains separate Arm and RISC-V builds. See
-[PROJECT_SETUP.md](docs/PROJECT_SETUP.md) to prepare a clean machine and
-[BUILD.md](docs/BUILD.md) for preset names and artifacts, and [TEST.md](docs/TEST.md) for
+[PROJECT_SETUP.md](docs/PROJECT_SETUP.md) to prepare a clean machine,
+[FORMAT.md](docs/FORMAT.md) for source formatting, [BUILD.md](docs/BUILD.md) for
+preset names and artifacts, and [TEST.md](docs/TEST.md) for
 the test suite and hardware-test caveat.
 
 The engine is designed to remain independent of any particular microcontroller, SDK, RTOS, or hardware abstraction framework.

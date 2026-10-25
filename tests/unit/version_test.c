@@ -4,8 +4,7 @@
 #include <string.h>
 
 /* Verify compile-time version components and the runtime string stay aligned. */
-int main(void)
-{
+int main(void) {
     /* Numeric components make accidental semantic-version changes explicit. */
     _Static_assert(MICROFLOW_VERSION_MAJOR == 0, "unexpected major version");
     _Static_assert(MICROFLOW_VERSION_MINOR == 1, "unexpected minor version");

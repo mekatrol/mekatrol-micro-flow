@@ -19,7 +19,7 @@ static bool microflow_scheduler_time_has_arrived(
 
 /* Verify cancellation targets caller storage assigned to this scheduler. */
 static bool microflow_scheduler_owns_task(
-    const microflow_scheduler_t *scheduler,
+    const microflow_scheduler_t      *scheduler,
     const microflow_scheduler_task_t *task) {
     if ((scheduler == NULL) || (task == NULL) || (scheduler->tasks == NULL)) {
         return false;
@@ -37,15 +37,15 @@ static bool microflow_scheduler_owns_task(
 
 /* Bind fixed task storage and clear all state for deterministic reuse. */
 microflow_scheduler_result_t microflow_scheduler_initialize(
-    microflow_scheduler_t *scheduler,
+    microflow_scheduler_t      *scheduler,
     microflow_scheduler_task_t *task_storage,
-    size_t task_capacity) {
+    size_t                      task_capacity) {
     if ((scheduler == NULL) || ((task_capacity != 0U) && (task_storage == NULL))) {
         return MICROFLOW_SCHEDULER_INVALID_ARGUMENT;
     }
 
-    scheduler->tasks = task_storage;
-    scheduler->capacity = task_capacity;
+    scheduler->tasks       = task_storage;
+    scheduler->capacity    = task_capacity;
     scheduler->dispatch_id = 0U;
     scheduler->dispatching = false;
 
@@ -59,14 +59,14 @@ microflow_scheduler_result_t microflow_scheduler_initialize(
 
 /* Reserve one free slot and describe a one-shot or periodic future callback. */
 microflow_scheduler_result_t microflow_scheduler_schedule(
-    microflow_scheduler_t *scheduler,
-    microflow_scheduler_tick_t now,
-    microflow_scheduler_tick_t delay,
-    microflow_scheduler_tick_t period,
-    uint8_t priority,
+    microflow_scheduler_t         *scheduler,
+    microflow_scheduler_tick_t     now,
+    microflow_scheduler_tick_t     delay,
+    microflow_scheduler_tick_t     period,
+    uint8_t                        priority,
     microflow_scheduler_callback_t callback,
-    void *context,
-    microflow_scheduler_task_t **task_out) {
+    void                          *context,
+    microflow_scheduler_task_t   **task_out) {
     if ((scheduler == NULL) || (callback == NULL) ||
         ((scheduler->capacity != 0U) && (scheduler->tasks == NULL))) {
         return MICROFLOW_SCHEDULER_INVALID_ARGUMENT;
@@ -89,11 +89,11 @@ microflow_scheduler_result_t microflow_scheduler_schedule(
         /* Deadline addition may wrap; later signed comparisons remain valid. */
         *task = (microflow_scheduler_task_t){
             .callback = callback,
-            .context = context,
+            .context  = context,
             .deadline = now + delay,
-            .period = period,
+            .period   = period,
             .priority = priority,
-            .active = true,
+            .active   = true,
         };
 
         if (task_out != NULL) {
@@ -107,7 +107,7 @@ microflow_scheduler_result_t microflow_scheduler_schedule(
 
 /* Make an owned task ineligible for future dispatch without freeing memory. */
 microflow_scheduler_result_t microflow_scheduler_cancel(
-    microflow_scheduler_t *scheduler,
+    microflow_scheduler_t      *scheduler,
     microflow_scheduler_task_t *task) {
     if ((scheduler == NULL) || (task == NULL)) {
         return MICROFLOW_SCHEDULER_INVALID_ARGUMENT;
@@ -137,7 +137,7 @@ static void microflow_scheduler_begin_dispatch(microflow_scheduler_t *scheduler)
 
 /* Select the highest-priority ready task not yet run in the current pass. */
 static microflow_scheduler_task_t *microflow_scheduler_find_next_ready(
-    microflow_scheduler_t *scheduler,
+    microflow_scheduler_t     *scheduler,
     microflow_scheduler_tick_t now) {
     microflow_scheduler_task_t *selected = NULL;
 
@@ -163,9 +163,9 @@ static microflow_scheduler_task_t *microflow_scheduler_find_next_ready(
 /* Advance a periodic release beyond now without drift or catch-up bursts. */
 static void microflow_scheduler_advance_periodic_task(
     microflow_scheduler_task_t *task,
-    microflow_scheduler_tick_t now) {
+    microflow_scheduler_tick_t  now) {
     /* Advance from the old release, skipping backlog without schedule drift. */
-    const microflow_scheduler_tick_t elapsed = now - task->deadline;
+    const microflow_scheduler_tick_t elapsed         = now - task->deadline;
     const microflow_scheduler_tick_t releases_missed = elapsed / task->period;
 
     task->deadline += (releases_missed + 1U) * task->period;
@@ -173,7 +173,7 @@ static void microflow_scheduler_advance_periodic_task(
 
 /* Run the ready snapshot once in deterministic priority and storage order. */
 size_t microflow_scheduler_run_ready(
-    microflow_scheduler_t *scheduler,
+    microflow_scheduler_t     *scheduler,
     microflow_scheduler_tick_t now) {
     /* Invalid state and recursive dispatch both fail without side effects. */
     if ((scheduler == NULL) || scheduler->dispatching ||
@@ -184,14 +184,14 @@ size_t microflow_scheduler_run_ready(
     scheduler->dispatching = true;
     microflow_scheduler_begin_dispatch(scheduler);
 
-    size_t tasks_run = 0U;
+    size_t                      tasks_run = 0U;
     microflow_scheduler_task_t *task =
         microflow_scheduler_find_next_ready(scheduler, now);
 
     while (task != NULL) {
         /* Mark before the callback because callbacks may mutate scheduler state. */
         task->dispatch_id = scheduler->dispatch_id;
-        task->running = true;
+        task->running     = true;
 
         if (task->period == 0U) {
             /* Release one-shot storage before calling back so it may reschedule. */
@@ -214,7 +214,7 @@ size_t microflow_scheduler_run_ready(
 /* Find the earliest active deadline so a platform can sleep until required. */
 bool microflow_scheduler_next_deadline(
     const microflow_scheduler_t *scheduler,
-    microflow_scheduler_tick_t *deadline_out) {
+    microflow_scheduler_tick_t  *deadline_out) {
     if ((scheduler == NULL) || (deadline_out == NULL) ||
         ((scheduler->capacity != 0U) && (scheduler->tasks == NULL))) {
         return false;

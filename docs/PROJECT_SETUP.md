@@ -8,6 +8,7 @@ All builds require:
 - CMake 3.25 or newer
 - Ninja
 - a host C11 compiler
+- clang-format 15 or newer for source formatting
 
 Firmware builds additionally require:
 
@@ -20,6 +21,15 @@ Firmware builds additionally require:
 Install the tools using the normal package manager or official toolchain
 distribution for Windows, macOS, or Linux. Add the compiler executable
 directories to `PATH`.
+
+On Debian, Ubuntu, and Linux Mint, install clang-format with:
+
+```sh
+sudo apt install clang-format
+```
+
+See [FORMAT.md](FORMAT.md) for macOS and Windows installation instructions and
+for the commands that format the source tree.
 
 Set `PICO_SDK_PATH` to the Pico SDK 2.3.1 directory. The clean-build wrappers
 also discover it in `~/.pico-sdk/sdk/2.3.1` and `~/sdk/pico-sdk-2.3.1`.
@@ -34,6 +44,7 @@ ninja --version
 arm-none-eabi-gcc --version
 riscv32-unknown-elf-gcc --version
 python3 --version
+clang-format --version
 ```
 
 Only the compiler for the selected target is required. Host builds need neither

@@ -28,7 +28,7 @@
 /* Clock registers */
 #define RP2040_CLK_REF_CTRL     RP2040_REG32(RP2040_CLOCKS_BASE + 0x30U)
 #define RP2040_CLK_REF_SELECTED RP2040_REG32(RP2040_CLOCKS_BASE + 0x38U)
-#define RP2040_CLK_PERI_CTRL     RP2040_REG32(RP2040_CLOCKS_BASE + 0x48U)
+#define RP2040_CLK_PERI_CTRL    RP2040_REG32(RP2040_CLOCKS_BASE + 0x48U)
 
 /* SIO GPIO registers */
 #define RP2040_SIO_GPIO_OUT_SET RP2040_REG32(RP2040_SIO_BASE + 0x14U)
@@ -36,7 +36,7 @@
 #define RP2040_SIO_GPIO_OE_SET  RP2040_REG32(RP2040_SIO_BASE + 0x24U)
 
 /* GPIO configuration */
-#define RP2040_IO_FUNC_SIO 5U
+#define RP2040_IO_FUNC_SIO  5U
 #define RP2040_IO_FUNC_UART 2U
 
 #define RP2040_GPIO_CTRL(pin) \
@@ -44,25 +44,25 @@
 
 /* Reset bits: each selects the named peripheral in RESETS_RESET/DONE. */
 /* Releases the GPIO function-selection register bank used by every board pin. */
-#define RP2040_RESET_IO_BANK0   (1U << 5U)
+#define RP2040_RESET_IO_BANK0 (1U << 5U)
 /* Releases the pad electrical-control bank paired with IO_BANK0. */
 #define RP2040_RESET_PADS_BANK0 (1U << 8U)
 /* Releases the free-running timer needed for monotonic time and alarm zero. */
-#define RP2040_RESET_TIMER      (1U << 21U)
+#define RP2040_RESET_TIMER (1U << 21U)
 /* Releases UART0 before configuring the firmware's serial transport. */
-#define RP2040_RESET_UART0      (1U << 22U)
+#define RP2040_RESET_UART0 (1U << 22U)
 
 /* UART0 (Arm PL011), clocked from the 12 MHz system clock during bring-up. */
-#define RP2040_UART0_DR     RP2040_REG32(RP2040_UART0_BASE + 0x00U)
-#define RP2040_UART0_FR     RP2040_REG32(RP2040_UART0_BASE + 0x18U)
-#define RP2040_UART0_IBRD   RP2040_REG32(RP2040_UART0_BASE + 0x24U)
-#define RP2040_UART0_FBRD   RP2040_REG32(RP2040_UART0_BASE + 0x28U)
-#define RP2040_UART0_LCR_H  RP2040_REG32(RP2040_UART0_BASE + 0x2CU)
-#define RP2040_UART0_CR     RP2040_REG32(RP2040_UART0_BASE + 0x30U)
-#define RP2040_UART0_IFLS   RP2040_REG32(RP2040_UART0_BASE + 0x34U)
-#define RP2040_UART0_IMSC   RP2040_REG32(RP2040_UART0_BASE + 0x38U)
-#define RP2040_UART0_MIS    RP2040_REG32(RP2040_UART0_BASE + 0x40U)
-#define RP2040_UART0_ICR    RP2040_REG32(RP2040_UART0_BASE + 0x44U)
+#define RP2040_UART0_DR    RP2040_REG32(RP2040_UART0_BASE + 0x00U)
+#define RP2040_UART0_FR    RP2040_REG32(RP2040_UART0_BASE + 0x18U)
+#define RP2040_UART0_IBRD  RP2040_REG32(RP2040_UART0_BASE + 0x24U)
+#define RP2040_UART0_FBRD  RP2040_REG32(RP2040_UART0_BASE + 0x28U)
+#define RP2040_UART0_LCR_H RP2040_REG32(RP2040_UART0_BASE + 0x2CU)
+#define RP2040_UART0_CR    RP2040_REG32(RP2040_UART0_BASE + 0x30U)
+#define RP2040_UART0_IFLS  RP2040_REG32(RP2040_UART0_BASE + 0x34U)
+#define RP2040_UART0_IMSC  RP2040_REG32(RP2040_UART0_BASE + 0x38U)
+#define RP2040_UART0_MIS   RP2040_REG32(RP2040_UART0_BASE + 0x40U)
+#define RP2040_UART0_ICR   RP2040_REG32(RP2040_UART0_BASE + 0x44U)
 /* TXFF prevents writes when the hardware transmit FIFO has no free entry. */
 #define RP2040_UART_FR_TXFF (1U << 5U)
 /* RXFE prevents reads when the hardware receive FIFO contains no byte. */
@@ -82,8 +82,8 @@
 /* TX requests service while queued reply bytes can enter the transmit FIFO. */
 #define RP2040_UART_INT_TX (1U << 5U)
 /* RT flushes a short receive burst after the PL011 receive timeout. */
-#define RP2040_UART_INT_RT (1U << 6U)
-#define RP2040_IRQ_UART0 20U
+#define RP2040_UART_INT_RT     (1U << 6U)
+#define RP2040_IRQ_UART0       20U
 #define RP2040_CLK_PERI_ENABLE (1U << 11U)
 
 
@@ -92,7 +92,7 @@
 #define RP2040_XOSC_STARTUP_DELAY_MS 1U
 
 /* Passworded ENABLE value starts the crystal oscillator state machine. */
-#define RP2040_XOSC_ENABLE        (0xFABU << 12U)
+#define RP2040_XOSC_ENABLE (0xFABU << 12U)
 /* Frequency-range encoding covers the board's 12 MHz crystal. */
 #define RP2040_XOSC_FREQ_1_15_MHZ 0xAA0U
 /* STABLE indicates XOSC output is safe to select as a clock source. */
@@ -103,18 +103,18 @@
 /* Hardware timer */
 #define RP2040_TIMER_BASE     0x40054000U
 #define RP2040_TIMER_TIMERAWL RP2040_REG32(RP2040_TIMER_BASE + 0x28U)
-#define RP2040_TIMER_ALARM0 RP2040_REG32(RP2040_TIMER_BASE + 0x10U)
-#define RP2040_TIMER_INTR RP2040_REG32(RP2040_TIMER_BASE + 0x34U)
-#define RP2040_TIMER_INTE RP2040_REG32(RP2040_TIMER_BASE + 0x38U)
+#define RP2040_TIMER_ALARM0   RP2040_REG32(RP2040_TIMER_BASE + 0x10U)
+#define RP2040_TIMER_INTR     RP2040_REG32(RP2040_TIMER_BASE + 0x34U)
+#define RP2040_TIMER_INTE     RP2040_REG32(RP2040_TIMER_BASE + 0x38U)
 /* Alarm-zero bit acknowledges and enables only the supervisor wake alarm. */
 #define RP2040_TIMER_ALARM0_BIT (1U << 0U)
-#define RP2040_NVIC_ISER RP2040_REG32(RP2040_PPBC_BASE + 0xE100U)
-#define RP2040_NVIC_ICPR RP2040_REG32(RP2040_PPBC_BASE + 0xE280U)
-#define RP2040_IRQ_TIMER0 0U
-#define RP2040_WATCHDOG_BASE 0x40058000U
-#define RP2040_WATCHDOG_CTRL RP2040_REG32(RP2040_WATCHDOG_BASE + 0x00U)
-#define RP2040_WATCHDOG_LOAD RP2040_REG32(RP2040_WATCHDOG_BASE + 0x04U)
-#define RP2040_WATCHDOG_TICK RP2040_REG32(RP2040_WATCHDOG_BASE + 0x2CU)
+#define RP2040_NVIC_ISER        RP2040_REG32(RP2040_PPBC_BASE + 0xE100U)
+#define RP2040_NVIC_ICPR        RP2040_REG32(RP2040_PPBC_BASE + 0xE280U)
+#define RP2040_IRQ_TIMER0       0U
+#define RP2040_WATCHDOG_BASE    0x40058000U
+#define RP2040_WATCHDOG_CTRL    RP2040_REG32(RP2040_WATCHDOG_BASE + 0x00U)
+#define RP2040_WATCHDOG_LOAD    RP2040_REG32(RP2040_WATCHDOG_BASE + 0x04U)
+#define RP2040_WATCHDOG_TICK    RP2040_REG32(RP2040_WATCHDOG_BASE + 0x2CU)
 /* ENABLE starts countdown only after its load and tick source are ready. */
 #define RP2040_WATCHDOG_CTRL_ENABLE (1U << 30U)
 /* TICK_ENABLE derives the watchdog's microsecond timing reference. */

@@ -38,6 +38,7 @@ UseTab: Never
 
 # Braces
 BreakBeforeBraces: Attach
+InsertBraces: true
 
 # Keep short functions readable
 AllowShortFunctionsOnASingleLine: Empty
@@ -47,9 +48,6 @@ MaxEmptyLinesToKeep: 2
 
 # Preprocessor formatting
 IndentPPDirectives: None
-
-# Preserve blank lines
-MaxEmptyLinesToKeep: 2
 
 # Preserve block comment formatting
 ReflowComments: false
