@@ -10,7 +10,8 @@ void microflow_flow_store_initialize(
         return;
     }
     *store = (microflow_flow_store_t){
-        .storage = storage, .capacity = capacity, .lock = lock, .unlock = unlock, .stopped = stopped, .context = context};
+        .storage = storage, .capacity = capacity, .lock = lock, .unlock = unlock, .stopped = stopped, .context = context
+    };
 }
 
 bool microflow_flow_store_activate(void *context, const uint8_t *image,

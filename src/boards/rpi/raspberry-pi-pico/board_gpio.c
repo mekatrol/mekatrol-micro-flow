@@ -3,7 +3,8 @@
 
 /* Logical resources deliberately hide physical pins from flow programs. */
 static const uint8_t resource_pins[MICROFLOW_BOARD_GPIO_RESOURCE_COUNT] = {
-    2U, 3U, 4U, 5U};
+    2U, 3U, 4U, 5U
+};
 
 /* Resolve an externally visible logical resource into its fixed board pin. */
 bool microflow_board_gpio_resource_pin(uint32_t resource, uint32_t *pin) {

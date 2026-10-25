@@ -61,15 +61,15 @@ static void feed(microflow_byte_ring_t *ring, const char *text) {
 /* Exercise dispatch, invalid input, reboot, GPIO, and overlong-line recovery. */
 int main(void) {
     /* Wire the parser to deterministic callbacks, then feed mixed commands. */
-    fixture_t             fixture = {0};
+    fixture_t             fixture = { 0 };
     microflow_byte_ring_t receive;
     microflow_console_t   console;
     microflow_byte_ring_initialize(&receive);
-    const microflow_console_operations_t operations = {.context        = &fixture,
-                                                       .write_response = output,
-                                                       .gpio_read      = gpio_read,
-                                                       .gpio_write     = gpio_write,
-                                                       .reboot         = reboot};
+    const microflow_console_operations_t operations = { .context        = &fixture,
+                                                        .write_response = output,
+                                                        .gpio_read      = gpio_read,
+                                                        .gpio_write     = gpio_write,
+                                                        .reboot         = reboot };
     microflow_console_initialize(&console, &receive, &operations);
     feed(&receive, "gpio read 7\r\ngpio write 7 1\nnope\nreboot\n");
     microflow_console_service(&console);

@@ -24,6 +24,7 @@ static void write_pin(void *context, uint32_t pin, bool value) {
 
 void microflow_board_gpio_rp2040_initialize(microflow_board_gpio_t *gpio) {
     static const microflow_board_gpio_driver_t driver = {
-        .context = NULL, .configure = configure, .read = read_pin, .write = write_pin};
+        .context = NULL, .configure = configure, .read = read_pin, .write = write_pin
+    };
     microflow_board_gpio_initialize(gpio, &driver);
 }

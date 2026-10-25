@@ -129,7 +129,8 @@ static void reboot(void *context) {
 
 void microflow_firmware_console_initialize(microflow_firmware_t *firmware) {
     const microflow_console_operations_t operations = {
-        .context = firmware, .write_response = response, .write_log = log_message, .info = info, .status = status, .tasks = tasks, .queues = queues, .flow_show = flow_show, .flow_validate = flow_validate, .flow_start = flow_start, .flow_stop = flow_stop, .flow_erase_staging = flow_erase, .gpio_list = gpio_list, .gpio_read = gpio_read, .gpio_write = gpio_write, .reboot = reboot};
+        .context = firmware, .write_response = response, .write_log = log_message, .info = info, .status = status, .tasks = tasks, .queues = queues, .flow_show = flow_show, .flow_validate = flow_validate, .flow_start = flow_start, .flow_stop = flow_stop, .flow_erase_staging = flow_erase, .gpio_list = gpio_list, .gpio_read = gpio_read, .gpio_write = gpio_write, .reboot = reboot
+    };
     microflow_console_initialize(&firmware->console,
                                  &firmware->console_receive, &operations);
 }

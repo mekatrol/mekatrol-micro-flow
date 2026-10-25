@@ -43,13 +43,14 @@ static void write_pin(void *context, uint32_t pin, bool value) {
 /* Exercise mapping, safe initialization, access policy, and safe reset. */
 int main(void) {
     /* One scenario covers safe reset, mapping, direction, read, and write policy. */
-    fixture_t                           fixture = {0};
+    fixture_t                           fixture = { 0 };
     microflow_board_gpio_t              gpio;
     const microflow_board_gpio_driver_t driver = {
         .context   = &fixture,
         .configure = configure,
         .read      = read_pin,
-        .write     = write_pin};
+        .write     = write_pin
+    };
     microflow_board_gpio_initialize(&gpio, &driver);
 
     /* Initialization must put all mapped pins in low-latched input mode. */

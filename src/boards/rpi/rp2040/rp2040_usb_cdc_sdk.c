@@ -40,7 +40,8 @@ bool microflow_rp2040_usb_cdc_initialize(microflow_rp2040_usb_cdc_t *cdc,
         .receive_storage   = receive_storage,
         .receive_capacity  = receive_capacity,
         .transmit_storage  = transmit_storage,
-        .transmit_capacity = transmit_capacity};
+        .transmit_capacity = transmit_capacity
+    };
     /* Register only after complete state construction for callback safety. */
     active_cdc = cdc;
     return tusb_init();

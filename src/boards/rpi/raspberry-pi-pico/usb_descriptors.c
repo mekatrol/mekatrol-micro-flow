@@ -26,16 +26,19 @@ static const tusb_desc_device_t device_descriptor = {
     .iManufacturer      = 1,
     .iProduct           = 2,
     .iSerialNumber      = 3,
-    .bNumConfigurations = 1};
+    .bNumConfigurations = 1
+};
 
 /* Interface/endpoint numbers are fixed to keep host enumeration stable. */
 static const uint8_t configuration_descriptor[] = {
     TUD_CONFIG_DESCRIPTOR(1, 2, 0, USB_CONFIGURATION_TOTAL_LENGTH, 0, 100),
-    TUD_CDC_DESCRIPTOR(0, 4, 0x81, 8, 0x02, 0x82, 64)};
+    TUD_CDC_DESCRIPTOR(0, 4, 0x81, 8, 0x02, 0x82, 64)
+};
 
 /* Index zero is reserved for the separately generated language descriptor. */
 static const char *const string_descriptors[] = {
-    "", "Mekatrol", "Micro Flow Raspberry Pi Pico", "0001", "Micro Flow Console"};
+    "", "Mekatrol", "Micro Flow Raspberry Pi Pico", "0001", "Micro Flow Console"
+};
 static uint16_t string_descriptor[32];
 
 /* Supply TinyUSB with the immutable identity and device-class descriptor. */

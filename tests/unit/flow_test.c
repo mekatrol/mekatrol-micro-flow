@@ -48,7 +48,7 @@ static void make_image(uint8_t *image, size_t length) {
 }
 
 int main(void) {
-    uint8_t image[MICROFLOW_FLOW_IMAGE_HEADER_SIZE + 4U] = {0};
+    uint8_t image[MICROFLOW_FLOW_IMAGE_HEADER_SIZE + 4U] = { 0 };
     memcpy(&image[MICROFLOW_FLOW_IMAGE_HEADER_SIZE], "test", 4U);
     make_image(image, sizeof(image));
     CHECK(microflow_flow_validate(NULL, image, sizeof(image)));

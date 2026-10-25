@@ -87,7 +87,7 @@ static void test_valid_upload_and_abort(void) {
     /* Complete one activation, then prove abort clears transfer state. */
     microflow_byte_ring_t        rx, tx;
     microflow_upload_transport_t t;
-    fixture_t                    f = {{0}, 0U, 0U, 0U};
+    fixture_t                    f = { { 0 }, 0U, 0U, 0U };
     microflow_byte_ring_initialize(&rx);
     microflow_byte_ring_initialize(&tx);
     microflow_upload_transport_initialize(&t, &rx, &tx, validate, activate, &f);
@@ -121,7 +121,7 @@ static void test_rejections_preserve_active(void) {
     /* Invalid checksum, sequence, and offset must preserve the active image. */
     microflow_byte_ring_t        rx, tx;
     microflow_upload_transport_t t;
-    fixture_t                    f = {{1U, 2U}, 2U, 0U, 0U};
+    fixture_t                    f = { { 1U, 2U }, 2U, 0U, 0U };
     microflow_byte_ring_initialize(&rx);
     microflow_byte_ring_initialize(&tx);
     microflow_upload_transport_initialize(&t, &rx, &tx, validate, activate, &f);
@@ -156,11 +156,11 @@ static void test_oversized_and_resynchronization(void) {
     /* Recover from noise, unsafe lengths, and a timed-out partial frame. */
     microflow_byte_ring_t        rx, tx;
     microflow_upload_transport_t t;
-    fixture_t                    f = {{0}, 0U, 0U, 0U};
+    fixture_t                    f = { { 0 }, 0U, 0U, 0U };
     microflow_byte_ring_initialize(&rx);
     microflow_byte_ring_initialize(&tx);
     microflow_upload_transport_initialize(&t, &rx, &tx, validate, activate, &f);
-    uint8_t bytes[32] = {'x', 'M', 'F', 'L', 'O', 1U, MICROFLOW_UPLOAD_PROBE};
+    uint8_t bytes[32] = { 'x', 'M', 'F', 'L', 'O', 1U, MICROFLOW_UPLOAD_PROBE };
     put_u16(&bytes[7], MICROFLOW_UPLOAD_MAX_FRAME_PAYLOAD + 1U);
     put_u32(&bytes[9], 0U);
     put_u32(&bytes[13], 0U);

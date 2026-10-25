@@ -39,6 +39,7 @@ UseTab: Never
 # Braces
 BreakBeforeBraces: Attach
 InsertBraces: true
+Cpp11BracedListStyle: false
 
 # Keep short functions readable
 AllowShortFunctionsOnASingleLine: Empty

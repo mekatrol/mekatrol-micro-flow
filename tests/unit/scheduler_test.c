@@ -41,10 +41,10 @@ static void test_priority_deadlines_and_stable_order(void) {
     /* Ready tasks sort by priority while ties preserve task-storage order. */
     microflow_scheduler_t      scheduler;
     microflow_scheduler_task_t tasks[4];
-    event_log_t                log         = {0};
-    callback_context_t         low         = {.log = &log, .value = 3U};
-    callback_context_t         high_first  = {.log = &log, .value = 1U};
-    callback_context_t         high_second = {.log = &log, .value = 2U};
+    event_log_t                log         = { 0 };
+    callback_context_t         low         = { .log = &log, .value = 3U };
+    callback_context_t         high_first  = { .log = &log, .value = 1U };
+    callback_context_t         high_second = { .log = &log, .value = 2U };
 
     CHECK(microflow_scheduler_initialize(&scheduler, tasks, 4U) ==
           MICROFLOW_SCHEDULER_OK);
@@ -72,8 +72,8 @@ static void test_periodic_skip_without_drift(void) {
     microflow_scheduler_t       scheduler;
     microflow_scheduler_task_t  tasks[1];
     microflow_scheduler_task_t *periodic = NULL;
-    event_log_t                 log      = {0};
-    callback_context_t          context  = {.log = &log, .value = 1U};
+    event_log_t                 log      = { 0 };
+    callback_context_t          context  = { .log = &log, .value = 1U };
 
     CHECK(microflow_scheduler_initialize(&scheduler, tasks, 1U) ==
           MICROFLOW_SCHEDULER_OK);
@@ -94,8 +94,8 @@ static void test_wraparound_cancel_and_capacity(void) {
     microflow_scheduler_t       scheduler;
     microflow_scheduler_task_t  tasks[1];
     microflow_scheduler_task_t *task    = NULL;
-    event_log_t                 log     = {0};
-    callback_context_t          context = {.log = &log, .value = 1U};
+    event_log_t                 log     = { 0 };
+    callback_context_t          context = { .log = &log, .value = 1U };
 
     CHECK(microflow_scheduler_initialize(&scheduler, tasks, 1U) ==
           MICROFLOW_SCHEDULER_OK);
@@ -122,8 +122,8 @@ static void test_argument_validation_and_next_deadline(void) {
     microflow_scheduler_t      scheduler;
     microflow_scheduler_task_t tasks[2];
     microflow_scheduler_tick_t deadline = 0U;
-    event_log_t                log      = {0};
-    callback_context_t         context  = {.log = &log, .value = 1U};
+    event_log_t                log      = { 0 };
+    callback_context_t         context  = { .log = &log, .value = 1U };
 
     CHECK(microflow_scheduler_initialize(&scheduler, tasks, 2U) ==
           MICROFLOW_SCHEDULER_OK);

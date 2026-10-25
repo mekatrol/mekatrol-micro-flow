@@ -51,7 +51,7 @@ microflow_scheduler_result_t microflow_scheduler_initialize(
 
     /* Zeroing public storage prevents stale callbacks surviving reinitialize. */
     for (size_t index = 0U; index < task_capacity; ++index) {
-        task_storage[index] = (microflow_scheduler_task_t){0};
+        task_storage[index] = (microflow_scheduler_task_t){ 0 };
     }
 
     return MICROFLOW_SCHEDULER_OK;

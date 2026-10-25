@@ -40,7 +40,8 @@ static void fault(void *context, microflow_supervisor_fault_t value) {
 microflow_supervisor_platform_t
 microflow_firmware_platform(microflow_firmware_t *firmware) {
     return (microflow_supervisor_platform_t){
-        .now = now, .wait_until = wait_until, .watchdog_service = watchdog, .fault_report = fault, .critical_enter = microflow_firmware_lock, .critical_exit = microflow_firmware_unlock, .context = firmware};
+        .now = now, .wait_until = wait_until, .watchdog_service = watchdog, .fault_report = fault, .critical_enter = microflow_firmware_lock, .critical_exit = microflow_firmware_unlock, .context = firmware
+    };
 }
 
 void microflow_firmware_flow_stopped(void *context) {
@@ -54,7 +55,8 @@ void microflow_firmware_status_service(void *context, uint32_t events) {
 #if defined(MICROFLOW_WAVESHARE_RP2040_ZERO)
     static uint8_t       colour;
     static const uint8_t colours[][3] = {
-        {12U, 0U, 0U}, {0U, 12U, 0U}, {0U, 0U, 12U}};
+        { 12U, 0U, 0U }, { 0U, 12U, 0U }, { 0U, 0U, 12U }
+    };
 #endif
     (void)events;
     illuminated = !illuminated;

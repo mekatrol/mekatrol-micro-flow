@@ -75,11 +75,11 @@ static void service(void *context, uint32_t events) {
 /* Assemble the complete fake platform contract used by each test scenario. */
 static microflow_supervisor_platform_t platform(fixture_t *f) {
     /* Construct the complete fake platform used by each supervisor instance. */
-    return (microflow_supervisor_platform_t){.now              = fixture_now,
-                                             .wait_until       = fixture_wait,
-                                             .watchdog_service = fixture_watchdog,
-                                             .fault_report     = fixture_fault,
-                                             .context          = f};
+    return (microflow_supervisor_platform_t){ .now              = fixture_now,
+                                              .wait_until       = fixture_wait,
+                                              .watchdog_service = fixture_watchdog,
+                                              .fault_report     = fixture_fault,
+                                              .context          = f };
 }
 
 /* Prove bounded byte/event queues preserve unread FIFO data on overflow. */
@@ -117,11 +117,11 @@ static void test_queues_reject_newest(void) {
     microflow_event_queue_t events;
     microflow_event_queue_initialize(&events);
     for (uint32_t i = 0U; i < MICROFLOW_SUPERVISOR_EVENT_CAPACITY - 1U; ++i) {
-        CHECK(microflow_event_queue_push_from_isr(&events, (microflow_supervisor_event_t){i, i + 1U}));
+        CHECK(microflow_event_queue_push_from_isr(&events, (microflow_supervisor_event_t){ i, i + 1U }));
     }
 
     /* The full event queue rejects one new event and records its peak usage. */
-    CHECK(!microflow_event_queue_push_from_isr(&events, (microflow_supervisor_event_t){99U, 99U}));
+    CHECK(!microflow_event_queue_push_from_isr(&events, (microflow_supervisor_event_t){ 99U, 99U }));
     CHECK(events.rejected == 1U && events.high_water == MICROFLOW_SUPERVISOR_EVENT_CAPACITY - 1U);
 
     /* Checking both fields proves complete events remain paired and FIFO. */
@@ -139,7 +139,7 @@ static void test_priority_metrics_idle_and_overrun(void) {
      * watchdog servicing.  Time starts at 100 and the ten-tick heartbeat makes
      * 110 the first deadline, giving all expected values simple provenance.
      */
-    fixture_t                       f = {.now = 100U};
+    fixture_t                       f = { .now = 100U };
     microflow_supervisor_t          s;
     microflow_supervisor_platform_t p = platform(&f);
     CHECK(microflow_supervisor_initialize(&s, &p, 10U));
@@ -183,7 +183,7 @@ static void test_wraparound_warm_reset_and_fault(void) {
      * firmware: unsigned clock wraparound, ISR-safe deferred diagnostics, and
      * complete supervisor reinitialization after repeated warm resets.
      */
-    fixture_t                       f = {.now = UINT32_MAX - 3U};
+    fixture_t                       f = { .now = UINT32_MAX - 3U };
     microflow_supervisor_t          s;
     microflow_supervisor_platform_t p = platform(&f);
     CHECK(microflow_supervisor_initialize(&s, &p, 5U));

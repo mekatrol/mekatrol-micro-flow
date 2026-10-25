@@ -97,7 +97,7 @@ static bool reply(microflow_upload_transport_t *t, uint8_t type, uint32_t sequen
 /* Return a compact one-byte result for a successfully parsed request type. */
 static void result_reply(microflow_upload_transport_t *t, uint8_t type,
                          uint32_t sequence, microflow_upload_result_t result) {
-    const uint8_t payload[] = {(uint8_t)result};
+    const uint8_t payload[] = { (uint8_t)result };
     if (!reply(t, type, sequence, payload, sizeof(payload))) {
         ++t->frames_rejected;
     }
@@ -133,9 +133,9 @@ static void handle_frame(microflow_upload_transport_t *t) {
     ++t->frames_received;
     if (type == MICROFLOW_UPLOAD_PROBE) {
         /* Capacity is encoded as two little-endian bytes in the compact reply. */
-        const uint8_t info[] = {MICROFLOW_UPLOAD_PROTOCOL_VERSION,
-                                (uint8_t)MICROFLOW_UPLOAD_MAX_IMAGE_SIZE,
-                                (uint8_t)(MICROFLOW_UPLOAD_MAX_IMAGE_SIZE >> 8U)};
+        const uint8_t info[] = { MICROFLOW_UPLOAD_PROTOCOL_VERSION,
+                                 (uint8_t)MICROFLOW_UPLOAD_MAX_IMAGE_SIZE,
+                                 (uint8_t)(MICROFLOW_UPLOAD_MAX_IMAGE_SIZE >> 8U) };
         if (length != 0U) {
             reject(t, sequence, MICROFLOW_UPLOAD_ERROR_LENGTH);
         } else if (!reply(t, MICROFLOW_UPLOAD_DEVICE_INFO, sequence, info, sizeof(info))) {
@@ -254,7 +254,7 @@ void microflow_upload_transport_service(microflow_upload_transport_t *t, uint32_
         t->receive_tick_valid = true;
         if (t->header_used < MICROFLOW_UPLOAD_FRAME_OVERHEAD) {
             /* Scan for magic incrementally, retaining an overlapping leading M. */
-            static const uint8_t magic[4] = {'M', 'F', 'L', 'O'};
+            static const uint8_t magic[4] = { 'M', 'F', 'L', 'O' };
             if ((t->header_used < 4U) && (byte != magic[t->header_used])) {
                 t->header_used = byte == magic[0] ? 1U : 0U;
                 ++t->frames_rejected;
