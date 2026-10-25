@@ -19,6 +19,12 @@ add_executable(microflow-raspberry-pi-pico
     "${soc_dir}/rp2040_usb_cdc_sdk.c"
 )
 
+# Generate the C header containing the WS2812 PIO instructions.
+# The generated header is made available to the firmware executable.
+pico_generate_pio_header(microflow-raspberry-pi-pico
+    "${soc_dir}/ws2812.pio"
+)
+
 target_compile_features(microflow-raspberry-pi-pico
     PRIVATE
         c_std_11
@@ -43,6 +49,7 @@ target_link_libraries(microflow-raspberry-pi-pico
         pico_stdlib
         hardware_gpio
         hardware_irq
+        hardware_pio
         hardware_sync
         hardware_timer
         hardware_uart

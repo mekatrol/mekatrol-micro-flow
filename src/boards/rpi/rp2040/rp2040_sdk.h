@@ -38,4 +38,7 @@ void microflow_rp2040_timer_alarm0_event(void);
 void microflow_rp2040_uart0_event(void);
 void microflow_rp2040_usb_event(void);
 
+/* Read the current RP2040 system clock frequency in hertz. */
+uint32_t microflow_rp2040_system_clock_hz(void);
+
 #endif

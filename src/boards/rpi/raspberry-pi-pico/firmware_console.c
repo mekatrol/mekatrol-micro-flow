@@ -11,6 +11,9 @@
 
 #include "rp2040_sdk.h"
 
+#include <stdint.h>
+#include <stdio.h>
+
 /*
  * Send an unsigned integer through the allocation-free USB formatter.
  *
@@ -41,16 +44,32 @@ static void log_message(void *context, const uint8_t *data, size_t length) {
     microflow_firmware_usb_write(firmware, data, length);
 }
 
-/*
- * Identify the minimal firmware and its console protocol.
+/* Identify the minimal firmware and report the RP2040 system clock.
  *
  * Flow-image support is intentionally not advertised until the upload
  * transport and flow store are integrated.
  */
 static void info(void *context) {
+    char message[80];
+
+    /* Preserve the existing firmware identification response. */
     microflow_firmware_usb_write_text(
         context,
         "OK Micro Flow Raspberry Pi Pico FreeRTOS CDC v1\r\n");
+
+    /* Read the actual system clock frequency configured by the Pico SDK. */
+    const uint32_t clock_hz = microflow_rp2040_system_clock_hz();
+
+    const int length = snprintf(
+        message,
+        sizeof(message),
+        "System clock: %lu Hz\r\n",
+        (unsigned long)clock_hz);
+
+    /* Send the formatted response only if it fits in the buffer. */
+    if (length > 0 && (size_t)length < sizeof(message)) {
+        microflow_firmware_usb_write_text(context, message);
+    }
 }
 
 /*
