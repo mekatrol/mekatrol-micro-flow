@@ -342,12 +342,30 @@ static void platform_fault(void *context, microflow_supervisor_fault_t fault) {
 static void status_service(void *context, uint32_t events) {
     /* Timer work combines visible liveness with stalled-upload expiration. */
     static bool illuminated;
+#if defined(MICROFLOW_WAVESHARE_RP2040_ZERO)
+    static uint8_t colour;
+    static const uint8_t colours[][3] = {
+        {12U, 0U, 0U},
+        {0U, 12U, 0U},
+        {0U, 0U, 12U},
+    };
+#endif
     (void)context;
     (void)events;
     illuminated = !illuminated;
     (void)microflow_upload_transport_expire(&upload_transport,
                                             microflow_board_monotonic_ticks(), UART_RECEIVE_TIMEOUT_US);
+#if defined(MICROFLOW_WAVESHARE_RP2040_ZERO)
+    if (illuminated) {
+        microflow_board_status_rgb(colours[colour][0], colours[colour][1],
+                                   colours[colour][2]);
+        colour = (uint8_t)((colour + 1U) % 3U);
+    } else {
+        microflow_board_status_rgb(0U, 0U, 0U);
+    }
+#else
     microflow_board_status_rgb(0U, illuminated ? 12U : 0U, 0U);
+#endif
 }
 
 /* Parse queued UART upload bytes and arm TX interrupts for generated replies. */
