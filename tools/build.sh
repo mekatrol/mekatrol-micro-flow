@@ -23,9 +23,11 @@ prepare_pico_sdk()
 print_usage()
 {
     printf '%s\n' \
-        "Usage: ./tools/build.sh <target>" \
+        "Usage: ./tools/build.sh <target> [--flash] [--device <name>]" \
         "" \
         "Deletes build/, configures the selected target, and builds it." \
+        "With --flash, copies its UF2 to the mounted device after building." \
+        "The default device name is RPI-RP2." \
         "" \
         "Available targets:" \
         "  host-debug" \
@@ -36,12 +38,40 @@ print_usage()
         "  pico2-riscv-debug"
 }
 
-if [ "$#" -ne 1 ]; then
+if [ "$#" -lt 1 ]; then
     print_usage
     exit 2
 fi
 
-case "$1" in
+target=$1
+flash=false
+device=RPI-RP2
+shift
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --flash)
+            flash=true
+            shift
+            ;;
+        -d|--device)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                printf 'Option %s requires a device name.\n\n' "$1" >&2
+                print_usage >&2
+                exit 2
+            fi
+            device=$2
+            shift 2
+            ;;
+        *)
+            printf 'Unknown option: %s\n\n' "$1" >&2
+            print_usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+case "$target" in
     host-debug|host-release)
         required_compiler=
         ;;
@@ -52,11 +82,22 @@ case "$1" in
         required_compiler=riscv32-unknown-elf-gcc
         ;;
     *)
-        printf 'Unknown target: %s\n\n' "$1" >&2
+        printf 'Unknown target: %s\n\n' "$target" >&2
         print_usage >&2
         exit 2
         ;;
 esac
+
+if [ "$flash" = true ]; then
+    case "$target" in
+        pico-debug|waveshare-rp2040-zero-debug)
+            ;;
+        *)
+            printf 'Target is not flashable: %s\n' "$target" >&2
+            exit 2
+            ;;
+    esac
+fi
 
 for required_tool in cmake ninja $required_compiler; do
     if ! command -v "$required_tool" >/dev/null 2>&1; then
@@ -65,7 +106,7 @@ for required_tool in cmake ninja $required_compiler; do
     fi
 done
 
-if [ "$1" = pico-debug ] || [ "$1" = waveshare-rp2040-zero-debug ]; then
+if [ "$target" = pico-debug ] || [ "$target" = waveshare-rp2040-zero-debug ]; then
     prepare_pico_sdk
 fi
 
@@ -74,5 +115,9 @@ repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 cd "$repo_root"
 
 cmake -E remove_directory "$repo_root/build"
-cmake --preset "$1"
-cmake --build --preset "$1"
+cmake --preset "$target"
+cmake --build --preset "$target"
+
+if [ "$flash" = true ]; then
+    "$script_dir/flash.sh" "$target" --device "$device"
+fi

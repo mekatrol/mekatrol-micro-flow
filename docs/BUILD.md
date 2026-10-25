@@ -51,9 +51,9 @@ The Pico builds produce ELF, map, BIN, and UF2 files. They include the bounded
 supervisor, UART upload transport, native TinyUSB CDC console, logical GPIO,
 and watchdog. The `pico-debug` preset drives the Pico's GPIO25 status LED; the
 `waveshare-rp2040-zero-debug` preset drives the RP2040-Zero's WS2812 status LED
-on GPIO16. Hold BOOTSEL while connecting the board and copy the generated UF2
-from the selected preset's build directory to the mass-storage volume. A normal
-build never flashes attached hardware.
+on GPIO16. Hold BOOTSEL while connecting the board, then use the flash wrapper
+to copy the generated UF2 to its mass-storage volume. A normal build does not
+flash attached hardware.
 
 The Waveshare UF2 is:
 
@@ -89,6 +89,32 @@ On Windows:
 ```
 
 Use direct preset commands when retaining multiple build directories matters.
+
+## Flash wrappers
+
+Flash a Pico target to the default `RPI-RP2` device:
+
+```sh
+./tools/flash.sh waveshare-rp2040-zero-debug
+```
+
+The flash wrappers configure the preset when needed and run an incremental
+build before copying the UF2. CMake and Ninja rebuild only out-of-date files.
+
+Use `--device` when the mounted device has a different name, or build and flash
+in one command:
+
+```sh
+./tools/flash.sh waveshare-rp2040-zero-debug --device MY-RP2040
+./tools/build.sh waveshare-rp2040-zero-debug --flash --device MY-RP2040
+```
+
+On Windows, the flash wrapper finds the drive by volume label:
+
+```powershell
+.\tools\flash.ps1 waveshare-rp2040-zero-debug
+.\tools\flash.ps1 waveshare-rp2040-zero-debug -Device MY-RP2040
+```
 
 To remove the complete `build/` directory without starting another build, run:
 
