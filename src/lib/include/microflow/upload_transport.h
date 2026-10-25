@@ -1,4 +1,4 @@
-/* Bounded binary flow-image upload protocol over supervisor byte rings. */
+/* Define uploads over fixed rings so receive, staging, and reply storage require no allocation. */
 #ifndef MICROFLOW_UPLOAD_TRANSPORT_H
 #define MICROFLOW_UPLOAD_TRANSPORT_H
 

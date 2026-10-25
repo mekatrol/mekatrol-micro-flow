@@ -18,10 +18,10 @@ void microflow_firmware_usb_write_text(microflow_firmware_t *firmware,
     microflow_firmware_usb_write(firmware, (const uint8_t *)text, length);
 }
 
-/* Render one unsigned diagnostic counter with bounded stack and code size. */
+/* Render one unsigned counter locally so diagnostics remain bounded and avoid printf code. */
 void microflow_firmware_usb_write_u32(microflow_firmware_t *firmware,
                                       uint32_t              value) {
-    /* Ten decimal digits hold every uint32 value, with no sign or terminator. */
+    /* Reserve ten digits because that exactly bounds the decimal form of every uint32 value. */
     uint8_t digits[10];
     size_t  used = 0U;
     /* Collect least-significant digits first; do-while renders zero correctly. */
@@ -35,12 +35,15 @@ void microflow_firmware_usb_write_u32(microflow_firmware_t *firmware,
     }
 }
 
-/* Poll TinyUSB, bridge received bytes, and parse commands in main context. */
+/* Poll and parse in main context so USB callbacks never execute command side effects in an ISR. */
 void microflow_firmware_usb_service(void *context, uint32_t events) {
     microflow_firmware_t *firmware = context;
     uint8_t               value;
     (void)events;
-    /* Move bytes from TinyUSB's ring into the console's supervisor-owned ring. */
+    /*
+     * Copy USB bytes into the console ring because the parser consumes that
+     * ring and records overflow through the supervisor.
+     */
     microflow_rp2040_usb_cdc_task(&firmware->usb);
     while (microflow_rp2040_usb_cdc_read(&firmware->usb, &value)) {
         (void)microflow_supervisor_byte_ring_push_from_isr(

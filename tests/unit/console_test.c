@@ -30,7 +30,7 @@ static bool gpio_read(void *context, uint32_t resource, bool *value) {
     *value = true;
     return true;
 }
-/* Accept one intentional write shape and count its observable side effect. */
+/* Accept one write shape so the test distinguishes valid dispatch from rejected arguments. */
 static bool gpio_write(void *context, uint32_t resource, bool value) {
     fixture_t *f = context;
     if ((resource != 7U) || !value) {
@@ -45,7 +45,7 @@ static void reboot(void *context) {
 }
 /* Feed text through the real receive ring to preserve parser boundary behavior. */
 static void feed(microflow_byte_ring_t *ring, const char *text) {
-    /* Model the ISR producer by enqueuing characters in transport order. */
+    /* Enqueue in transport order so parsing is exercised across the real ISR/main ring boundary. */
     while (*text != '\0') {
         (void)microflow_byte_ring_push_from_isr(ring, (uint8_t)*text);
         ++text;
@@ -58,7 +58,7 @@ static void feed(microflow_byte_ring_t *ring, const char *text) {
             return 1;                                                    \
         }                                                                \
     } while (0)
-/* Exercise dispatch, invalid input, reboot, GPIO, and overlong-line recovery. */
+/* Exercise success and recovery paths together so parser state leakage becomes observable. */
 int main(void) {
     /* Wire the parser to deterministic callbacks, then feed mixed commands. */
     fixture_t             fixture = { 0 };
@@ -79,7 +79,7 @@ int main(void) {
     CHECK(fixture.rebooted);
     CHECK(console.commands == 4U);
     CHECK(console.invalid_commands == 1U);
-    /* An overlong line is discarded in full and produces exactly one error. */
+    /* Require one error for an overlong line so its truncated suffix cannot become a command. */
     for (size_t i = 0U; i < MICROFLOW_CONSOLE_LINE_CAPACITY + 5U; ++i) {
         (void)microflow_byte_ring_push_from_isr(&receive, 'x');
     }

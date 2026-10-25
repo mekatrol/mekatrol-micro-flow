@@ -17,14 +17,14 @@ typedef struct {
     uint32_t validations, activations;
 } fixture_t;
 
-/* Model semantic flow validation and count how often it is requested. */
+/* Model semantic validation and count calls so tests detect skipped or repeated validation. */
 static bool validate(void *context, const uint8_t *image, size_t length) {
     /* A FLOW prefix stands in for full semantic validation in this fixture. */
     fixture_t *f = context;
     ++f->validations;
     return length >= 4U && memcmp(image, "FLOW", 4U) == 0;
 }
-/* Model atomic activation by copying accepted bytes into fixture-owned storage. */
+/* Copy accepted bytes into fixture storage so activation effects are isolated and observable. */
 static bool activate(void *context, const uint8_t *image, size_t length) {
     fixture_t *f = context;
     ++f->activations;
@@ -35,12 +35,12 @@ static bool activate(void *context, const uint8_t *image, size_t length) {
     f->length = length;
     return true;
 }
-/* Encode test metadata in the protocol's two-byte little-endian representation. */
+/* Encode two-byte metadata explicitly so tests are independent of host byte order and alignment. */
 static void put_u16(uint8_t *p, uint16_t v) {
     p[0] = (uint8_t)v;
     p[1] = (uint8_t)(v >> 8U);
 }
-/* Encode test metadata in the protocol's four-byte little-endian representation. */
+/* Encode four-byte metadata explicitly so tests are independent of host byte order and alignment. */
 static void put_u32(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)v;
     p[1] = (uint8_t)(v >> 8U);
@@ -50,7 +50,7 @@ static void put_u32(uint8_t *p, uint32_t v) {
 /* Build a valid framed request so individual tests can mutate targeted fields. */
 static size_t frame(uint8_t *out, uint8_t type, uint32_t sequence,
                     const uint8_t *payload, uint16_t length) {
-    /* Serialize the exact little-endian wire representation under test. */
+    /* Serialize the real wire form so tests do not bypass framing or checksum behavior. */
     memcpy(out, "MFLO", 4U);
     out[4] = 1U;
     out[5] = type;
@@ -84,7 +84,7 @@ static void discard(microflow_byte_ring_t *ring) {
 
 /* Prove the successful begin/data/complete path and explicit abort behavior. */
 static void test_valid_upload_and_abort(void) {
-    /* Complete one activation, then prove abort clears transfer state. */
+    /* Activate before abort so the test proves abort clears staging without undoing active state. */
     microflow_byte_ring_t        rx, tx;
     microflow_upload_transport_t t;
     fixture_t                    f = { { 0 }, 0U, 0U, 0U };
@@ -153,7 +153,7 @@ static void test_rejections_preserve_active(void) {
 
 /* Prove bounded parsing recovers after noise, oversize metadata, and timeout. */
 static void test_oversized_and_resynchronization(void) {
-    /* Recover from noise, unsafe lengths, and a timed-out partial frame. */
+    /* Combine corrupt inputs so each recovery path proves the next valid frame remains parseable. */
     microflow_byte_ring_t        rx, tx;
     microflow_upload_transport_t t;
     fixture_t                    f = { { 0 }, 0U, 0U, 0U };

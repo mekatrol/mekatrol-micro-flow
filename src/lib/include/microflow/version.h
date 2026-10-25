@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-/* Returns a process-lifetime semantic-version string such as "0.0.1". */
+/* Return a process-lifetime version string so diagnostics need no allocation or caller buffer. */
 const char *microflow_version_string(void);
 
 #ifdef __cplusplus

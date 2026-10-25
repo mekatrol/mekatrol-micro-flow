@@ -11,7 +11,7 @@ typedef struct {
     uint32_t                         write_count;
 } fixture_t;
 
-/* Record requested physical direction changes made by logical GPIO policy. */
+/* Record physical direction requests so tests can verify mapping and transition order. */
 static void configure(void *context, uint32_t pin,
                       microflow_board_gpio_direction_t direction) {
     /* Record direction and call count to expose redundant or missing writes. */
@@ -20,7 +20,7 @@ static void configure(void *context, uint32_t pin,
     ++fixture->configure_count;
 }
 
-/* Return fixture pin state as the board driver's hardware sample. */
+/* Return fixture state so logical-read tests need no physical GPIO hardware. */
 static bool read_pin(void *context, uint32_t pin) {
     return ((fixture_t *)context)->levels[pin];
 }
@@ -40,9 +40,9 @@ static void write_pin(void *context, uint32_t pin, bool value) {
         }                                                                        \
     } while (0)
 
-/* Exercise mapping, safe initialization, access policy, and safe reset. */
+/* Exercise mapping, initialization, access checks, and reset so unsafe pin transitions regress visibly. */
 int main(void) {
-    /* One scenario covers safe reset, mapping, direction, read, and write policy. */
+    /* Keep related pin operations together so each assertion observes the state left by the prior one. */
     fixture_t                           fixture = { 0 };
     microflow_board_gpio_t              gpio;
     const microflow_board_gpio_driver_t driver = {
@@ -61,7 +61,7 @@ int main(void) {
         CHECK(!fixture.levels[pin]);
     }
 
-    /* Driving is forbidden until that logical resource becomes an output. */
+    /* Expect rejection before output configuration so tests enforce the electrical-safety gate. */
     CHECK(!microflow_board_gpio_write(&gpio, 0U, true));
     CHECK(microflow_board_gpio_configure(
         &gpio, 0U, MICROFLOW_BOARD_GPIO_OUTPUT));

@@ -1,4 +1,7 @@
-/* Raspberry Pi Pico firmware composition and interrupt routing. */
+/*
+ * Own the single firmware instance and its IRQ entry points together so every
+ * interrupt signals the same queues and supervisor initialized at startup.
+ */
 #include "firmware.h"
 #include "firmware_internal.h"
 

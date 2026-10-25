@@ -1,4 +1,4 @@
-/* Host regression tests for deterministic portable scheduler semantics. */
+/* Exercise scheduler semantics on the host so ordering and wrap behavior stay target-independent. */
 #include <microflow/scheduler.h>
 
 #include <limits.h>

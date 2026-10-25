@@ -1,4 +1,4 @@
-/* Raspberry Pi Pico SDK implementation of project-owned RP2040 primitives. */
+/* Implement project-owned RP2040 primitives with the Pico SDK so SDK types stay at this boundary. */
 #include "rp2040_sdk.h"
 
 #include "hardware/gpio.h"

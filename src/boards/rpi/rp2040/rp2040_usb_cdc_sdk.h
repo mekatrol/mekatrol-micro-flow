@@ -1,4 +1,4 @@
-/* Bounded TinyUSB CDC adapter with caller-owned RX and TX storage. */
+/* Use caller-provided CDC queues so their exact RAM cost is fixed at firmware composition time. */
 #ifndef MICROFLOW_RP2040_USB_CDC_SDK_H
 #define MICROFLOW_RP2040_USB_CDC_SDK_H
 

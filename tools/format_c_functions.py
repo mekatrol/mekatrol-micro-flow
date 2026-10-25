@@ -26,7 +26,7 @@ def mask_noncode(source: str) -> str:
                 k = j
                 while k < n:
                     if source[k] in '\r\n':
-                        # A backslash before newline continues the directive.
+                        # Treat a backslash-newline as one directive so its body is not parsed as C.
                         prev = k - 1
                         if source[k] == '\n' and prev >= 0 and source[prev] == '\r':
                             prev -= 1
@@ -86,7 +86,7 @@ def is_function_prefix(prefix: str) -> bool:
     p = prefix.strip()
     if not p or '=' in p or not p.endswith(')'):
         return False
-    # A function's final parameter-list closing parenthesis must be present.
+    # Require the final parameter-list parenthesis so incomplete declarations are untouched.
     depth = 0
     opening = -1
     for i in range(len(p) - 1, -1, -1):
@@ -103,7 +103,7 @@ def is_function_prefix(prefix: str) -> bool:
     m = re.search(r'([A-Za-z_]\w*)\s*$', before)
     if not m or m.group(1) in {'if', 'for', 'while', 'switch', 'return', 'sizeof'}:
         return False
-    # Reject function-pointer variable definitions and compound constructs.
+    # Reject function-pointer variables and compound constructs so only functions are reformatted.
     if re.search(r'\(\s*\*\s*$', before):
         return False
     return True
@@ -137,7 +137,7 @@ def functions(masked: str):
 
 
 def newline_for(source: str, position: int) -> str:
-    # Prefer the newline on the line containing the closing brace.
+    # Include the closing-brace newline so the replacement controls exactly one inter-function gap.
     m = re.search(r'\r\n|\n|\r', source[position:])
     if m:
         return m.group()
@@ -157,7 +157,7 @@ def format_source(source: str) -> str:
         between = masked[gap_start:next_open]
         if ';' in between or (between.strip() and not is_function_prefix(between)):
             continue
-        # Find the start of the next function signature, allowing multiline args.
+        # Find multiline signatures so formatting does not depend on parameter layout.
         signature_match = re.search(r'\S', masked[gap_start:next_open])
         if not signature_match:
             continue
@@ -171,11 +171,11 @@ def format_source(source: str) -> str:
         whitespace = source[gap_start:content_start]
         if not whitespace or not whitespace.isspace():
             continue
-        # Do not modify same-line definitions or comments.
+        # Leave same-line definitions and comments untouched because their spacing may be intentional.
         if not any(c in whitespace for c in '\r\n'):
             continue
         nl = newline_for(source, end)
-        # Preserve the existing indentation on the comment/signature line.
+        # Preserve indentation so this spacing pass does not also change code alignment.
         last_break = max(whitespace.rfind('\n'), whitespace.rfind('\r'))
         indent = whitespace[last_break + 1:]
         replacement = nl + nl + indent

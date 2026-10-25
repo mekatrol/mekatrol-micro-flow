@@ -1,7 +1,7 @@
-/* Implements policy and validation for the Pico's logical GPIO resources. */
+/* Validate logical GPIO access here so callers cannot address unmapped physical pins. */
 #include "board_gpio.h"
 
-/* Logical resources deliberately hide physical pins from flow programs. */
+/* Map logical resources here so flow programs survive changes to physical board pins. */
 static const uint8_t resource_pins[MICROFLOW_BOARD_GPIO_RESOURCE_COUNT] = {
     2U, 3U, 4U, 5U
 };
@@ -25,7 +25,7 @@ void microflow_board_gpio_initialize(
         return;
     }
     gpio->driver = *driver;
-    /* Inputs with low output latches minimize surprises on later transitions. */
+    /* Latch low before selecting input so a later output transition cannot begin high. */
     microflow_board_gpio_reset_safe(gpio);
 }
 

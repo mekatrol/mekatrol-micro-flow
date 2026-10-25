@@ -7,20 +7,20 @@
 
 /* Establishes clocks, timer, interrupts, and safe peripheral defaults. */
 void microflow_rp2040_initialize(void);
-/* Returns the wrapping hardware timer's low 32 microsecond bits. */
+/* Return the wrapping low timer word so callers get cheap monotonic microsecond ticks. */
 uint32_t microflow_rp2040_monotonic_microseconds(void);
-/* GPIO and WS2812 functions provide minimal board-output primitives. */
+/* Expose only electrical GPIO and WS2812 operations so pin mapping stays in board code. */
 void microflow_rp2040_gpio_output_initialize(uint32_t pin);
 void microflow_rp2040_gpio_write(uint32_t pin, bool high);
 void microflow_rp2040_ws2812_initialize(uint32_t pin);
 void microflow_rp2040_ws2812_write(uint32_t pin, uint8_t red, uint8_t green, uint8_t blue);
 void microflow_rp2040_delay_ms(uint32_t milliseconds);
-/* Wait/watchdog functions support the supervisor's idle and liveness policy. */
+/* Expose wait and watchdog mechanisms so the supervisor chooses deadlines and refresh cadence. */
 void microflow_rp2040_wait_until(
     const volatile uint32_t *wake_events, bool has_deadline, uint32_t deadline);
 void microflow_rp2040_watchdog_initialize(uint32_t timeout_microseconds);
 void microflow_rp2040_watchdog_service(void);
-/* UART0 functions form the non-blocking interrupt-driven serial boundary. */
+/* Expose FIFO-ready probes and single-byte transfers so the UART ISR never waits on hardware. */
 void    microflow_rp2040_uart0_initialize(uint32_t baud_rate);
 bool    microflow_rp2040_uart0_read_ready(void);
 uint8_t microflow_rp2040_uart0_read(void);

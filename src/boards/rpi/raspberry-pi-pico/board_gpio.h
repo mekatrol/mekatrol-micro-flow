@@ -16,14 +16,14 @@ typedef enum {
     MICROFLOW_BOARD_GPIO_OUTPUT = 1
 } microflow_board_gpio_direction_t;
 
-/* Driver operations isolate logical resource policy from RP2040 access. */
+/* Inject physical pin operations so logical-ID validation can be tested without RP2040 hardware. */
 typedef struct {
     /* Opaque state passed unchanged to every driver operation. */
     void *context;
     /* Applies the requested electrical direction to one physical pin. */
     void (*configure)(void *context, uint32_t pin,
                       microflow_board_gpio_direction_t direction);
-    /* Samples the current logical level of one physical pin. */
+    /* Sample one physical pin so the facade can serve logical reads without SoC knowledge. */
     bool (*read)(void *context, uint32_t pin);
     /* Changes the output latch; callers ensure the resource is an output. */
     void (*write)(void *context, uint32_t pin, bool value);
@@ -39,17 +39,17 @@ typedef struct {
 void microflow_board_gpio_initialize(
     microflow_board_gpio_t              *gpio,
     const microflow_board_gpio_driver_t *driver);
-/* Validates and applies a direction; repeated requests are idempotent. */
+/* Validate and apply a direction, suppressing repeats so hardware sees no redundant transition. */
 bool microflow_board_gpio_configure(
     microflow_board_gpio_t *gpio, uint32_t resource,
     microflow_board_gpio_direction_t direction);
-/* Reads a valid logical resource through the injected physical driver. */
+/* Read through the injected driver so mapping and validation can be tested without hardware. */
 bool microflow_board_gpio_read(
     const microflow_board_gpio_t *gpio, uint32_t resource, bool *value);
 /* Writes only resources previously configured as outputs. */
 bool microflow_board_gpio_write(
     microflow_board_gpio_t *gpio, uint32_t resource, bool value);
-/* Drives latches low, selects input mode, and clears tracked directions. */
+/* Drive low, select input, and clear tracking so stopped flows leave pins electrically safe. */
 void microflow_board_gpio_reset_safe(microflow_board_gpio_t *gpio);
 /* Resolves a stable logical ID to its board-owned physical GPIO number. */
 bool microflow_board_gpio_resource_pin(uint32_t resource, uint32_t *pin);

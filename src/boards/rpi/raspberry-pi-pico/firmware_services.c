@@ -1,4 +1,7 @@
-/* Supervisor platform binding and non-USB firmware services. */
+/*
+ * Adapt Pico time, sleep, watchdog, fault, and UART operations to supervisor
+ * callbacks so supervisor.c contains no RP2040 dependencies.
+ */
 #include "firmware_internal.h"
 
 #include <microflow/internal/board.h>

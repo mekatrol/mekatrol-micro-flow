@@ -1,4 +1,4 @@
-/* Implements deterministic cooperative dispatch and bounded SPSC queues. */
+/* Implement fixed-capacity queues and ordered dispatch so one loop pass scans no dynamic work list. */
 #include <microflow/supervisor.h>
 #include <limits.h>
 

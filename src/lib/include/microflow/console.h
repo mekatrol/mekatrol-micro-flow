@@ -1,4 +1,4 @@
-/* Line-oriented diagnostic/control console over a bounded receive ring. */
+/* Expose a line console over a bounded ring so diagnostics cannot require dynamic allocation. */
 #ifndef MICROFLOW_CONSOLE_H
 #define MICROFLOW_CONSOLE_H
 

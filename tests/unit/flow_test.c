@@ -1,4 +1,4 @@
-/* Host regression tests for portable flow-image validation. */
+/* Exercise flow-image validation on the host so corrupt envelopes are rejected before target use. */
 #include <microflow/flow.h>
 #include <microflow/flow_store.h>
 

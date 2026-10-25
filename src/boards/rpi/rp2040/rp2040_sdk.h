@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Initialization and monotonic time primitives required by board startup. */
+/* Expose initialization and time primitives so board startup is independent of SDK types. */
 void     microflow_rp2040_initialize(void);
 uint32_t microflow_rp2040_monotonic_microseconds(void);
 /* GPIO primitives intentionally use project-owned scalar types only. */
@@ -13,7 +13,7 @@ void microflow_rp2040_gpio_output_initialize(uint32_t pin);
 void microflow_rp2040_gpio_input_initialize(uint32_t pin);
 bool microflow_rp2040_gpio_read(uint32_t pin);
 void microflow_rp2040_gpio_write(uint32_t pin, bool high);
-/* Status-pixel support hides PIO/SDK lifecycle from the board layer. */
+/* Hide status-pixel PIO lifecycle here so the board layer requests only RGB state. */
 void microflow_rp2040_ws2812_initialize(uint32_t pin);
 void microflow_rp2040_ws2812_write(uint32_t pin, uint8_t red, uint8_t green,
                                    uint8_t blue);
@@ -32,11 +32,11 @@ uint8_t microflow_rp2040_uart0_read(void);
 bool    microflow_rp2040_uart0_write_ready(void);
 void    microflow_rp2040_uart0_write(uint8_t value);
 void    microflow_rp2040_uart0_set_transmit_interrupt(bool enabled);
-/* Save/restore interrupt state brackets short shared-state snapshots. */
+/* Save and restore PRIMASK so a critical section does not enable IRQs disabled by its caller. */
 uint32_t microflow_rp2040_interrupt_lock(void);
 void     microflow_rp2040_interrupt_unlock(uint32_t state);
 
-/* Board-defined event hooks called by SDK interrupt adapters. */
+/* Declare board hooks so SDK interrupt adapters can signal work without owning application state. */
 void microflow_rp2040_timer_alarm0_event(void);
 void microflow_rp2040_uart0_event(void);
 void microflow_rp2040_usb_event(void);

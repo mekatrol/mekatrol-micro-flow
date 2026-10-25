@@ -1,4 +1,4 @@
-/* Polling TinyUSB CDC bridge with deterministic caller-provided ring storage. */
+/* Bridge TinyUSB CDC through caller-owned rings so RX and TX consume exactly their configured arrays. */
 #include "rp2040_usb_cdc_sdk.h"
 
 #include "tusb.h"

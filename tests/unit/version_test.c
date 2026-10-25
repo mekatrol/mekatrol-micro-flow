@@ -1,9 +1,9 @@
-/* Compile-time and runtime checks that public version forms remain aligned. */
+/* Check compile-time and runtime version forms so tools never observe conflicting identities. */
 #include <microflow/version.h>
 
 #include <string.h>
 
-/* Verify compile-time version components and the runtime string stay aligned. */
+/* Compare compile-time components and runtime text so releases expose one consistent version. */
 int main(void) {
     /* Numeric components make accidental semantic-version changes explicit. */
     _Static_assert(MICROFLOW_VERSION_MAJOR == 0, "unexpected major version");

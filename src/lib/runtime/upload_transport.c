@@ -1,4 +1,4 @@
-/* Streaming, allocation-free implementation of the flow upload protocol. */
+/* Parse uploads into caller-owned staging storage so incomplete frames allocate no memory. */
 #include <microflow/upload_transport.h>
 
 /* Copy a known-valid bounded byte span without depending on a hosted C library. */
