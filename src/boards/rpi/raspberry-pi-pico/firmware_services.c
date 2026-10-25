@@ -5,38 +5,46 @@
 
 #include "rp2040_sdk.h"
 
+/* Supply the supervisor with the board's wrapping monotonic tick counter. */
 static uint32_t now(void *context) {
     (void)context;
     return microflow_board_monotonic_ticks();
 }
 
+/* Idle until an interrupt or the next scheduled deadline can wake the CPU. */
 static void wait_until(void *context, bool has_deadline, uint32_t deadline) {
     microflow_firmware_t *f = context;
     microflow_rp2040_wait_until(&f->supervisor.pending_events, has_deadline,
                                 deadline);
 }
 
+/* Prove main-loop progress by refreshing the hardware watchdog once per pass. */
 static void watchdog(void *context) {
     (void)context;
     microflow_rp2040_watchdog_service();
 }
 
+/* Begin the short interrupt exclusion used when publishing shared state. */
 uint32_t microflow_firmware_lock(void *context) {
     (void)context;
     return microflow_rp2040_interrupt_lock();
 }
 
+/* Restore exactly the interrupt state captured on critical-section entry. */
 void microflow_firmware_unlock(void *context, uint32_t state) {
     (void)context;
     microflow_rp2040_interrupt_unlock(state);
 }
 
+/* Convert any supervisor fault into a persistent red hardware indication. */
 static void fault(void *context, microflow_supervisor_fault_t value) {
     (void)context;
     (void)value;
+    /* The indication is deliberately simple and independent of USB/UART health. */
     microflow_board_status_rgb(16U, 0U, 0U);
 }
 
+/* Assemble the board-specific callbacks consumed by the portable supervisor. */
 microflow_supervisor_platform_t
 microflow_firmware_platform(microflow_firmware_t *firmware) {
     return (microflow_supervisor_platform_t){
@@ -44,11 +52,13 @@ microflow_firmware_platform(microflow_firmware_t *firmware) {
     };
 }
 
+/* Enforce safe physical outputs whenever the active flow stops running. */
 void microflow_firmware_flow_stopped(void *context) {
     microflow_firmware_t *f = context;
     microflow_board_gpio_reset_safe(&f->gpio);
 }
 
+/* Update visible liveness and expire incomplete uploads on each timer event. */
 void microflow_firmware_status_service(void *context, uint32_t events) {
     microflow_firmware_t *f = context;
     static bool           illuminated;
@@ -59,6 +69,7 @@ void microflow_firmware_status_service(void *context, uint32_t events) {
     };
 #endif
     (void)events;
+    /* Timer work combines the heartbeat with stalled-upload housekeeping. */
     illuminated = !illuminated;
     (void)microflow_upload_transport_expire(
         &f->upload, microflow_board_monotonic_ticks(),
@@ -76,9 +87,11 @@ void microflow_firmware_status_service(void *context, uint32_t events) {
 #endif
 }
 
+/* Parse queued upload bytes outside IRQ context and arm replies when needed. */
 void microflow_firmware_uart_service(void *context, uint32_t events) {
     microflow_firmware_t *f = context;
     (void)events;
+    /* Parsing may validate an image, so it belongs in bounded foreground work. */
     microflow_upload_transport_service(&f->upload,
                                        microflow_board_monotonic_ticks());
     microflow_rp2040_uart0_set_transmit_interrupt(
