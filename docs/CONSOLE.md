@@ -55,7 +55,7 @@ Example:
 OK Micro Flow Raspberry Pi Pico FreeRTOS CDC v1
 System clock: 125000000 Hz
 > status
-OK mode=freertos usb=enabled flow=disabled
+OK usb=enabled flow=disabled
 > tasks
 OK tasks=2 usb-stack-free=... status-stack-free=...
 ```

@@ -80,7 +80,7 @@ static void info(void *context) {
 static void status(void *context) {
     microflow_firmware_usb_write_text(
         context,
-        "OK mode=freertos usb=enabled flow=disabled\r\n");
+        "OK usb=enabled flow=disabled\r\n");
 }
 
 /*
