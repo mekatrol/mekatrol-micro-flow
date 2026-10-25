@@ -11,14 +11,6 @@ static uint32_t microflow_rp2040_watchdog_load;
 /* Internal helpers                                                           */
 /* -------------------------------------------------------------------------- */
 
-/* Burn a known small number of CPU cycles for the provisional WS2812 waveform. */
-static inline void microflow_rp2040_delay_cycles(uint32_t cycles) {
-    while (cycles != 0U) {
-        __asm volatile("nop" ::: "memory");
-        --cycles;
-    }
-}
-
 /* Read PRIMASK so critical sections can restore, not assume, prior IRQ state. */
 static inline uint32_t microflow_rp2040_interrupt_state(void) {
     uint32_t value;
@@ -153,73 +145,6 @@ void microflow_rp2040_gpio_write(uint32_t pin, bool high) {
     } else {
         RP2040_SIO_GPIO_OUT_CLR = 1U << pin;
     }
-}
-
-/* -------------------------------------------------------------------------- */
-/* WS2812 public functions                                                    */
-/* -------------------------------------------------------------------------- */
-
-/*
- * Initialize the onboard WS2812 using RP2040 PIO.
- *
- * This function must be called during board initialization, before
- * FreeRTOS starts scheduling tasks.
- */
-void microflow_rp2040_ws2812_initialize(uint32_t pin) {
-    if (ws2812_initialized) {
-        return;
-    }
-
-    if (pin >= NUM_BANK0_GPIOS) {
-        return;
-    }
-
-    ws2812_configure(pin);
-
-    ws2812_initialized = true;
-
-    /* Allow the LED's reset/latch interval to elapse. */
-    busy_wait_us_32(80U);
-}
-
-/*
- * Transmit one RGB colour to the WS2812 using PIO.
- *
- * WS2812 expects GRB wire order, with the most significant bit first.
- * The PIO state machine generates the timing independently of FreeRTOS.
- */
-void microflow_rp2040_ws2812_write(
-    uint32_t pin,
-    uint8_t  red,
-    uint8_t  green,
-    uint8_t  blue) {
-    if (!ws2812_initialized) {
-        return;
-    }
-
-    (void)pin;
-
-    /* Pack the 24-bit GRB value into the upper bits of the FIFO word. */
-    const uint32_t grb =
-        ((uint32_t)green << 16U) |
-        ((uint32_t)red << 8U) |
-        (uint32_t)blue;
-
-    /*
-     * The PIO output shift register shifts left, so the colour value
-     * must occupy the most significant 24 bits of the FIFO word.
-     */
-    pio_sm_put_blocking(ws2812_pio, ws2812_sm, grb << 8U);
-
-    /*
-     * Wait long enough for the previous transmission to complete
-     * and the WS2812 to latch the new colour.
-     *
-     * One 24-bit frame takes approximately 30 us. The additional
-     * 80 us reset interval makes this suitable for the single onboard
-     * pixel.
-     */
-    busy_wait_us_32(120U);
 }
 
 /* -------------------------------------------------------------------------- */
