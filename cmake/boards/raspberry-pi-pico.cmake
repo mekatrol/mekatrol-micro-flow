@@ -7,6 +7,7 @@ find_program(MICROFLOW_SIZE_TOOL arm-none-eabi-size REQUIRED)
 
 add_executable(microflow-raspberry-pi-pico
     "${board_dir}/main.c"
+    "${board_dir}/freertos_hooks.c"
     "${board_dir}/firmware.c"
     "${board_dir}/firmware_console.c"
     "${board_dir}/firmware_services.c"
