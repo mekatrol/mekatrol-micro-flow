@@ -138,10 +138,13 @@ void microflow_rp2040_uart0_initialize(uint32_t baud_rate) {
 
 /* Tell the ISR whether reading UART0 can complete without blocking. */
 bool microflow_rp2040_uart0_read_ready(void) { return uart_is_readable(MICROFLOW_UART); }
+
 /* Remove one known-available UART byte for transfer into the RX software ring. */
 uint8_t microflow_rp2040_uart0_read(void) { return (uint8_t)uart_getc(MICROFLOW_UART); }
+
 /* Tell the ISR whether UART0 can accept a byte without blocking. */
 bool microflow_rp2040_uart0_write_ready(void) { return uart_is_writable(MICROFLOW_UART); }
+
 /* Place one known-writable byte into UART0 without text translation. */
 void microflow_rp2040_uart0_write(uint8_t value) { uart_putc_raw(MICROFLOW_UART, (char)value); }
 
@@ -154,5 +157,6 @@ void microflow_rp2040_uart0_set_transmit_interrupt(bool enabled) {
 
 /* Save and disable interrupts for a short board-owned shared-state operation. */
 uint32_t microflow_rp2040_interrupt_lock(void) { return save_and_disable_interrupts(); }
+
 /* Restore the caller's prior interrupt state rather than blindly enabling IRQs. */
 void microflow_rp2040_interrupt_unlock(uint32_t state) { restore_interrupts(state); }

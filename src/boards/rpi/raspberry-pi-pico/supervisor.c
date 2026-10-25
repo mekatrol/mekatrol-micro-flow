@@ -4,14 +4,17 @@
 
 /* Compute the next byte-ring slot while preserving the fixed storage bound. */
 static uint16_t byte_next(uint16_t i) { return (uint16_t)((i + 1U) % MICROFLOW_SUPERVISOR_BYTE_CAPACITY); }
+
 /* Reset a byte ring and its operational metrics for initial use or warm reset. */
 void microflow_byte_ring_initialize(microflow_byte_ring_t *r) {
     if (r != NULL) { r->read_index = 0U; r->write_index = 0U; r->high_water = 0U; r->rejected = 0U; }
 }
+
 /* Report current occupancy for diagnostics and all-or-nothing reply checks. */
 size_t microflow_byte_ring_count(const microflow_byte_ring_t *r) {
     return r == NULL ? 0U : (r->write_index + MICROFLOW_SUPERVISOR_BYTE_CAPACITY - r->read_index) % MICROFLOW_SUPERVISOR_BYTE_CAPACITY;
 }
+
 /* Queue one ISR-produced byte without overwriting data the consumer has not read. */
 bool microflow_byte_ring_push_from_isr(microflow_byte_ring_t *r, uint8_t value) {
     if (r == NULL) return false;
@@ -24,6 +27,7 @@ bool microflow_byte_ring_push_from_isr(microflow_byte_ring_t *r, uint8_t value) 
     if (count > r->high_water) r->high_water = (uint16_t)count;
     return true;
 }
+
 /* Queue a byte and make overflow visible as a deferred supervisor fault. */
 bool microflow_supervisor_byte_ring_push_from_isr(
     microflow_supervisor_t *s, microflow_byte_ring_t *r, uint8_t value) {
@@ -33,17 +37,21 @@ bool microflow_supervisor_byte_ring_push_from_isr(
         ++s->fault_count; s->pending_events |= MICROFLOW_SUPERVISOR_EVENT_FAULT; }
     return false;
 }
+
 /* Remove the oldest byte for the sole main-context consumer without blocking. */
 bool microflow_byte_ring_pop(microflow_byte_ring_t *r, uint8_t *out) {
     if ((r == NULL) || (out == NULL) || (r->read_index == r->write_index)) return false;
     *out = r->storage[r->read_index]; r->read_index = byte_next(r->read_index); return true;
 }
+
 /* Compute the next structured-event slot within its smaller fixed ring. */
 static uint8_t event_next(uint8_t i) { return (uint8_t)((i + 1U) % MICROFLOW_SUPERVISOR_EVENT_CAPACITY); }
+
 /* Reset a structured event queue and all overflow/high-water diagnostics. */
 void microflow_event_queue_initialize(microflow_event_queue_t *q) {
     if (q != NULL) { q->read_index = 0U; q->write_index = 0U; q->high_water = 0U; q->rejected = 0U; }
 }
+
 /* Preserve and queue one complete ISR event, rejecting newest when full. */
 bool microflow_event_queue_push_from_isr(microflow_event_queue_t *q, microflow_supervisor_event_t event) {
     if (q == NULL) return false;
@@ -55,6 +63,7 @@ bool microflow_event_queue_push_from_isr(microflow_event_queue_t *q, microflow_s
     if (count > q->high_water) q->high_water = count;
     return true;
 }
+
 /* Queue a structured event and defer an observable overflow fault on failure. */
 bool microflow_supervisor_event_queue_push_from_isr(microflow_supervisor_t *s,
     microflow_event_queue_t *q, microflow_supervisor_event_t event) {
@@ -63,13 +72,16 @@ bool microflow_supervisor_event_queue_push_from_isr(microflow_supervisor_t *s,
         ++s->fault_count; s->pending_events |= MICROFLOW_SUPERVISOR_EVENT_FAULT; }
     return false;
 }
+
 /* Remove the oldest complete event for the sole main-context consumer. */
 bool microflow_event_queue_pop(microflow_event_queue_t *q, microflow_supervisor_event_t *out) {
     if ((q == NULL) || (out == NULL) || (q->read_index == q->write_index)) return false;
     *out = q->storage[q->read_index]; q->read_index = event_next(q->read_index); return true;
 }
+
 /* Decide whether a deadline arrived using the documented half-range time model. */
 static bool time_arrived(uint32_t now, uint32_t deadline) { return (int32_t)(now - deadline) >= 0; }
+
 /* Validate required platform capabilities and construct clean supervisor state. */
 bool microflow_supervisor_initialize(microflow_supervisor_t *s,
     const microflow_supervisor_platform_t *p, uint32_t period) {
@@ -82,6 +94,7 @@ bool microflow_supervisor_initialize(microflow_supervisor_t *s,
     s->heartbeat = 0U; s->watchdog_service_count = 0U; s->heartbeat_period = period;
     s->heartbeat_deadline = p->now(p->context) + period; return true;
 }
+
 /* Register one bounded cooperative service in stable numeric-priority order. */
 bool microflow_supervisor_add_service(microflow_supervisor_t *s, uint8_t priority,
     uint32_t mask, uint32_t budget, microflow_supervisor_service_callback_t callback, void *context) {
@@ -98,16 +111,19 @@ bool microflow_supervisor_add_service(microflow_supervisor_t *s, uint8_t priorit
     s->services[pos].priority = priority;
     ++s->service_count; return true;
 }
+
 /* Coalesce interrupt events into bounded shared state for later dispatch. */
 void microflow_supervisor_signal_from_isr(microflow_supervisor_t *s, uint32_t events) {
     /* Coalescing flags bounds interrupt work and pending-state memory. */
     if (s != NULL) s->pending_events |= events;
 }
+
 /* Record a fault immediately but arrange platform reporting outside interrupt code. */
 void microflow_supervisor_report_fault(microflow_supervisor_t *s, microflow_supervisor_fault_t fault) {
     if ((s == NULL) || (fault == MICROFLOW_SUPERVISOR_FAULT_NONE)) return;
     s->fault = fault; ++s->fault_count; s->pending_events |= MICROFLOW_SUPERVISOR_EVENT_FAULT;
 }
+
 /* Perform one heartbeat, event snapshot, ordered dispatch, watchdog, and idle pass. */
 bool microflow_supervisor_run_once(microflow_supervisor_t *s) {
     if (s == NULL) return false;
@@ -149,5 +165,6 @@ bool microflow_supervisor_run_once(microflow_supervisor_t *s) {
     if (events == 0U) s->platform.wait_until(s->platform.context, true, s->heartbeat_deadline);
     return events != 0U;
 }
+
 /* Own the firmware main loop by repeatedly executing bounded supervisor passes. */
 void microflow_supervisor_run(microflow_supervisor_t *s) { for (;;) (void)microflow_supervisor_run_once(s); }

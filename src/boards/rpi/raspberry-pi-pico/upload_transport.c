@@ -5,6 +5,7 @@
 static void bytes_copy(uint8_t *destination, const uint8_t *source, size_t length) {
     for (size_t i = 0U; i < length; ++i) destination[i] = source[i];
 }
+
 /* Erase a bounded byte span for parser initialization and staging disposal. */
 static void bytes_zero(uint8_t *destination, size_t length) {
     for (size_t i = 0U; i < length; ++i) destination[i] = 0U;
@@ -14,15 +15,18 @@ static void bytes_zero(uint8_t *destination, size_t length) {
 static uint16_t read_u16(const uint8_t *p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8U));
 }
+
 /* Decode a four-byte wire integer without alignment or host-endian assumptions. */
 static uint32_t read_u32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8U) | ((uint32_t)p[2] << 16U) |
            ((uint32_t)p[3] << 24U);
 }
+
 /* Encode a two-byte integer in the protocol's fixed little-endian order. */
 static void write_u16(uint8_t *p, uint16_t v) {
     p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8U);
 }
+
 /* Encode a four-byte integer in the protocol's fixed little-endian order. */
 static void write_u32(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8U);

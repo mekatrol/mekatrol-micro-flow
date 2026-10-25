@@ -150,39 +150,37 @@ def format_source(source: str) -> str:
     spans = functions(masked)
     edits = []
     for (_, end), (next_open, _) in zip(spans, spans[1:]):
-        # Only touch gaps consisting entirely of whitespace. A comment or
-        # declaration between functions is left untouched.
         gap_start = end + 1
-        next_line_start = source.rfind('\n', gap_start, next_open) + 1
-        if next_line_start == 0:
-            next_line_start = source.rfind('\r', gap_start, next_open) + 1
-        prefix = source[gap_start:next_line_start]
-        if not prefix or not prefix.isspace():
-            continue
-        # Do not modify same-line definitions or indentation on the next line.
-        if not any(c in prefix for c in '\r\n'):
-            continue
         # Only when the next function's signature starts immediately after the
-        # preceding function (ignoring whitespace). This prevents changing
-        # unrelated top-level declarations or comments.
+        # preceding function (ignoring whitespace and comments). This prevents
+        # changing gaps containing unrelated top-level declarations.
         between = masked[gap_start:next_open]
-        if between.strip() and not is_function_prefix(between):
+        if ';' in between or (between.strip() and not is_function_prefix(between)):
             continue
         # Find the start of the next function signature, allowing multiline args.
         signature_match = re.search(r'\S', masked[gap_start:next_open])
         if not signature_match:
             continue
         signature_start = gap_start + signature_match.start()
-        whitespace = source[gap_start:signature_start]
-        if not whitespace.isspace():
+
+        # A comment before the definition belongs to the next function. Format
+        # the whitespace before that comment rather than rejecting the gap.
+        content_match = re.search(r'\S', source[gap_start:signature_start])
+        content_start = (gap_start + content_match.start()
+                         if content_match else signature_start)
+        whitespace = source[gap_start:content_start]
+        if not whitespace or not whitespace.isspace():
+            continue
+        # Do not modify same-line definitions or comments.
+        if not any(c in whitespace for c in '\r\n'):
             continue
         nl = newline_for(source, end)
-        # Preserve the existing indentation on the signature line.
+        # Preserve the existing indentation on the comment/signature line.
         last_break = max(whitespace.rfind('\n'), whitespace.rfind('\r'))
         indent = whitespace[last_break + 1:]
         replacement = nl + nl + indent
         if whitespace != replacement:
-            edits.append((gap_start, signature_start, replacement))
+            edits.append((gap_start, content_start, replacement))
     for a, b, replacement in reversed(edits):
         source = source[:a] + replacement + source[b:]
     return source

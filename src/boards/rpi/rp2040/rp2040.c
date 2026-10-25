@@ -137,12 +137,16 @@ void microflow_rp2040_uart0_initialize(uint32_t baud_rate) {
 
 /* Tell interrupt code whether a UART read can complete immediately. */
 bool microflow_rp2040_uart0_read_ready(void) { return (RP2040_UART0_FR & RP2040_UART_FR_RXFE) == 0U; }
+
 /* Remove one known-available byte from UART0's receive FIFO. */
 uint8_t microflow_rp2040_uart0_read(void) { return (uint8_t)RP2040_UART0_DR; }
+
 /* Tell interrupt code whether UART0 can accept a byte immediately. */
 bool microflow_rp2040_uart0_write_ready(void) { return (RP2040_UART0_FR & RP2040_UART_FR_TXFF) == 0U; }
+
 /* Place one known-writable byte into UART0's transmit FIFO. */
 void microflow_rp2040_uart0_write(uint8_t value) { RP2040_UART0_DR = value; }
+
 /* Arm TX service only while software has bytes, preventing empty IRQ churn. */
 void microflow_rp2040_uart0_set_transmit_interrupt(bool enabled) {
     if (enabled) RP2040_UART0_IMSC |= RP2040_UART_INT_TX;
@@ -245,8 +249,10 @@ void microflow_rp2040_uart0_event(void) __attribute__((weak));
 void microflow_rp2040_usb_event(void) __attribute__((weak));
 /* Default weak timer hook permits SoC-only linking when no board consumes it. */
 void microflow_rp2040_timer_alarm0_event(void) {}
+
 /* Default weak UART hook permits SoC-only linking when no board consumes it. */
 void microflow_rp2040_uart0_event(void) {}
+
 /* Default weak USB hook permits SoC-only linking when no board consumes it. */
 void microflow_rp2040_usb_event(void) {}
 
@@ -263,6 +269,7 @@ void microflow_rp2040_uart0_irq_handler(void) {
     RP2040_UART0_ICR = status;
     microflow_rp2040_uart0_event();
 }
+
 /* Forward USB controller IRQ notification to an optional board implementation. */
 void microflow_rp2040_usbctrl_irq_handler(void) { microflow_rp2040_usb_event(); }
 

@@ -195,6 +195,7 @@ static void console_flow_erase(void *context) {
     (void)context;
     microflow_upload_transport_erase_staging(&upload_transport);
 }
+
 /* Advertise logical resources rather than allowing discovery of physical pins. */
 static void console_gpio_list(void *context) {
     (void)context;
@@ -336,6 +337,7 @@ static void platform_fault(void *context, microflow_supervisor_fault_t fault) {
     /* Red is a persistent, board-independent indication of degraded operation. */
     microflow_board_status_rgb(16U, 0U, 0U);
 }
+
 /* Provide a heartbeat and expire stalled uploads on each periodic timer event. */
 static void status_service(void *context, uint32_t events) {
     /* Timer work combines visible liveness with stalled-upload expiration. */
@@ -347,6 +349,7 @@ static void status_service(void *context, uint32_t events) {
                                             microflow_board_monotonic_ticks(), UART_RECEIVE_TIMEOUT_US);
     microflow_board_status_rgb(0U, illuminated ? 12U : 0U, 0U);
 }
+
 /* Parse queued UART upload bytes and arm TX interrupts for generated replies. */
 static void uart_service(void *context, uint32_t events) {
     (void)context;
@@ -357,6 +360,7 @@ static void uart_service(void *context, uint32_t events) {
     microflow_rp2040_uart0_set_transmit_interrupt(
         microflow_byte_ring_count(&uart_transmit) != 0U);
 }
+
 /* Poll USB CDC, bridge received bytes, and run console parsing in main context. */
 static void usb_service(void *context, uint32_t events) {
     (void)context;
@@ -374,6 +378,7 @@ void microflow_rp2040_timer_alarm0_event(void) {
     /* ISR hook only coalesces work; service execution stays in main context. */
     microflow_supervisor_signal_from_isr(&supervisor, MICROFLOW_SUPERVISOR_EVENT_TIMER);
 }
+
 /* Drain/fill UART hardware FIFOs in interrupt context and signal resulting work. */
 void microflow_rp2040_uart0_event(void) {
     /* Bound ISR work by finite hardware FIFOs and preallocated software rings. */
@@ -393,6 +398,7 @@ void microflow_rp2040_uart0_event(void) {
         microflow_rp2040_uart0_set_transmit_interrupt(false);
     if (events != 0U) microflow_supervisor_signal_from_isr(&supervisor, events);
 }
+
 /* Coalesce a USB controller interrupt into one pending supervisor event bit. */
 void microflow_rp2040_usb_event(void) {
     /* USB interrupt details remain in TinyUSB; the supervisor receives one bit. */
