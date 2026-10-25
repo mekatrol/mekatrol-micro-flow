@@ -23,12 +23,12 @@ prepare_pico_sdk()
 print_usage()
 {
     printf '%s\n' \
-        "Usage: ./tools/build.sh <target> [--flash] [--device <name>]" \
+        "Usage: ./tools/build.sh <target> [--clean] [--flash] [--device <name>]" \
         "" \
-        "Formats the source tree, deletes build/, configures the selected target," \
-        "and builds it." \
-        "With --flash, copies its UF2 to the mounted device after building." \
-        "The default device name is RPI-RP2." \
+        "Formats source files, configures the selected target, and builds it." \
+        "Existing build directories are preserved for incremental builds." \
+        "With --clean, removes only build/<target> before configuring." \
+        "With --flash, copies the UF2 to the mounted device." \
         "" \
         "Available targets:" \
         "  host-debug" \
@@ -45,12 +45,17 @@ if [ "$#" -lt 1 ]; then
 fi
 
 target=$1
+clean=false
 flash=false
 device=RPI-RP2
 shift
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --clean)
+            clean=true
+            shift
+            ;;
         --flash)
             flash=true
             shift
@@ -142,9 +147,43 @@ while IFS= read -r source_file; do
 done
 "$script_dir/format-c-functions.sh"
 
-cmake -E remove_directory "$repo_root/build"
+# Each preset owns an independent build directory.
+#
+# A normal build preserves its CMake cache, Ninja dependency information,
+# object files, and compilation database.
+#
+# A clean build removes only the selected preset's directory.
+build_dir="$repo_root/build/$target"
+
+if [ "$clean" = true ]; then
+    printf 'Cleaning target: %s\n' "$target"
+    cmake -E remove_directory "$build_dir"
+fi
+
+# Configure the selected preset.
 cmake --preset "$target"
+
+# Build incrementally using the preset's existing build directory.
 cmake --build --preset "$target"
+
+# Select the active embedded compilation database for clangd.
+#
+# Host builds do not change the selected embedded board.
+# The relative symlink keeps the repository relocatable.
+case "$target" in
+    host-*)
+        ;;
+    *)
+        if [ ! -f "$build_dir/compile_commands.json" ]; then
+            printf 'Compilation database missing: %s\n' \
+                "$build_dir/compile_commands.json" >&2
+            exit 1
+        fi
+
+        # Replace only the active clangd symlink, never another build.
+        ln -sfn "$target" "$repo_root/build/clangd"
+        ;;
+esac
 
 if [ "$flash" = true ]; then
     "$script_dir/flash.sh" "$target" --device "$device"

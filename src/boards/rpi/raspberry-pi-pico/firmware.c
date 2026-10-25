@@ -54,24 +54,42 @@ static void usb_task(void *context) {
 }
 
 /*
- * Display a periodic heartbeat independently of USB console processing.
+ * Exercise the Waveshare RP2040-Zero onboard WS2812 RGB LED.
  *
- * The heartbeat demonstrates that the FreeRTOS scheduler can run a second
- * application task while USB CDC remains responsive.
+ * Each colour remains active for 500 ms. The final state turns the LED
+ * off for 500 ms before repeating the sequence.
+ *
+ * This task runs independently of USB CDC processing and demonstrates
+ * periodic scheduling through FreeRTOS.
  */
 static void status_task(void *context) {
     (void)context;
 
-    TickType_t last_wake   = xTaskGetTickCount();
-    bool       illuminated = false;
+    static const uint8_t colours[][3] = {
+        { 12U, 0U, 0U }, /* Red.   */
+        { 0U, 12U, 0U }, /* Green. */
+        { 0U, 0U, 12U }, /* Blue.  */
+        { 0U, 0U, 0U }   /* Off.   */
+    };
+
+    TickType_t last_wake    = xTaskGetTickCount();
+    size_t     colour_index = 0U;
 
     for (;;) {
-        illuminated = !illuminated;
-
+        /*
+         * Send one complete RGB value to the board LED.
+         *
+         * The board adapter is responsible for generating the precise
+         * WS2812 signal and latching the new colour.
+         */
         microflow_board_status_rgb(
-            0U,
-            illuminated ? 12U : 0U,
-            0U);
+            colours[colour_index][0],
+            colours[colour_index][1],
+            colours[colour_index][2]);
+
+        colour_index =
+            (colour_index + 1U) %
+            (sizeof(colours) / sizeof(colours[0]));
 
         vTaskDelayUntil(
             &last_wake,

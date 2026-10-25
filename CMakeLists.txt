@@ -46,6 +46,8 @@ project(
     LANGUAGES C
 )
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 if(MICROFLOW_BOARD STREQUAL "raspberry-pi-pico")
     enable_language(CXX ASM)
     pico_sdk_init()

@@ -3,37 +3,19 @@ Diagnostics:
   UnusedIncludes: None
 
 CompileFlags:
-  # CMake exports commands from this directory for the default host preset.
+  # Portable libraries and host tests use the host configuration.
   CompilationDatabase: build/host-debug
   Add:
     - -Wno-empty-translation-unit
-    # Fallback includes for headers and firmware sources absent from the host
-    # database. These paths are relative to its working directory.
     - -I../../src/lib/include
     - -I../../src/lib/runtime/include
-    - -I../../src/boards/rpi/raspberry-pi-pico
-    - -I../../src/boards/rpi/raspberry-pi-pico-2
-    - -I../../src/boards/rpi/rp2040
-    - -I../../src/boards/rpi/rp2350
 
 ---
 If:
-  PathMatch: src/boards/rpi/(raspberry-pi-pico|rp2040)/.*
+  PathMatch: src/boards/rpi/.*
 CompileFlags:
-  # RP2040 firmware needs Pico SDK and TinyUSB compile definitions/includes.
-  CompilationDatabase: build/pico-debug
-  Remove:
-    - -Werror
-    - -fsanitize=*
-    - -fno-omit-frame-pointer
-
----
-If:
-  PathMatch: src/boards/rpi/(raspberry-pi-pico-2|rp2350)/.*
-CompileFlags:
-  # Pico 2 sources use the Arm preset by default; the RISC-V preset remains
-  # available when checking that architecture explicitly.
-  CompilationDatabase: build/pico2-arm-debug
+  # The build scripts select the active embedded configuration.
+  CompilationDatabase: build/clangd
   Remove:
     - -Werror
     - -fsanitize=*

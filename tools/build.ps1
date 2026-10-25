@@ -1,6 +1,7 @@
 param(
     [Parameter(Position = 0)]
-    [string]$Target
+    [string]$Target,
+    [switch]$Clean
 )
 
 $availableTargets = @(
@@ -34,12 +35,14 @@ function Initialize-PicoSdk {
 }
 
 function Show-Usage {
-    Write-Host 'Usage: .\tools\build.ps1 <target>'
+    Write-Host 'Usage: .\tools\build.ps1 <target> [-Clean]'
     Write-Host ''
-    Write-Host 'Formats the source tree, deletes build/, configures the selected target,'
-    Write-Host 'and builds it.'
+    Write-Host 'Formats source files, configures the selected target, and builds it.'
+    Write-Host 'Existing build directories are preserved for incremental builds.'
+    Write-Host 'With -Clean, removes only build/<target> before configuring.'
     Write-Host ''
     Write-Host 'Available targets:'
+
     foreach ($name in $availableTargets) {
         Write-Host "  $name"
     }
@@ -104,6 +107,7 @@ if (($Target -in 'pico-debug', 'waveshare-rp2040-zero-debug') -and
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
+
 try {
     Write-Host 'Formatting source files...'
     $sourceFiles = @(Get-ChildItem -Path 'src', 'tests' -Recurse -File |
@@ -115,12 +119,58 @@ try {
     & (Join-Path $PSScriptRoot 'format-c-functions.ps1')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    & cmake -E remove_directory (Join-Path $repoRoot 'build')
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    # Each CMake preset owns an independent build directory.
+    $buildRoot = Join-Path $repoRoot 'build'
+    $buildDir = Join-Path $buildRoot $Target
+
+    # Remove only the selected target when explicitly requested.
+    if ($Clean) {
+        Write-Host "Cleaning target: $Target"
+
+        & cmake -E remove_directory $buildDir
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+    }
+
+    # Configure the selected target without deleting other configurations.
     & cmake --preset $Target
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+
+    # Incremental build: Ninja recompiles only what has changed.
     & cmake --build --preset $Target
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+
+    # Keep the active embedded compilation database separate from host builds.
+    if ($Target -notlike 'host-*') {
+        $compileCommands = Join-Path $buildDir 'compile_commands.json'
+
+        if (-not (Test-Path -LiteralPath $compileCommands -PathType Leaf)) {
+            Write-Error "Compilation database missing: $compileCommands"
+            exit 1
+        }
+
+        # Use a small forwarding compilation database rather than a directory
+        # symlink, which may require special permissions on Windows.
+        #
+        # The active database is copied after a successful build. Other build
+        # directories and their compilation databases remain unchanged.
+        $clangdDir = Join-Path $buildRoot 'clangd'
+
+        if (-not (Test-Path -LiteralPath $clangdDir)) {
+            New-Item -ItemType Directory -Path $clangdDir |
+                Out-Null
+        }
+
+        Copy-Item `
+            -LiteralPath $compileCommands `
+            -Destination (Join-Path $clangdDir 'compile_commands.json') `
+            -Force
+    }
 }
 finally {
     Pop-Location
