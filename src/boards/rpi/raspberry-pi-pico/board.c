@@ -2,7 +2,9 @@
 #include <microflow/internal/board.h>
 
 #include "rp2040_sdk.h"
+#if defined(MICROFLOW_WAVESHARE_RP2040_ZERO)
 #include "rp2_ws2812.h"
+#endif
 
 #include <stdbool.h>
 

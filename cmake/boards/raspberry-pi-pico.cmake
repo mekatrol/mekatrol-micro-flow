@@ -16,14 +16,19 @@ add_executable(microflow-raspberry-pi-pico
     "${board_dir}/usb_descriptors.c"
     "${soc_dir}/rp2040_sdk.c"
     "${soc_dir}/rp2040_usb_cdc_sdk.c"
-    "${common_dir}/rp2_ws2812.c"
 )
 
-# Generate the C header containing the WS2812 PIO instructions.
-# The generated header is made available to the firmware executable.
-pico_generate_pio_header(microflow-raspberry-pi-pico
-    "${common_dir}/ws2812.pio"
-)
+if(MICROFLOW_WAVESHARE_RP2040_ZERO)
+    target_sources(microflow-raspberry-pi-pico
+        PRIVATE
+            "${common_dir}/rp2_ws2812.c"
+    )
+
+    # Generate the PIO header only for the board variant that uses it.
+    pico_generate_pio_header(microflow-raspberry-pi-pico
+        "${common_dir}/ws2812.pio"
+    )
+endif()
 
 target_compile_features(microflow-raspberry-pi-pico
     PRIVATE

@@ -8,6 +8,7 @@ the Raspberry Pi Pico and Waveshare RP2040-Zero:
 
 ```text
 src/boards/rpi/raspberry-pi-pico   ---> src/boards/rpi/rp2040
+                                   \-> src/boards/rpi/common
 src/boards/rpi/raspberry-pi-pico-2 ---> src/boards/rpi/rp2350
                          |
                          v
@@ -28,6 +29,7 @@ src/
     runtime/                 Portable runtime contracts
     host/                    Host simulation and test support
   boards/rpi/
+    common/                  Pico SDK-backed RP2-family peripheral drivers
     rp2040/                  Pico SDK-backed RP2040 and USB CDC adapters
     rp2350/                  RP2350 Arm/RISC-V startup and linker layouts
     raspberry-pi-pico/       Pico/RP2040-Zero entry point and resource mappings
@@ -44,7 +46,10 @@ tools/                       Build, clean, and image utilities
 
 The physical board directories own entry points, pins, exposed logical
 resources, board limits, and board documentation. The SoC directories own
-startup, interrupt dispatch, register support, chip drivers, and linker layouts.
+startup, interrupt dispatch, register support, chip-specific drivers, and
+linker layouts. The `rpi/common` directory owns Pico SDK-backed RP2-family
+peripheral drivers intended for reuse by RP2040 and RP2350 targets; it does not
+own physical pin mappings.
 
 Portable flow storage, console parsing, and upload framing belong in `src/lib`.
 Board applications inject hardware operations into those modules.

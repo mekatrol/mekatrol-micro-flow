@@ -1,6 +1,6 @@
 
-#ifndef WS2812_H
-#define WS2812_H
+#ifndef RP2_WS2812_H
+#define RP2_WS2812_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -16,6 +16,9 @@
  *
  * The caller must keep this structure alive while the driver
  * is using it.
+ *
+ * Calls are not thread-safe. The caller must serialize access to a
+ * strip, and must serialize init/deinit calls across all strips.
  */
 typedef struct {
     PIO  pio;         /* PIO block: pio0, pio1, etc. */
@@ -71,4 +74,4 @@ bool rp2_ws2812_write_pixels(
  */
 void rp2_ws2812_deinit(rp2_ws2812_strip_t *strip);
 
-#endif
+#endif /* RP2_WS2812_H */

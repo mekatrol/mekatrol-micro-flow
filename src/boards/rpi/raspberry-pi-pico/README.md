@@ -10,7 +10,9 @@ The `pico-debug` preset uses the Raspberry Pi Pico mapping and drives its
 digital status LED on GPIO25. The `waveshare-rp2040-zero-debug` preset defines
 `MICROFLOW_WAVESHARE_RP2040_ZERO` and drives the Waveshare board's WS2812 RGB
 status LED on GPIO16. Selecting GPIO16 alone is insufficient because the
-WS2812 requires its serial waveform rather than a steady GPIO level.
+WS2812 requires its serial waveform rather than a steady GPIO level. That
+variant uses the shared RP2-family PIO driver in `../common`; the regular Pico
+build does not compile the driver or generate its PIO header.
 
 Configure before invoking a build preset:
 

@@ -4,7 +4,6 @@
 #include "hardware/gpio.h"
 #include "hardware/watchdog.h"
 #include "hardware/clocks.h"
-#include "hardware/pio.h"
 #include "pico/stdlib.h"
 
 void microflow_rp2040_initialize(void) {

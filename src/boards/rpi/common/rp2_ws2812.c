@@ -3,7 +3,6 @@
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
-#include "hardware/sync.h"
 
 #include "ws2812.pio.h"
 
