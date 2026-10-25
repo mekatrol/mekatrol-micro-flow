@@ -36,7 +36,7 @@ bool microflow_flow_store_activate(void *context, const uint8_t *image,
     for (size_t i = 0U; i < length; ++i) {
         store->storage[i] = image[i];
     }
-    store->length  = length;
+    store->length = length;
     /* A replacement image must be explicitly started after activation. */
     store->running = false;
     if (store->unlock != NULL) {
