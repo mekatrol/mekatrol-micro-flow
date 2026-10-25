@@ -69,7 +69,7 @@ space.
 |---|---|
 | `help` | List the accepted command forms. |
 | `info` | Identify the firmware and console protocol. |
-| `status` | Show flow state, active image size, and fault count. |
+| `status` | Show flow state, active image size, flow library version, and fault count. |
 | `tasks` | Show supervisor service counts and timing statistics. |
 | `queues` | Show UART and USB queue high-water and dropped-byte counters. |
 | `flow show` | Show active and staged flow image sizes. |
@@ -86,9 +86,9 @@ For example:
 
 ```text
 > info
-OK Micro Flow Raspberry Pi Pico CDC v1
+OK Micro Flow Raspberry Pi Pico CDC v1 flow-version=0.0.1
 > status
-OK flow=stopped active-bytes=0 faults=0
+OK flow=stopped active-bytes=0 flow-version=0.0.1 faults=0
 > gpio write 0 1
 OK
 > gpio read 0

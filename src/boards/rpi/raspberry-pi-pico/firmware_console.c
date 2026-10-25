@@ -1,6 +1,8 @@
 /* Firmware console commands, kept separate from parsing and USB transport. */
 #include "firmware_internal.h"
 
+#include <microflow/version.h>
+
 #include "rp2040_sdk.h"
 
 /* Keep command implementations concise while retaining one USB text primitive. */
@@ -27,7 +29,9 @@ static void log_message(void *context, const uint8_t *data, size_t length) {
 
 /* Identify the firmware and console protocol to an operator or host tool. */
 static void info(void *context) {
-    text(context, "OK Micro Flow Raspberry Pi Pico CDC v1\r\n");
+    text(context, "OK Micro Flow Raspberry Pi Pico CDC v1 flow-version=");
+    text(context, microflow_version_string());
+    text(context, "\r\n");
 }
 
 /* Summarize active-flow lifecycle, image size, and accumulated faults. */
@@ -38,6 +42,8 @@ static void status(void *context) {
     text(f, f->flow_store.running ? "running" : "stopped");
     text(f, " active-bytes=");
     number(f, (uint32_t)f->flow_store.length);
+    text(f, " flow-version=");
+    text(f, microflow_version_string());
     text(f, " faults=");
     number(f, f->supervisor.fault_count);
     text(f, "\r\n");
