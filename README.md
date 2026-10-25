@@ -35,8 +35,8 @@ Mekatrol Micro Flow deliberately maintains a small hardware target matrix.
 The Pico and Waveshare RP2040-Zero builds share the RP2040 firmware target but
 select the board LED implementation at compile time: GPIO25 for Pico and the
 GPIO16 WS2812 for RP2040-Zero. Pico 2 retains separate Arm and RISC-V builds. See
-[PROJECT_SETUP.md](PROJECT_SETUP.md) to prepare a clean machine and
-[BUILD.md](BUILD.md) for preset names and artifacts, and [TEST.md](TEST.md) for
+[PROJECT_SETUP.md](docs/PROJECT_SETUP.md) to prepare a clean machine and
+[BUILD.md](docs/BUILD.md) for preset names and artifacts, and [TEST.md](docs/TEST.md) for
 the test suite and hardware-test caveat.
 
 The engine is designed to remain independent of any particular microcontroller, SDK, RTOS, or hardware abstraction framework.
@@ -124,7 +124,7 @@ The function block categories above describe the intended capabilities. Individu
 
 Mekatrol Micro Flow is designed around a modular architecture that separates automation logic from the underlying hardware.
 
-See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the authoritative repository layout, dependency direction, and ownership of each folder. Other documentation should reference that file rather than repeat its structural descriptions.
+See [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for the authoritative repository layout, dependency direction, and ownership of each folder. Other documentation should reference that file rather than repeat its structural descriptions.
 
 ### Core Engine
 
@@ -188,9 +188,9 @@ Develop custom controllers with configurable logic instead of fixed, application
 Mekatrol Micro Flow is intended to be integrated directly into an embedded firmware project as a C library.
 
 For tool installation and clean-machine preparation, see
-[PROJECT_SETUP.md](PROJECT_SETUP.md). For configuration settings, build and
+[PROJECT_SETUP.md](docs/PROJECT_SETUP.md). For configuration settings, build and
 test commands, generated artifacts, and clean procedures, see
-[BUILD.md](BUILD.md).
+[BUILD.md](docs/BUILD.md).
 
 Depending on the target platform and build system, integration may involve:
 

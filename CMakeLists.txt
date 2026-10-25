@@ -8,7 +8,7 @@ if(MICROFLOW_BOARD STREQUAL "raspberry-pi-pico")
        NOT EXISTS "${PICO_SDK_PATH}/external/pico_sdk_import.cmake")
         message(FATAL_ERROR
             "Raspberry Pi Pico requires Pico SDK 2.3.1. "
-            "Set PICO_SDK_PATH; see PROJECT_SETUP.md.")
+            "Set PICO_SDK_PATH; see docs/PROJECT_SETUP.md.")
     endif()
     set(PICO_BOARD pico CACHE STRING "Pico SDK board definition" FORCE)
     set(PICO_NO_PICOTOOL 1 CACHE BOOL "Do not fetch picotool" FORCE)
