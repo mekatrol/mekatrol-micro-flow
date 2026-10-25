@@ -37,8 +37,8 @@ select the board LED implementation at compile time: GPIO25 for Pico and the
 GPIO16 WS2812 for RP2040-Zero. Pico 2 retains separate Arm and RISC-V builds. See
 [PROJECT_SETUP.md](docs/PROJECT_SETUP.md) to prepare a clean machine,
 [FORMAT.md](docs/FORMAT.md) for source formatting, [BUILD.md](docs/BUILD.md) for
-preset names and artifacts, and [TEST.md](docs/TEST.md) for
-the test suite and hardware-test caveat.
+preset names and artifacts, [CONSOLE.md](docs/CONSOLE.md) for USB console usage,
+and [TEST.md](docs/TEST.md) for the test suite and hardware-test caveat.
 
 The engine is designed to remain independent of any particular microcontroller, SDK, RTOS, or hardware abstraction framework.
 
