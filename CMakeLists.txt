@@ -4,6 +4,30 @@ if(MICROFLOW_BOARD STREQUAL "raspberry-pi-pico")
     if(NOT DEFINED PICO_SDK_PATH AND DEFINED ENV{PICO_SDK_PATH})
         set(PICO_SDK_PATH "$ENV{PICO_SDK_PATH}")
     endif()
+
+    if(NOT PICO_SDK_PATH)
+        set(_microflow_pico_sdk_candidates)
+        if(DEFINED ENV{HOME})
+            list(APPEND _microflow_pico_sdk_candidates
+                "$ENV{HOME}/.pico-sdk/sdk/2.3.1"
+                "$ENV{HOME}/sdk/pico-sdk-2.3.1")
+        endif()
+        if(DEFINED ENV{USERPROFILE})
+            list(APPEND _microflow_pico_sdk_candidates
+                "$ENV{USERPROFILE}/.pico-sdk/sdk/2.3.1"
+                "$ENV{USERPROFILE}/sdk/pico-sdk-2.3.1")
+        endif()
+
+        foreach(_microflow_pico_sdk_candidate IN LISTS _microflow_pico_sdk_candidates)
+            if(EXISTS "${_microflow_pico_sdk_candidate}/external/pico_sdk_import.cmake")
+                set(PICO_SDK_PATH "${_microflow_pico_sdk_candidate}")
+                break()
+            endif()
+        endforeach()
+        unset(_microflow_pico_sdk_candidate)
+        unset(_microflow_pico_sdk_candidates)
+    endif()
+
     if(NOT PICO_SDK_PATH OR
        NOT EXISTS "${PICO_SDK_PATH}/external/pico_sdk_import.cmake")
         message(FATAL_ERROR
