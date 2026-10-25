@@ -1,6 +1,6 @@
 /* Host regression tests for framed uploads, rejection, and resynchronization. */
-#include "supervisor.h"
-#include "upload_transport.h"
+#include <microflow/supervisor.h>
+#include <microflow/upload_transport.h>
 
 #include <stdint.h>
 #include <stdlib.h>

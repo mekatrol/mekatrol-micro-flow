@@ -1,4 +1,9 @@
-add_library(microflow-runtime STATIC scheduler.c)
+add_library(microflow-runtime STATIC
+    console.c
+    flow_store.c
+    scheduler.c
+    supervisor.c
+    upload_transport.c)
 add_library(Microflow::runtime ALIAS microflow-runtime)
 
 target_compile_features(microflow-runtime PUBLIC c_std_11)

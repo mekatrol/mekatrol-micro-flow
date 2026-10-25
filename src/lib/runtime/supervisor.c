@@ -1,5 +1,5 @@
 /* Implements deterministic cooperative dispatch and bounded SPSC queues. */
-#include "supervisor.h"
+#include <microflow/supervisor.h>
 #include <limits.h>
 
 /* Compute the next byte-ring slot while preserving the fixed storage bound. */

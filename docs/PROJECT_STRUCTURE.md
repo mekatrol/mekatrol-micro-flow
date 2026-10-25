@@ -46,9 +46,11 @@ The physical board directories own entry points, pins, exposed logical
 resources, board limits, and board documentation. The SoC directories own
 startup, interrupt dispatch, register support, chip drivers, and linker layouts.
 
-Code shared by Pico and Pico 2 belongs in a project-owned interface only after
-the implementations demonstrate that their behavior and constraints match.
-RP2040 and RP2350 differences must remain explicit.
+Portable flow storage, supervision, console parsing, and upload framing belong
+in `src/lib`. Board applications inject hardware operations into those modules.
+Physical GPIO mappings and firmware presentation remain in the board directory;
+SDK calls and peripheral drivers remain in the SoC directory. RP2040 and RP2350
+differences must remain explicit.
 
 `cmake/boards` contains build composition, not production C or assembly.
 Generated build directories and compiler outputs are not source.

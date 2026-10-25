@@ -84,7 +84,9 @@ formatter.
 ### Linux and macOS
 
 ```sh
-git ls-files -z '*.c' '*.h' '*.cc' '*.cpp' '*.hpp' |
+find src tests -type f \
+  \( -name '*.c' -o -name '*.h' -o -name '*.cc' -o \
+     -name '*.cpp' -o -name '*.hpp' \) -print0 |
   xargs -0 -r clang-format -i
 ./tools/format-c-functions.sh
 ```
@@ -93,7 +95,9 @@ The `-r` option to `xargs` is supported by GNU `xargs` on Linux. On macOS, use
 this portable form instead:
 
 ```sh
-git ls-files -z '*.c' '*.h' '*.cc' '*.cpp' '*.hpp' |
+find src tests -type f \
+  \( -name '*.c' -o -name '*.h' -o -name '*.cc' -o \
+     -name '*.cpp' -o -name '*.hpp' \) -print0 |
   xargs -0 clang-format -i
 ./tools/format-c-functions.sh
 ```
@@ -103,8 +107,9 @@ git ls-files -z '*.c' '*.h' '*.cc' '*.cpp' '*.hpp' |
 Run these commands from PowerShell:
 
 ```powershell
-git ls-files -- '*.c' '*.h' '*.cc' '*.cpp' '*.hpp' |
-  ForEach-Object { clang-format -i -- $_ }
+Get-ChildItem -Path src, tests -Recurse -File |
+  Where-Object { $_.Extension -in '.c', '.h', '.cc', '.cpp', '.hpp' } |
+  ForEach-Object { clang-format -i -- $_.FullName }
 .\tools\format-c-functions.ps1
 ```
 

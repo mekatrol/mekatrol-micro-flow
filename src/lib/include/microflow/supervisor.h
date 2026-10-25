@@ -1,9 +1,9 @@
 /*
- * Cooperative board supervisor and bounded ISR-to-main-context queues.
+ * Portable cooperative supervisor and bounded ISR-to-main-context queues.
  * All storage is caller-owned or embedded, so operation never allocates.
  */
-#ifndef MICROFLOW_RASPBERRY_PI_PICO_SUPERVISOR_H
-#define MICROFLOW_RASPBERRY_PI_PICO_SUPERVISOR_H
+#ifndef MICROFLOW_SUPERVISOR_H
+#define MICROFLOW_SUPERVISOR_H
 
 #include <stdbool.h>
 #include <stddef.h>

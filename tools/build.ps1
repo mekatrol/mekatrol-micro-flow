@@ -64,7 +64,7 @@ $requiredCompiler = switch ($Target) {
     default { $null }
 }
 
-$requiredTools = @('git', 'cmake', 'ninja')
+$requiredTools = @('cmake', 'ninja')
 if ($null -ne $requiredCompiler) {
     $requiredTools += $requiredCompiler
 }
@@ -106,10 +106,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 try {
     Write-Host 'Formatting source files...'
-    $sourceFiles = @(& git ls-files -- '*.c' '*.h' '*.cc' '*.cpp' '*.hpp')
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $sourceFiles = @(Get-ChildItem -Path 'src', 'tests' -Recurse -File |
+        Where-Object { $_.Extension -in '.c', '.h', '.cc', '.cpp', '.hpp' })
     foreach ($sourceFile in $sourceFiles) {
-        & $clangFormat.Source -i -- $sourceFile
+        & $clangFormat.Source -i -- $sourceFile.FullName
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
     & (Join-Path $PSScriptRoot 'format-c-functions.ps1')

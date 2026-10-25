@@ -100,7 +100,7 @@ if [ "$flash" = true ]; then
     esac
 fi
 
-for required_tool in git cmake ninja $required_compiler; do
+for required_tool in cmake ninja $required_compiler; do
     if ! command -v "$required_tool" >/dev/null 2>&1; then
         printf 'Required tool not found: %s\n' "$required_tool" >&2
         exit 1
@@ -134,7 +134,9 @@ repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 cd "$repo_root"
 
 printf 'Formatting source files...\n'
-git ls-files '*.c' '*.h' '*.cc' '*.cpp' '*.hpp' |
+find src tests -type f \
+    \( -name '*.c' -o -name '*.h' -o -name '*.cc' -o \
+       -name '*.cpp' -o -name '*.hpp' \) -print |
 while IFS= read -r source_file; do
     "$clang_format" -i -- "$source_file"
 done

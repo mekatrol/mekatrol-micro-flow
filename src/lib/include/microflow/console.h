@@ -1,8 +1,8 @@
 /* Line-oriented diagnostic/control console over a bounded receive ring. */
-#ifndef MICROFLOW_RASPBERRY_PI_PICO_CONSOLE_H
-#define MICROFLOW_RASPBERRY_PI_PICO_CONSOLE_H
+#ifndef MICROFLOW_CONSOLE_H
+#define MICROFLOW_CONSOLE_H
 
-#include "supervisor.h"
+#include <microflow/supervisor.h>
 
 #include <stdbool.h>
 #include <stddef.h>

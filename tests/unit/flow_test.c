@@ -1,5 +1,6 @@
 /* Host regression tests for portable flow-image validation. */
 #include <microflow/flow.h>
+#include <microflow/flow_store.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -9,6 +10,13 @@
     do {                   \
         if (!(c)) abort(); \
     } while (0)
+
+static bool stopped;
+
+static void on_stopped(void *context) {
+    bool *called = context;
+    *called      = true;
+}
 
 static void put_u32(uint8_t *p, uint32_t value) {
     p[0] = (uint8_t)value;
@@ -44,6 +52,16 @@ int main(void) {
     memcpy(&image[MICROFLOW_FLOW_IMAGE_HEADER_SIZE], "test", 4U);
     make_image(image, sizeof(image));
     CHECK(microflow_flow_validate(NULL, image, sizeof(image)));
+
+    uint8_t                storage[sizeof(image)];
+    microflow_flow_store_t store;
+    microflow_flow_store_initialize(&store, storage, sizeof(storage), NULL,
+                                    NULL, on_stopped, &stopped);
+    CHECK(microflow_flow_store_activate(&store, image, sizeof(image)));
+    CHECK(microflow_flow_store_validate(&store));
+    CHECK(microflow_flow_store_start(&store) && store.running);
+    microflow_flow_store_stop(&store);
+    CHECK(!store.running && stopped);
 
     image[0] = 'X';
     CHECK(!microflow_flow_validate(NULL, image, sizeof(image)));

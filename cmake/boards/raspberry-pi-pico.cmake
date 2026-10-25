@@ -5,11 +5,13 @@ find_program(MICROFLOW_SIZE_TOOL arm-none-eabi-size REQUIRED)
 
 add_executable(microflow-raspberry-pi-pico
     "${board_dir}/main.c"
+    "${board_dir}/firmware.c"
+    "${board_dir}/firmware_console.c"
+    "${board_dir}/firmware_services.c"
+    "${board_dir}/firmware_usb.c"
     "${board_dir}/board.c"
     "${board_dir}/board_gpio.c"
-    "${board_dir}/supervisor.c"
-    "${board_dir}/upload_transport.c"
-    "${board_dir}/console.c"
+    "${board_dir}/board_gpio_rp2040.c"
     "${board_dir}/usb_descriptors.c"
     "${soc_dir}/rp2040_sdk.c"
     "${soc_dir}/rp2040_usb_cdc_sdk.c")

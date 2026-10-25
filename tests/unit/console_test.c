@@ -1,5 +1,5 @@
 /* Host regression tests for bounded console parsing and command dispatch. */
-#include "console.h"
+#include <microflow/console.h>
 
 #include <stdio.h>
 #include <string.h>

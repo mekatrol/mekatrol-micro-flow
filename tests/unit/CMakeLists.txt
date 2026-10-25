@@ -7,7 +7,7 @@ microflow_enable_sanitizers(microflow-version-test)
 add_test(NAME microflow.version COMMAND microflow-version-test)
 
 add_executable(microflow-flow-test flow_test.c)
-target_link_libraries(microflow-flow-test PRIVATE Microflow::core)
+target_link_libraries(microflow-flow-test PRIVATE Microflow::runtime)
 microflow_set_warnings(microflow-flow-test)
 microflow_enable_sanitizers(microflow-flow-test)
 add_test(NAME microflow.flow COMMAND microflow-flow-test)
@@ -23,25 +23,20 @@ add_test(NAME microflow.scheduler COMMAND microflow-scheduler-test)
 set(pico_board_dir
     ${PROJECT_SOURCE_DIR}/src/boards/rpi/raspberry-pi-pico)
 
-add_executable(microflow-supervisor-test
-    supervisor_test.c ${pico_board_dir}/supervisor.c)
-target_include_directories(microflow-supervisor-test PRIVATE ${pico_board_dir})
+add_executable(microflow-supervisor-test supervisor_test.c)
+target_link_libraries(microflow-supervisor-test PRIVATE Microflow::runtime)
 microflow_set_warnings(microflow-supervisor-test)
 microflow_enable_sanitizers(microflow-supervisor-test)
 add_test(NAME microflow.supervisor COMMAND microflow-supervisor-test)
 
-add_executable(microflow-upload-transport-test
-    upload_transport_test.c
-    ${pico_board_dir}/supervisor.c
-    ${pico_board_dir}/upload_transport.c)
-target_include_directories(microflow-upload-transport-test PRIVATE ${pico_board_dir})
+add_executable(microflow-upload-transport-test upload_transport_test.c)
+target_link_libraries(microflow-upload-transport-test PRIVATE Microflow::runtime)
 microflow_set_warnings(microflow-upload-transport-test)
 microflow_enable_sanitizers(microflow-upload-transport-test)
 add_test(NAME microflow.upload-transport COMMAND microflow-upload-transport-test)
 
-add_executable(microflow-console-test
-    console_test.c ${pico_board_dir}/supervisor.c ${pico_board_dir}/console.c)
-target_include_directories(microflow-console-test PRIVATE ${pico_board_dir})
+add_executable(microflow-console-test console_test.c)
+target_link_libraries(microflow-console-test PRIVATE Microflow::runtime)
 microflow_set_warnings(microflow-console-test)
 microflow_enable_sanitizers(microflow-console-test)
 add_test(NAME microflow.console COMMAND microflow-console-test)

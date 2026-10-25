@@ -1,9 +1,9 @@
 # Raspberry Pi Pico and Waveshare RP2040-Zero
 
-Partial RP2040 firmware target using Pico SDK 2.3.1 and TinyUSB. It provides the
-bounded supervisor, UART0 upload on GPIO0/GPIO1, a native USB CDC management
-console, logical GPIO resources, and watchdog service. It produces ELF, map,
-BIN, and UF2 files.
+Partial RP2040 firmware target using Pico SDK 2.3.1 and TinyUSB. It composes the
+portable supervisor, flow store, upload transport, and console parser with a
+UART0 upload endpoint on GPIO0/GPIO1, a USB CDC management transport, logical
+GPIO resources, and watchdog service. It produces ELF, map, BIN, and UF2 files.
 
 The `pico-debug` preset uses the Raspberry Pi Pico mapping and drives its
 digital status LED on GPIO25. The `waveshare-rp2040-zero-debug` preset defines

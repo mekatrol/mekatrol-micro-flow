@@ -1,5 +1,5 @@
 /* Streaming, allocation-free implementation of the flow upload protocol. */
-#include "upload_transport.h"
+#include <microflow/upload_transport.h>
 
 /* Copy a known-valid bounded byte span without depending on a hosted C library. */
 static void bytes_copy(uint8_t *destination, const uint8_t *source, size_t length) {

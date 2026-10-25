@@ -1,5 +1,5 @@
 /* Allocation-free ASCII command parser for board diagnostics and control. */
-#include "console.h"
+#include <microflow/console.h>
 
 /* Measure response text so the byte-oriented writer receives an explicit size. */
 static size_t text_length(const char *text) {

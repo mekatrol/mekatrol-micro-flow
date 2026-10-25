@@ -1,8 +1,8 @@
 /* Bounded binary flow-image upload protocol over supervisor byte rings. */
-#ifndef MICROFLOW_RASPBERRY_PI_PICO_UPLOAD_TRANSPORT_H
-#define MICROFLOW_RASPBERRY_PI_PICO_UPLOAD_TRANSPORT_H
+#ifndef MICROFLOW_UPLOAD_TRANSPORT_H
+#define MICROFLOW_UPLOAD_TRANSPORT_H
 
-#include "supervisor.h"
+#include <microflow/supervisor.h>
 
 #include <stdbool.h>
 #include <stddef.h>
