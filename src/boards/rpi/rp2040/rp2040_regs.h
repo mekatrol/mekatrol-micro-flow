@@ -1,3 +1,4 @@
+/* Minimal documented RP2040 register map used by the direct-register driver. */
 #ifndef MICROFLOW_RP2040_REGS_H
 #define MICROFLOW_RP2040_REGS_H
 
@@ -41,10 +42,14 @@
 #define RP2040_GPIO_CTRL(pin) \
     RP2040_REG32(RP2040_IO_BANK0_BASE + 0x04U + ((pin) * 8U))
 
-/* Reset bits */
+/* Reset bits: each selects the named peripheral in RESETS_RESET/DONE. */
+/* Releases the GPIO function-selection register bank used by every board pin. */
 #define RP2040_RESET_IO_BANK0   (1U << 5U)
+/* Releases the pad electrical-control bank paired with IO_BANK0. */
 #define RP2040_RESET_PADS_BANK0 (1U << 8U)
+/* Releases the free-running timer needed for monotonic time and alarm zero. */
 #define RP2040_RESET_TIMER      (1U << 21U)
+/* Releases UART0 before configuring the firmware's serial transport. */
 #define RP2040_RESET_UART0      (1U << 22U)
 
 /* UART0 (Arm PL011), clocked from the 12 MHz system clock during bring-up. */
@@ -58,15 +63,25 @@
 #define RP2040_UART0_IMSC   RP2040_REG32(RP2040_UART0_BASE + 0x38U)
 #define RP2040_UART0_MIS    RP2040_REG32(RP2040_UART0_BASE + 0x40U)
 #define RP2040_UART0_ICR    RP2040_REG32(RP2040_UART0_BASE + 0x44U)
+/* TXFF prevents writes when the hardware transmit FIFO has no free entry. */
 #define RP2040_UART_FR_TXFF (1U << 5U)
+/* RXFE prevents reads when the hardware receive FIFO contains no byte. */
 #define RP2040_UART_FR_RXFE (1U << 4U)
+/* FEN enables FIFOs so interrupt latency need not be one byte time. */
 #define RP2040_UART_LCR_H_FEN (1U << 4U)
+/* WLEN_8 selects the protocol's eight data bits per character. */
 #define RP2040_UART_LCR_H_WLEN_8 (3U << 5U)
+/* UARTEN enables the PL011 only after divisors and framing are configured. */
 #define RP2040_UART_CR_UARTEN (1U << 0U)
+/* TXE enables the transmit datapath used by queued upload replies. */
 #define RP2040_UART_CR_TXE (1U << 8U)
+/* RXE enables the receive datapath used by incoming upload frames. */
 #define RP2040_UART_CR_RXE (1U << 9U)
+/* RX requests service when the configured receive FIFO threshold is reached. */
 #define RP2040_UART_INT_RX (1U << 4U)
+/* TX requests service while queued reply bytes can enter the transmit FIFO. */
 #define RP2040_UART_INT_TX (1U << 5U)
+/* RT flushes a short receive burst after the PL011 receive timeout. */
 #define RP2040_UART_INT_RT (1U << 6U)
 #define RP2040_IRQ_UART0 20U
 #define RP2040_CLK_PERI_ENABLE (1U << 11U)
@@ -76,8 +91,11 @@
 #define RP2040_XOSC_FREQUENCY_HZ     12000000U
 #define RP2040_XOSC_STARTUP_DELAY_MS 1U
 
+/* Passworded ENABLE value starts the crystal oscillator state machine. */
 #define RP2040_XOSC_ENABLE        (0xFABU << 12U)
+/* Frequency-range encoding covers the board's 12 MHz crystal. */
 #define RP2040_XOSC_FREQ_1_15_MHZ 0xAA0U
+/* STABLE indicates XOSC output is safe to select as a clock source. */
 #define RP2040_XOSC_STABLE        (1U << 31U)
 #define RP2040_XOSC_STARTUP_COUNT ((RP2040_XOSC_FREQUENCY_HZ * RP2040_XOSC_STARTUP_DELAY_MS + 255999U) / 256000U)
 
@@ -88,6 +106,7 @@
 #define RP2040_TIMER_ALARM0 RP2040_REG32(RP2040_TIMER_BASE + 0x10U)
 #define RP2040_TIMER_INTR RP2040_REG32(RP2040_TIMER_BASE + 0x34U)
 #define RP2040_TIMER_INTE RP2040_REG32(RP2040_TIMER_BASE + 0x38U)
+/* Alarm-zero bit acknowledges and enables only the supervisor wake alarm. */
 #define RP2040_TIMER_ALARM0_BIT (1U << 0U)
 #define RP2040_NVIC_ISER RP2040_REG32(RP2040_PPBC_BASE + 0xE100U)
 #define RP2040_NVIC_ICPR RP2040_REG32(RP2040_PPBC_BASE + 0xE280U)
@@ -96,7 +115,9 @@
 #define RP2040_WATCHDOG_CTRL RP2040_REG32(RP2040_WATCHDOG_BASE + 0x00U)
 #define RP2040_WATCHDOG_LOAD RP2040_REG32(RP2040_WATCHDOG_BASE + 0x04U)
 #define RP2040_WATCHDOG_TICK RP2040_REG32(RP2040_WATCHDOG_BASE + 0x2CU)
+/* ENABLE starts countdown only after its load and tick source are ready. */
 #define RP2040_WATCHDOG_CTRL_ENABLE (1U << 30U)
+/* TICK_ENABLE derives the watchdog's microsecond timing reference. */
 #define RP2040_WATCHDOG_TICK_ENABLE (1U << 9U)
 #define RP2040_WATCHDOG_TICK_CYCLES 12U
 

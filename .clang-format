@@ -47,3 +47,9 @@ MaxEmptyLinesToKeep: 2
 
 # Preprocessor formatting
 IndentPPDirectives: None
+
+# Preserve blank lines
+MaxEmptyLinesToKeep: 2
+
+# Preserve block comment formatting
+ReflowComments: false

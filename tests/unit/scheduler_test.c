@@ -1,3 +1,4 @@
+/* Host regression tests for deterministic portable scheduler semantics. */
 #include <microflow/scheduler.h>
 
 #include <limits.h>
@@ -22,6 +23,7 @@ typedef struct {
     uint8_t value;
 } callback_context_t;
 
+/* Record callback order as compact values so priority behavior is observable. */
 static void record_callback(
     microflow_scheduler_t *scheduler,
     microflow_scheduler_task_t *task,
@@ -34,7 +36,9 @@ static void record_callback(
     ++callback_context->log->count;
 }
 
+/* Prove deadline gating, priority ordering, and stable equal-priority order. */
 static void test_priority_deadlines_and_stable_order(void) {
+    /* Ready tasks sort by priority while ties preserve task-storage order. */
     microflow_scheduler_t scheduler;
     microflow_scheduler_task_t tasks[4];
     event_log_t log = {0};
@@ -62,7 +66,9 @@ static void test_priority_deadlines_and_stable_order(void) {
     CHECK(log.values[2] == 3U);
 }
 
+/* Prove late periodic dispatch skips backlog without shifting future phase. */
 static void test_periodic_skip_without_drift(void) {
+    /* Late periodic work skips missed releases but retains its original phase. */
     microflow_scheduler_t scheduler;
     microflow_scheduler_task_t tasks[1];
     microflow_scheduler_task_t *periodic = NULL;
@@ -82,7 +88,9 @@ static void test_periodic_skip_without_drift(void) {
     CHECK(periodic->deadline == 65U);
 }
 
+/* Prove wrap-safe readiness, cancellation, and deterministic capacity errors. */
 static void test_wraparound_cancel_and_capacity(void) {
+    /* Cover uint32 wrap, cancellation, and caller-supplied storage exhaustion. */
     microflow_scheduler_t scheduler;
     microflow_scheduler_task_t tasks[1];
     microflow_scheduler_task_t *task = NULL;
@@ -108,7 +116,9 @@ static void test_wraparound_cancel_and_capacity(void) {
     CHECK(microflow_scheduler_run_ready(&scheduler, 2U) == 0U);
 }
 
+/* Prove invalid horizons fail and sleep planning selects the earliest release. */
 static void test_argument_validation_and_next_deadline(void) {
+    /* Reject ambiguous horizons and identify the earliest active deadline. */
     microflow_scheduler_t scheduler;
     microflow_scheduler_task_t tasks[2];
     microflow_scheduler_tick_t deadline = 0U;
@@ -132,6 +142,7 @@ static void test_argument_validation_and_next_deadline(void) {
     CHECK(deadline == 23U);
 }
 
+/* Run independent scheduler contract scenarios as one host regression binary. */
 int main(void) {
     test_priority_deadlines_and_stable_order();
     test_periodic_skip_without_drift();

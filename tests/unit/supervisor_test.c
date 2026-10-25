@@ -1,3 +1,4 @@
+/* Host regression tests for supervisor queues, dispatch, timing, and faults. */
 #include "supervisor.h"
 
 #include <stdint.h>
@@ -32,11 +33,13 @@ typedef struct {
     size_t   order_count;
 } fixture_t;
 
+/* Supply deterministic test-controlled time to the supervisor platform. */
 static uint32_t fixture_now(void *context) {
     /* Time advances only when the test or service callback changes it. */
     return ((fixture_t *)context)->now;
 }
 
+/* Record idle requests rather than sleeping the host test process. */
 static void fixture_wait(void *context, bool has_deadline, uint32_t deadline) {
     fixture_t *f = context;
     /* Record, rather than perform, the idle wait requested by the supervisor. */
@@ -45,11 +48,13 @@ static void fixture_wait(void *context, bool has_deadline, uint32_t deadline) {
     f->deadline     = deadline;
 }
 
+/* Count watchdog refreshes so every run-loop path can prove liveness service. */
 static void fixture_watchdog(void *context) {
     /* One increment represents one platform watchdog service operation. */
     ++((fixture_t *)context)->watchdogs;
 }
 
+/* Record deferred platform fault reporting separately from fault detection. */
 static void fixture_fault(void *context, microflow_supervisor_fault_t fault) {
     /*
      * These tests care when reporting occurs, not which platform diagnostic
@@ -59,6 +64,7 @@ static void fixture_fault(void *context, microflow_supervisor_fault_t fault) {
     ++((fixture_t *)context)->faults;
 }
 
+/* Record service order/event delivery and advance time to model bounded work. */
 static void service(void *context, uint32_t events) {
     fixture_t *f               = context;
     /* Preserve dispatch order/event delivery, then model one tick of work. */
@@ -66,6 +72,7 @@ static void service(void *context, uint32_t events) {
     ++f->now;
 }
 
+/* Assemble the complete fake platform contract used by each test scenario. */
 static microflow_supervisor_platform_t platform(fixture_t *f) {
     /* Construct the complete fake platform used by each supervisor instance. */
     return (microflow_supervisor_platform_t){.now              = fixture_now,
@@ -75,6 +82,7 @@ static microflow_supervisor_platform_t platform(fixture_t *f) {
                                              .context          = f};
 }
 
+/* Prove bounded byte/event queues preserve unread FIFO data on overflow. */
 static void test_queues_reject_newest(void) {
     /*
      * Purpose: prove both SPSC queue types have the documented bounded FIFO
@@ -122,6 +130,7 @@ static void test_queues_reject_newest(void) {
     }
 }
 
+/* Prove priority dispatch, idle waiting, runtime metrics, and watchdog service. */
 static void test_priority_metrics_idle_and_overrun(void) {
     /*
      * Purpose: verify idle behavior, priority sorting, dispatch metrics, and
@@ -165,6 +174,7 @@ static void test_priority_metrics_idle_and_overrun(void) {
     CHECK(f.waits == 1U && f.watchdogs == 2U);
 }
 
+/* Prove clock wrap, deferred overflow faults, and clean repeated initialization. */
 static void test_wraparound_warm_reset_and_fault(void) {
     /*
      * Purpose: cover three resilience properties relevant to long-lived
@@ -214,6 +224,7 @@ static void test_wraparound_warm_reset_and_fault(void) {
     }
 }
 
+/* Run the independent supervisor contract scenarios in one host executable. */
 int main(void) {
     /* Keep each scenario independent so a failure identifies one contract. */
     test_queues_reject_newest();
