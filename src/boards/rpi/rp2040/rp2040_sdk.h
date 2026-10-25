@@ -10,10 +10,6 @@ void microflow_rp2040_initialize(void);
 /* GPIO primitives intentionally use project-owned scalar types only. */
 void microflow_rp2040_gpio_output_initialize(uint32_t pin);
 void microflow_rp2040_gpio_write(uint32_t pin, bool high);
-/* Hide status-pixel PIO lifecycle here so the board layer requests only RGB state. */
-void microflow_rp2040_ws2812_initialize(uint32_t pin);
-void microflow_rp2040_ws2812_write(uint32_t pin, uint8_t red, uint8_t green,
-                                   uint8_t blue);
 void microflow_rp2040_delay_ms(uint32_t milliseconds);
 /* Requests a platform reset; this operation is intentionally non-returning. */
 void microflow_rp2040_reboot(void);

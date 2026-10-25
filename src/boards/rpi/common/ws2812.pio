@@ -1,0 +1,729 @@
+
+; =====================================================================
+; WS2812 / NeoPixel LED DRIVER - Raspberry Pi Pico PIO
+; =====================================================================
+;
+; PURPOSE
+; -------
+; This program sends data to WS2812 RGB LEDs using the Raspberry Pi
+; Pico's Programmable I/O (PIO) hardware.
+;
+; PIO is a small, independent processor inside the RP2040 chip.
+; It executes simple instructions to control GPIO pins with very
+; precise timing, without the main CPU having to toggle pins manually.
+;
+; WS2812 LEDs use a single data wire. Each LED receives 24 bits:
+;
+;     8 bits GREEN, 8 bits RED, 8 bits BLUE (GRB order).
+;
+; Each data bit is represented by a HIGH pulse followed by a LOW pulse.
+; The duration of the HIGH pulse determines whether the bit is 0 or 1.
+;
+;     Bit 0: Short HIGH pulse, long LOW pulse.
+;     Bit 1: Long HIGH pulse, short LOW pulse.
+;
+; The LEDs expect approximately 800,000 bits per second (800 kHz).
+;
+; ---------------------------------------------------------------------
+; PIO CLOCK TIMING
+; ---------------------------------------------------------------------
+;
+; This program assumes the PIO state machine is configured to run at 8 MHz.
+;
+;     8 MHz = 8,000,000 PIO clock cycles per second.
+;
+; Therefore:
+;
+;     1 PIO clock cycle = 1 / 8,000,000 seconds
+;                       = 125 nanoseconds (ns).
+;
+; Each WS2812 data bit takes 10 PIO clock cycles:
+;
+;     10 x 125 ns = 1250 ns = 1.25 microseconds.
+;
+;     1 / 1.25 us = 800,000 bits per second.
+;
+; The timing is divided into three sections:
+;
+;     T1 = 2 cycles
+;     T2 = 5 cycles
+;     T3 = 3 cycles
+;
+;     Total = T1 + T2 + T3 = 10 cycles.
+;
+; The resulting waveforms are:
+;
+;     LOGICAL 0:
+;         HIGH = 2 cycles =  250 ns
+;         LOW  = 8 cycles = 1000 ns
+;
+;     LOGICAL 1:
+;         HIGH = 7 cycles =  875 ns
+;         LOW  = 3 cycles =  375 ns
+;
+; Both bits take exactly 10 cycles (1.25 us).
+;
+; NOTE: These timings assume the PIO is not stalled waiting for data.
+;
+; =====================================================================
+
+
+; ---------------------------------------------------------------------
+; DEFINE THE PIO PROGRAM NAME
+; ---------------------------------------------------------------------
+
+.program ws2812
+
+; ".program" is an assembler directive, not a PIO instruction.
+;
+; It gives this program the name "ws2812".
+;
+; The name is used by the host program to identify and load the
+; assembled instructions into a PIO state machine.
+;
+; An assembler directive is processed when the code is assembled.
+; It is NOT executed by the PIO hardware and takes no clock cycles.
+
+
+; ---------------------------------------------------------------------
+; ENABLE SIDE-SET OUTPUT
+; ---------------------------------------------------------------------
+
+.side_set 1
+
+; Side-set is a PIO feature that allows an instruction to change
+; GPIO output pins AT THE SAME TIME as performing its main operation.
+;
+; For example:
+;
+;     out x, 1    side 0
+;
+; This single instruction does TWO things simultaneously:
+;
+;     1. "out x, 1" moves one data bit into register X.
+;     2. "side 0" drives the side-set GPIO pin LOW.
+;
+; Another example:
+;
+;     jmp !x, do_zero    side 1
+;
+; This instruction:
+;
+;     1. Checks whether X is zero and jumps if it is.
+;     2. Drives the side-set GPIO pin HIGH.
+;
+; WHY USE SIDE-SET?
+;
+; Without side-set, separate instructions would normally be needed
+; to change the GPIO and perform the data-processing operation.
+;
+; Side-set performs both actions in the same instruction, making
+; precise pulse timing much easier.
+;
+; WHAT DOES ".side_set 1" MEAN?
+;
+; The number 1 specifies that ONE bit of each PIO instruction is
+; reserved for side-set output.
+;
+; It does NOT mean "set the pin HIGH".
+;
+;     .side_set 1  = Use one side-set bit (one output pin).
+;     side 0       = Drive that output pin LOW.
+;     side 1       = Drive that output pin HIGH.
+;
+; For comparison:
+;
+;     .side_set 2  = Use two side-set bits (two output pins).
+;
+; In that case, side-set values can control both pins together.
+;
+; IMPORTANT:
+;
+; This directive does not select the physical GPIO number.
+;
+; The host C/C++ or MicroPython program must configure:
+;
+;     - Which GPIO is the side-set output.
+;     - The GPIO direction (output).
+;     - The PIO state machine clock speed.
+;
+; Because this program uses mandatory side-set (no "opt" option),
+; every executable instruction must specify a "side" value.
+;
+; Side-set also uses bits from the instruction encoding that could
+; otherwise be used for delays.
+;
+; With ".side_set 1", four bits remain for the delay field,
+; allowing 0 to 15 additional delay cycles.
+
+
+; ---------------------------------------------------------------------
+; DEFINE TIMING CONSTANTS
+; ---------------------------------------------------------------------
+
+.define public T1 2
+.define public T2 5
+.define public T3 3
+
+; ".define" creates a named constant.
+;
+; A constant is a name representing a fixed numerical value.
+; The assembler substitutes the value when assembling the program.
+;
+; For example:
+;
+;     T3 = 3
+;
+; Therefore:
+;
+;     [T3 - 1]
+;
+; is equivalent to:
+;
+;     [2]
+;
+; WHY USE NAMES INSTEAD OF NUMBERS?
+;
+; Names make the timing easier to understand and adjust.
+;
+; Instead of writing:
+;
+;     out x, 1 side 0 [2]
+;
+; we write:
+;
+;     out x, 1 side 0 [T3 - 1]
+;
+; This shows that the delay belongs to timing section T3.
+;
+; "public" makes these constants available to generated host-language
+; headers when using the Pico SDK's PIO assembler (pioasm).
+;
+; These constants are not PIO registers or special hardware timers.
+; They are simply names chosen by the programmer.
+;
+; ---------------------------------------------------------------------
+; IMPORTANT: WHY DO WE SUBTRACT 1 IN [T3 - 1]?
+; ---------------------------------------------------------------------
+;
+; Every PIO instruction takes ONE clock cycle by default.
+;
+; The number inside square brackets [] specifies how many EXTRA
+; clock cycles to wait after the instruction's normal cycle.
+;
+; Therefore:
+;
+;     Total cycles = 1 instruction cycle + delay cycles.
+;
+; Examples:
+;
+;     Instruction             Total cycles
+;     ------------------------------------
+;     nop                     1
+;     nop [0]                 1
+;     nop [1]                 2
+;     nop [2]                 3
+;     nop [3]                 4
+;
+; If we want an instruction to take exactly T3 = 3 cycles:
+;
+;     [T3 - 1] = [3 - 1] = [2]
+;
+; The instruction takes:
+;
+;     1 normal cycle + 2 extra cycles = 3 cycles.
+;
+; If we wrote [T3] instead, it would take FOUR cycles.
+;
+; The "- 1" compensates for the instruction's built-in clock cycle.
+;
+; This is why all three timing sections use [Tn - 1].
+
+
+; ---------------------------------------------------------------------
+; MARK THE START OF THE AUTOMATIC REPEAT SECTION
+; ---------------------------------------------------------------------
+
+.wrap_target
+
+; PIO programs can automatically repeat a section of instructions.
+;
+; ".wrap_target" marks the instruction to return to when the
+; state machine reaches the end of the wrap section.
+;
+; ".wrap" (at the bottom of this program) marks the final instruction.
+;
+; When execution finishes that instruction, the PIO automatically
+; returns to the instruction marked by ".wrap_target".
+;
+; WHY IS THIS USEFUL?
+;
+; Normally a processor needs a JMP instruction to return to the
+; beginning of a loop.
+;
+; PIO automatic wrapping avoids that extra instruction.
+;
+; This saves program memory and avoids adding another clock cycle.
+;
+; ".wrap_target" is an assembler directive, not an instruction.
+; It does not consume any PIO clock cycles.
+
+
+; ---------------------------------------------------------------------
+; LABEL: START OF THE BIT-PROCESSING LOOP
+; ---------------------------------------------------------------------
+
+bitloop:
+
+; "bitloop" is a label identifying the next instruction's address.
+;
+; Labels allow JMP instructions to refer to locations by name.
+;
+; For example:
+;
+;     jmp bitloop
+;
+; means "continue execution at the instruction labelled bitloop".
+;
+; A label is not an executable instruction.
+; It does not consume any clock cycles.
+
+
+; ---------------------------------------------------------------------
+; INSTRUCTION 1: READ THE NEXT DATA BIT AND SET GPIO LOW
+; ---------------------------------------------------------------------
+
+    out x, 1        side 0 [T3 - 1]
+
+; This instruction performs three functions:
+;
+;     1. Extract the next bit of LED data.
+;     2. Drive the side-set GPIO LOW.
+;     3. Maintain that LOW output for 3 clock cycles.
+;
+; BREAKDOWN:
+;
+; "out"
+;     OUT is a PIO instruction that transfers bits from the
+;     Output Shift Register (OSR) to a specified destination.
+;
+; "x"
+;     X is one of the PIO state machine's two scratch registers.
+;     The other is called Y.
+;
+;     Both X and Y are 32-bit registers.
+;
+;     In this program, X holds the current bit being transmitted:
+;
+;         X = 0  means logical ZERO.
+;         X = 1  means logical ONE.
+;
+; "1"
+;     Transfer exactly ONE bit from the OSR into X.
+;
+; WHAT IS THE OSR?
+;
+; The Output Shift Register is a 32-bit register inside the PIO.
+; It holds data supplied by the main CPU or DMA through the TX FIFO.
+;
+; The OUT instruction extracts bits from the OSR.
+;
+; For this program, the host must configure the shift direction
+; so the most significant bit is transmitted first (MSB-first).
+;
+; The host normally also enables automatic FIFO pulling (autopull)
+; so the OSR is refilled as data is transmitted.
+;
+; "side 0"
+;     Drive the configured side-set GPIO pin LOW.
+;
+;     This happens as part of the same instruction as OUT.
+;
+; "[T3 - 1]"
+;     T3 = 3.
+;
+;     The instruction normally takes 1 clock cycle.
+;     The delay adds another 2 cycles.
+;
+;     Total = 1 + (3 - 1) = 3 cycles.
+;
+;     At 8 MHz:
+;
+;         3 x 125 ns = 375 ns.
+;
+;     Therefore, the GPIO remains LOW for 375 ns.
+;
+; WHY IS THIS INSTRUCTION LOW?
+;
+; Every WS2812 data bit must finish with a LOW period.
+;
+; This instruction provides the final 3 LOW cycles of the
+; previous bit, while simultaneously reading the next bit.
+;
+; For a logical ZERO:
+;
+;     Previous NOP LOW = 5 cycles.
+;     This OUT LOW     = 3 cycles.
+;     Total LOW        = 8 cycles.
+;
+; For a logical ONE:
+;
+;     This OUT provides all 3 LOW cycles.
+;
+; IMPORTANT:
+;
+; If autopull is enabled and the TX FIFO is empty when new data
+; is required, OUT can stall while waiting for data.
+;
+; During that stall, the output remains LOW, extending the LOW
+; period. This is useful between LED frames, but the host must
+; supply data fast enough to avoid unwanted gaps within a frame.
+
+
+; ---------------------------------------------------------------------
+; INSTRUCTION 2: CHECK WHETHER THE BIT IS ZERO
+; ---------------------------------------------------------------------
+
+    jmp !x, do_zero side 1 [T1 - 1]
+
+; This instruction:
+;
+;     1. Checks the value stored in X.
+;     2. Selects the ZERO or ONE execution path.
+;     3. Drives the GPIO HIGH for 2 clock cycles.
+;
+; BREAKDOWN:
+;
+; "jmp"
+;     JMP means JUMP.
+;
+;     It changes which instruction the PIO executes next.
+;
+;     A jump can be unconditional or depend on a condition.
+;
+; "!x"
+;     This is a PIO jump condition meaning "X equals zero".
+;
+;     It is NOT a bitwise inversion of X.
+;
+;     If X == 0, the condition is TRUE.
+;     If X != 0, the condition is FALSE.
+;
+; "do_zero"
+;     This is the label of the instruction used for a ZERO bit.
+;
+;     If X == 0:
+;         Jump to do_zero.
+;
+;     If X != 0:
+;         Continue to the next instruction (do_one).
+;
+; "side 1"
+;     Drive the GPIO HIGH.
+;
+;     IMPORTANT: The GPIO goes HIGH regardless of whether
+;     the conditional jump is taken.
+;
+;     Both ZERO and ONE bits begin with a HIGH pulse.
+;
+; "[T1 - 1]"
+;     T1 = 2.
+;
+;     Total cycles = 1 + (2 - 1) = 2 cycles.
+;
+;     2 x 125 ns = 250 ns.
+;
+;     Therefore, the GPIO remains HIGH for 250 ns.
+;
+; WHY DOES THIS MATTER?
+;
+; For logical ZERO:
+;
+;     The GPIO will go LOW after these 2 cycles.
+;
+; For logical ONE:
+;
+;     The next instruction keeps the GPIO HIGH for another
+;     5 cycles, giving 7 HIGH cycles in total.
+;
+; This is how the program produces different pulse widths.
+
+
+; ---------------------------------------------------------------------
+; LOGICAL ONE PATH
+; ---------------------------------------------------------------------
+
+do_one:
+
+; This label marks the instruction used to transmit a logical ONE.
+;
+; Execution reaches this instruction only when X is not zero.
+;
+; The previous conditional jump was NOT taken.
+;
+; Labels are not instructions and consume no clock cycles.
+
+
+    jmp bitloop     side 1 [T2 - 1]
+
+; This instruction:
+;
+;     1. Keeps the GPIO HIGH.
+;     2. Waits for 5 clock cycles in total.
+;     3. Jumps back to bitloop to process the next bit.
+;
+; BREAKDOWN:
+;
+; "jmp bitloop"
+;     Unconditionally jump back to the instruction labelled bitloop.
+;
+;     Unlike "jmp !x", this jump has no condition.
+;     It always jumps.
+;
+; "side 1"
+;     Keep the side-set GPIO HIGH.
+;
+;     The previous instruction already set it HIGH.
+;     Repeating side 1 ensures it remains HIGH.
+;
+; "[T2 - 1]"
+;     T2 = 5.
+;
+;     Total cycles = 1 + (5 - 1) = 5 cycles.
+;
+;     5 x 125 ns = 625 ns.
+;
+; LOGICAL ONE TIMING:
+;
+;     Previous conditional JMP:
+;         HIGH for T1 = 2 cycles.
+;
+;     This unconditional JMP:
+;         HIGH for T2 = 5 cycles.
+;
+;     Total HIGH = T1 + T2
+;                = 2 + 5
+;                = 7 cycles
+;                = 875 ns.
+;
+; The JMP returns execution to bitloop.
+;
+; The next OUT instruction sets the GPIO LOW for T3 = 3 cycles:
+;
+;     LOW = 3 x 125 ns = 375 ns.
+;
+; COMPLETE LOGICAL ONE:
+;
+;     HIGH = 7 cycles = 875 ns.
+;     LOW  = 3 cycles = 375 ns.
+;
+;     Total = 10 cycles = 1250 ns.
+;
+; WHY JUMP BACK HERE?
+;
+; The logical ONE has finished its HIGH portion.
+;
+; Returning to bitloop begins the LOW portion and extracts
+; the next data bit at the same time.
+;
+; The instruction below (do_zero) is skipped completely
+; when transmitting a ONE.
+
+
+; ---------------------------------------------------------------------
+; LOGICAL ZERO PATH
+; ---------------------------------------------------------------------
+
+do_zero:
+
+; This label marks the instruction used to transmit a logical ZERO.
+;
+; Execution reaches this instruction when:
+;
+;     X == 0
+;
+; The earlier conditional jump:
+;
+;     jmp !x, do_zero
+;
+; jumps directly here, skipping the logical ONE instruction.
+;
+; Labels do not consume any clock cycles.
+
+
+    nop             side 0 [T2 - 1]
+
+; This instruction:
+;
+;     1. Performs no data-processing operation.
+;     2. Drives the GPIO LOW.
+;     3. Keeps it LOW for 5 clock cycles.
+;
+; BREAKDOWN:
+;
+; "nop"
+;     NOP means "No Operation".
+;
+;     It does not change the PIO data registers.
+;
+;     However, it is still a real instruction.
+;     It takes at least one clock cycle to execute.
+;
+;     It can also perform side-set and include a delay.
+;
+; WHY USE NOP?
+;
+; We need the GPIO to remain LOW for a specific time,
+; but there is no additional data-processing work to do.
+;
+; NOP provides the required timing without changing registers.
+;
+; "side 0"
+;     Drive the side-set GPIO LOW.
+;
+;     The previous instruction set it HIGH for 2 cycles.
+;
+;     This transition from HIGH to LOW completes the short
+;     HIGH pulse that represents a logical ZERO.
+;
+; "[T2 - 1]"
+;     T2 = 5.
+;
+;     Total cycles = 1 + (5 - 1) = 5 cycles.
+;
+;     5 x 125 ns = 625 ns.
+;
+; WHAT HAPPENS NEXT?
+;
+; This NOP is the final instruction before ".wrap".
+;
+; The PIO hardware automatically returns to ".wrap_target",
+; which is the OUT instruction at bitloop.
+;
+; That OUT instruction keeps the GPIO LOW for another 3 cycles.
+;
+; LOGICAL ZERO TIMING:
+;
+;     Conditional JMP:
+;         HIGH for T1 = 2 cycles.
+;
+;     This NOP:
+;         LOW for T2 = 5 cycles.
+;
+;     Next OUT:
+;         LOW for T3 = 3 cycles.
+;
+;     Total HIGH = 2 cycles = 250 ns.
+;     Total LOW  = 5 + 3 = 8 cycles = 1000 ns.
+;
+; COMPLETE LOGICAL ZERO:
+;
+;     HIGH = 2 cycles = 250 ns.
+;     LOW  = 8 cycles = 1000 ns.
+;
+;     Total = 10 cycles = 1250 ns.
+;
+; WHY NOT USE "jmp bitloop" HERE?
+;
+; We could use a JMP instruction, but automatic wrapping
+; already returns execution to bitloop.
+;
+; Using NOP makes the ZERO path simple and avoids an
+; unnecessary explicit jump.
+;
+; Both NOP and JMP take one base clock cycle, so the timing
+; is the same when they use the same delay value.
+
+
+; ---------------------------------------------------------------------
+; END OF THE AUTOMATIC REPEAT SECTION
+; ---------------------------------------------------------------------
+
+.wrap
+
+; ".wrap" tells the PIO assembler where the repeating section ends.
+;
+; When the preceding NOP finishes, the PIO automatically continues
+; execution at the instruction marked by ".wrap_target".
+;
+; In this program:
+;
+;     .wrap_target -> bitloop -> OUT instruction.
+;
+; The automatic wrap does NOT require an additional clock cycle.
+;
+; The TWO possible execution paths are:
+;
+; LOGICAL ZERO (X == 0):
+;
+;     bitloop:
+;         OUT, GPIO LOW (3 cycles)
+;             |
+;             v
+;         JMP !X, do_zero, GPIO HIGH (2 cycles)
+;             |
+;             | X == 0, jump taken
+;             v
+;     do_zero:
+;         NOP, GPIO LOW (5 cycles)
+;             |
+;             v
+;         .wrap -> automatically return to bitloop
+;
+;
+; LOGICAL ONE (X == 1):
+;
+;     bitloop:
+;         OUT, GPIO LOW (3 cycles)
+;             |
+;             v
+;         JMP !X, do_zero, GPIO HIGH (2 cycles)
+;             |
+;             | X != 0, jump NOT taken
+;             v
+;     do_one:
+;         JMP bitloop, GPIO HIGH (5 cycles)
+;             |
+;             v
+;         Return to bitloop
+;
+;
+; ---------------------------------------------------------------------
+; FINAL NOTES
+; ---------------------------------------------------------------------
+;
+; 1. This program contains only FOUR executable PIO instructions.
+;
+; 2. Each transmitted bit takes exactly TEN clock cycles when
+;    execution does not stall waiting for data.
+;
+; 3. Side-set controls the GPIO while the main instructions
+;    read data, make decisions, and control execution flow.
+;
+; 4. The host program must configure:
+;
+;       - PIO clock frequency (8 MHz).
+;       - Side-set GPIO pin and output direction.
+;       - OUT shift direction (MSB first).
+;       - FIFO/autopull behaviour.
+;       - Data packing and transmission.
+;
+; 5. After sending a complete LED frame, the data line must
+;    remain LOW for the WS2812 reset/latch interval.
+;    Use the reset interval required by the LED's datasheet.
+;
+; 6. If the PIO stalls waiting for new TX data, the LOW interval
+;    can become longer than the nominal timing.
+;
+; 7. The first OUT instruction also produces an initial LOW
+;    interval before the first bit's HIGH pulse.
+;
+; 8. The output bit rate is:
+;
+;       PIO clock / cycles per bit
+;       = 8,000,000 / 10
+;       = 800,000 bits per second.
+;
+; =====================================================================
+; END OF WS2812 PIO PROGRAM
+; =====================================================================
