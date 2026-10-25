@@ -1,199 +1,222 @@
 /*
- * Adapt portable console operations to Pico firmware state so the parser stays
- * independent of board-specific storage, GPIO, and USB transport details.
+ * Adapt the portable line console to the minimal RP2040 FreeRTOS firmware.
+ *
+ * The firmware currently provides USB CDC communication, FreeRTOS task
+ * diagnostics, an RGB heartbeat, and reboot support.
+ *
+ * Flow storage, upload transport, and application GPIO commands are not
+ * enabled in this initial FreeRTOS integration.
  */
 #include "firmware_internal.h"
-
-#include <microflow/version.h>
 
 #include "rp2040_sdk.h"
 
 /*
- * Send counters through the allocation-free USB formatter so diagnostics do
- * not pull printf support into the firmware or duplicate number conversion.
+ * Send an unsigned integer through the allocation-free USB formatter.
+ *
+ * This avoids pulling printf support into the firmware.
  */
-static void number(microflow_firmware_t *f, uint32_t value) {
-    microflow_firmware_usb_write_u32(f, value);
+static void number(microflow_firmware_t *firmware, uint32_t value) {
+    microflow_firmware_usb_write_u32(firmware, value);
 }
 
 /*
- * Route parser replies through the firmware USB queue so portable parsing code
- * does not depend on TinyUSB or the Pico's transport state.
+ * Forward solicited console responses to the USB CDC transmit buffer.
+ *
+ * The console is serviced exclusively by the USB task, so these writes
+ * execute in the same task context as TinyUSB processing.
  */
 static void response(void *context, const uint8_t *data, size_t length) {
     microflow_firmware_usb_write(context, data, length);
 }
 
 /*
- * Prefix asynchronous diagnostics with "LOG " so a host can distinguish them
- * from solicited command replies on the shared CDC byte stream.
+ * Prefix asynchronous diagnostics so host software can distinguish them
+ * from replies to commands.
  */
 static void log_message(void *context, const uint8_t *data, size_t length) {
-    microflow_firmware_t *f = context;
-    microflow_firmware_usb_write_text(f, "LOG ");
-    microflow_firmware_usb_write(f, data, length);
+    microflow_firmware_t *firmware = context;
+
+    microflow_firmware_usb_write_text(firmware, "LOG ");
+    microflow_firmware_usb_write(firmware, data, length);
 }
 
 /*
- * Report the board, console protocol, and flow version so operators and host
- * tools can reject incompatible command or image formats before using them.
+ * Identify the minimal firmware and its console protocol.
+ *
+ * Flow-image support is intentionally not advertised until the upload
+ * transport and flow store are integrated.
  */
 static void info(void *context) {
     microflow_firmware_usb_write_text(
-        context, "OK Micro Flow Raspberry Pi Pico CDC v1 flow-version=");
-    microflow_firmware_usb_write_text(context, microflow_version_string());
-    microflow_firmware_usb_write_text(context, "\r\n");
+        context,
+        "OK Micro Flow Raspberry Pi Pico FreeRTOS CDC v1\r\n");
 }
 
 /*
- * Report lifecycle, image size, version, and faults so a host can assess the
- * running system without reading or exposing internal firmware state.
+ * Report the current firmware operating mode.
+ *
+ * This milestone does not contain a flow engine or upload service.
  */
 static void status(void *context) {
-    microflow_firmware_t *f = context;
-
-    microflow_firmware_usb_write_text(f, "OK flow=");
     microflow_firmware_usb_write_text(
-        f, f->flow_store.running ? "running" : "stopped");
-
-    microflow_firmware_usb_write_text(f, " active-bytes=");
-    number(f, (uint32_t)f->flow_store.length);
-
-    microflow_firmware_usb_write_text(f, " flow-version=");
-    microflow_firmware_usb_write_text(f, microflow_version_string());
-
-    microflow_firmware_usb_write_text(f, "\r\n");
+        context,
+        "OK mode=freertos usb=enabled flow=disabled\r\n");
 }
+
 /*
- * Report scheduler progress and service runtimes so field diagnostics can find
- * stalled work and services that exceed their cooperative execution budgets.
+ * Report FreeRTOS task stack high-water marks.
+ *
+ * The values represent the minimum remaining stack space observed since
+ * task creation, measured in StackType_t words rather than bytes.
+ *
+ * Both task handles are valid by the time the scheduler starts.
  */
 static void tasks(void *context) {
-    microflow_firmware_t *f = context;
+    microflow_firmware_t *firmware = context;
 
-    microflow_firmware_usb_write_text(f, "OK tasks=3");
+    microflow_firmware_usb_write_text(firmware, "OK tasks=2");
 
-    microflow_firmware_usb_write_text(f, " usb-stack-free=");
-    number(f, (uint32_t)uxTaskGetStackHighWaterMark(f->usb_task));
+    microflow_firmware_usb_write_text(
+        firmware, " usb-stack-free=");
+    number(
+        firmware,
+        (uint32_t)uxTaskGetStackHighWaterMark(firmware->usb_task));
 
-    microflow_firmware_usb_write_text(f, " uart-stack-free=");
-    number(f, (uint32_t)uxTaskGetStackHighWaterMark(f->uart_task));
+    microflow_firmware_usb_write_text(
+        firmware, " status-stack-free=");
+    number(
+        firmware,
+        (uint32_t)uxTaskGetStackHighWaterMark(firmware->status_task));
 
-    microflow_firmware_usb_write_text(f, " status-stack-free=");
-    number(f, (uint32_t)uxTaskGetStackHighWaterMark(f->status_task));
-
-    microflow_firmware_usb_write_text(f, "\r\n");
+    microflow_firmware_usb_write_text(firmware, "\r\n");
 }
 
 /*
- * Report queue high-water marks and loss counters so fixed buffer capacities
- * can be tuned from observed traffic instead of guessed peak demand.
+ * Report bounded console and USB transport diagnostics.
+ *
+ * These counters allow receive/transmit capacity and command parsing
+ * behavior to be observed during hardware testing.
  */
 static void queues(void *context) {
-    microflow_firmware_t *f = context;
-    /* Cover both directions and transports because each queue is sized independently. */
-    microflow_firmware_usb_write_text(f, "OK uart-rx-high=");
-    number(f, f->uart_receive.high_water);
-    microflow_firmware_usb_write_text(f, " uart-tx-high=");
-    number(f, f->uart_transmit.high_water);
-    microflow_firmware_usb_write_text(f, " uart-rx-dropped=");
-    number(f, f->uart_receive.rejected);
-    microflow_firmware_usb_write_text(f, " uart-tx-dropped=");
-    number(f, f->uart_transmit.rejected);
-    microflow_firmware_usb_write_text(f, " usb-rx-high=");
-    number(f, f->usb.receive_high_water);
-    microflow_firmware_usb_write_text(f, " usb-tx-high=");
-    number(f, f->usb.transmit_high_water);
-    microflow_firmware_usb_write_text(f, " usb-rx-dropped=");
-    number(f, f->usb.receive_dropped);
-    microflow_firmware_usb_write_text(f, " usb-tx-dropped=");
-    number(f, f->usb.transmit_dropped);
-    microflow_firmware_usb_write_text(f, "\r\n");
+    microflow_firmware_t *firmware = context;
+
+    microflow_firmware_usb_write_text(
+        firmware, "OK console-rx-high=");
+    number(firmware, firmware->console_receive.high_water);
+
+    microflow_firmware_usb_write_text(
+        firmware, " console-rx-dropped=");
+    number(firmware, firmware->console_receive.rejected);
+
+    microflow_firmware_usb_write_text(
+        firmware, " usb-rx-high=");
+    number(firmware, firmware->usb.receive_high_water);
+
+    microflow_firmware_usb_write_text(
+        firmware, " usb-tx-high=");
+    number(firmware, firmware->usb.transmit_high_water);
+
+    microflow_firmware_usb_write_text(
+        firmware, " usb-rx-dropped=");
+    number(firmware, firmware->usb.receive_dropped);
+
+    microflow_firmware_usb_write_text(
+        firmware, " usb-tx-dropped=");
+    number(firmware, firmware->usb.transmit_dropped);
+
+    microflow_firmware_usb_write_text(
+        firmware, " commands=");
+    number(firmware, firmware->console.commands);
+
+    microflow_firmware_usb_write_text(
+        firmware, " invalid=");
+    number(firmware, firmware->console.invalid_commands);
+
+    microflow_firmware_usb_write_text(
+        firmware, " overlong=");
+    number(firmware, firmware->console.overlong_commands);
+
+    microflow_firmware_usb_write_text(firmware, "\r\n");
 }
 
 /*
- * Report active and staged lengths so upload progress can be diagnosed without
- * disclosing or transferring the executable flow image itself.
+ * Indicate that active flow storage is not available in this build.
  */
 static void flow_show(void *context) {
-    microflow_firmware_t *f = context;
-    microflow_firmware_usb_write_text(f, "OK active-bytes=");
-    number(f, (uint32_t)f->flow_store.length);
-    microflow_firmware_usb_write_text(f, " staging-bytes=");
-    number(f, f->upload.received_length);
-    microflow_firmware_usb_write_text(f, "\r\n");
+    microflow_firmware_usb_write_text(
+        context, "ERR flow-disabled\r\n");
 }
 
 /*
- * Revalidate the active image on request so corruption can be detected without
- * changing whether the image is currently running.
+ * Reject validation requests until active flow storage is implemented.
  */
 static bool flow_validate(void *context) {
-    microflow_firmware_t *f = context;
-    return microflow_flow_store_validate(&f->flow_store);
+    (void)context;
+    return false;
 }
 
 /*
- * Delegate start to the flow store so the console cannot mark an invalid or
- * missing active image as runnable.
+ * Reject flow start requests until the execution engine is implemented.
  */
 static bool flow_start(void *context) {
-    microflow_firmware_t *f = context;
-    return microflow_flow_store_start(&f->flow_store);
+    (void)context;
+    return false;
 }
 
 /*
- * Stop through the flow store so its lifecycle callback also returns physical
- * outputs to their safe input state.
+ * Reject flow stop requests because this firmware has no flow lifecycle.
  */
 static bool flow_stop(void *context) {
-    microflow_firmware_t *f = context;
-    microflow_flow_store_stop(&f->flow_store);
-    return true;
+    (void)context;
+    return false;
 }
 
 /*
- * Erase only upload staging so an operator can abandon partial transfer data
- * without disrupting the independently stored active image.
+ * Preserve the console callback contract without maintaining staging
+ * storage that is not present in this firmware.
  */
 static void flow_erase(void *context) {
-    microflow_firmware_t *f = context;
-    microflow_upload_transport_erase_staging(&f->upload);
+    microflow_firmware_usb_write_text(
+        context, "ERR flow-disabled\r\n");
 }
 
 /*
- * Advertise stable logical GPIO IDs so host commands remain portable across
- * board revisions with different physical pin mappings.
+ * Indicate that application GPIO resources are not exposed by this build.
+ *
+ * The status LED remains controlled internally by the heartbeat task.
  */
 static void gpio_list(void *context) {
-    microflow_firmware_usb_write_text(context,
-                                      "OK 0 1 2 3 status-led\r\n");
+    microflow_firmware_usb_write_text(
+        context, "OK\r\n");
 }
 
 /*
- * Read through the logical GPIO facade so that module, rather than the console,
- * validates resource IDs and translates them to physical pins.
+ * Reject GPIO reads while application GPIO support is disabled.
  */
 static bool gpio_read(void *context, uint32_t resource, bool *value) {
-    microflow_firmware_t *f = context;
-    return microflow_board_gpio_read(&f->gpio, resource, value);
+    (void)context;
+    (void)resource;
+    (void)value;
+
+    return false;
 }
 
 /*
- * Configure and drive through the logical GPIO facade so it validates the
- * resource and latches it low before enabling output drive.
+ * Reject GPIO writes while application GPIO support is disabled.
  */
 static bool gpio_write(void *context, uint32_t resource, bool value) {
-    microflow_firmware_t *f = context;
-    /* Configure first because the GPIO facade rejects writes to input resources. */
-    return microflow_board_gpio_configure(
-               &f->gpio, resource, MICROFLOW_BOARD_GPIO_OUTPUT) &&
-           microflow_board_gpio_write(&f->gpio, resource, value);
+    (void)context;
+    (void)resource;
+    (void)value;
+
+    return false;
 }
 
 /*
- * Map the portable reboot operation to the RP2040 reset primitive so the
- * parser does not require architecture-specific reset knowledge.
+ * Reboot the RP2040 using the existing platform reset primitive.
+ *
+ * This callback does not return during normal operation.
  */
 static void reboot(void *context) {
     (void)context;
@@ -201,13 +224,36 @@ static void reboot(void *context) {
 }
 
 /*
- * Copy callbacks and the firmware context into the console so later command
- * dispatch can reach this instance after this initializer returns.
+ * Bind portable console commands to the minimal firmware implementation.
+ *
+ * The operation table is copied by microflow_console_initialize(), so
+ * this stack-local configuration does not need persistent storage.
+ *
+ * All callbacks execute in the USB task when console input is processed.
  */
-void microflow_firmware_console_initialize(microflow_firmware_t *firmware) {
+void microflow_firmware_console_initialize(
+    microflow_firmware_t *firmware) {
     const microflow_console_operations_t operations = {
-        .context = firmware, .write_response = response, .write_log = log_message, .info = info, .status = status, .tasks = tasks, .queues = queues, .flow_show = flow_show, .flow_validate = flow_validate, .flow_start = flow_start, .flow_stop = flow_stop, .flow_erase_staging = flow_erase, .gpio_list = gpio_list, .gpio_read = gpio_read, .gpio_write = gpio_write, .reboot = reboot
+        .context            = firmware,
+        .write_response     = response,
+        .write_log          = log_message,
+        .info               = info,
+        .status             = status,
+        .tasks              = tasks,
+        .queues             = queues,
+        .flow_show          = flow_show,
+        .flow_validate      = flow_validate,
+        .flow_start         = flow_start,
+        .flow_stop          = flow_stop,
+        .flow_erase_staging = flow_erase,
+        .gpio_list          = gpio_list,
+        .gpio_read          = gpio_read,
+        .gpio_write         = gpio_write,
+        .reboot             = reboot
     };
-    microflow_console_initialize(&firmware->console,
-                                 &firmware->console_receive, &operations);
+
+    microflow_console_initialize(
+        &firmware->console,
+        &firmware->console_receive,
+        &operations);
 }

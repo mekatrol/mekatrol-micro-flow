@@ -43,7 +43,7 @@ void microflow_firmware_usb_write_u32(microflow_firmware_t *firmware,
 /*
  * Process USB controller events and console input.
  *
- * Called only by the FreeRTOS USB task.
+ * Called exclusively by the FreeRTOS USB task.
  */
 void microflow_firmware_usb_service(void *context) {
     microflow_firmware_t *firmware = context;
@@ -52,13 +52,13 @@ void microflow_firmware_usb_service(void *context) {
     microflow_rp2040_usb_cdc_task(&firmware->usb);
 
     /*
-     * Drain every received byte, even when the console ring is full.
-     * The ring rejects the newest byte and increments its rejected
-     * counter without overwriting unread data.
+     * Drain all received bytes, including when the console ring is full.
+     * Overflow rejects the newest byte without overwriting unread input.
      */
     while (microflow_rp2040_usb_cdc_read(&firmware->usb, &value)) {
         (void)microflow_byte_ring_push_from_isr(
-            &firmware->console_receive, value);
+            &firmware->console_receive,
+            value);
     }
 
     microflow_console_service(&firmware->console);

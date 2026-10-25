@@ -46,7 +46,7 @@ bool microflow_flow_store_activate(void *context, const uint8_t *image, size_t l
     if (store->unlock != NULL) {
         store->unlock(store->context, state);
     }
-    
+
     return true;
 }
 

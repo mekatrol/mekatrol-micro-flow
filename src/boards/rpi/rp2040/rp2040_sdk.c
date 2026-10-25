@@ -20,9 +20,7 @@
 /* Tracks TX policy because the SDK exposes enable state only indirectly. */
 static bool uart_transmit_interrupt_enabled;
 
-/* Initialize the RP2040 platform without reserving a supervisor alarm. */
 void microflow_rp2040_initialize(void) {
-    /* No supervisor-specific hardware initialization is required. */
 }
 
 /* Forward UART0 IRQ work to the board composition layer that owns its queues. */
