@@ -80,17 +80,21 @@ static bool reply(microflow_upload_transport_t *t, uint8_t type, uint32_t sequen
     bytes_copy(check, &header[4], 8U);
     bytes_copy(&check[8], payload, length);
     write_u32(&header[12], microflow_upload_crc32(check, 8U + length));
+
     /* Check whole-frame capacity first so the receiver never sees a partial reply. */
     if (microflow_byte_ring_count(t->transmit) + sizeof(header) + length >=
-        MICROFLOW_SUPERVISOR_BYTE_CAPACITY) {
+        MICROFLOW_BYTE_RING_CAPACITY) {
         return false;
     }
+
     for (size_t i = 0U; i < sizeof(header); ++i) {
         (void)tx_byte(t, header[i]);
     }
+
     for (uint16_t i = 0U; i < length; ++i) {
         (void)tx_byte(t, payload[i]);
     }
+
     return true;
 }
 

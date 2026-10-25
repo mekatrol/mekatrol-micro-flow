@@ -2,7 +2,7 @@
 #ifndef MICROFLOW_UPLOAD_TRANSPORT_H
 #define MICROFLOW_UPLOAD_TRANSPORT_H
 
-#include <microflow/supervisor.h>
+#include <microflow/byte_ring.h>
 
 #include <stdbool.h>
 #include <stddef.h>

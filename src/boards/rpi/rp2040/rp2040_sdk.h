@@ -18,9 +18,6 @@ void microflow_rp2040_ws2812_initialize(uint32_t pin);
 void microflow_rp2040_ws2812_write(uint32_t pin, uint8_t red, uint8_t green,
                                    uint8_t blue);
 void microflow_rp2040_delay_ms(uint32_t milliseconds);
-/* Supervisor platform primitives for idle waiting and watchdog servicing. */
-void microflow_rp2040_wait_until(const volatile uint32_t *wake_events,
-                                 bool has_deadline, uint32_t deadline);
 void microflow_rp2040_watchdog_initialize(uint32_t timeout_microseconds);
 void microflow_rp2040_watchdog_service(void);
 /* Requests a platform reset; this operation is intentionally non-returning. */

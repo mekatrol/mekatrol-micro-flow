@@ -51,40 +51,37 @@ static void info(void *context) {
  */
 static void status(void *context) {
     microflow_firmware_t *f = context;
-    /* Use stable protocol fields so host tools do not depend on C layout. */
+
     microflow_firmware_usb_write_text(f, "OK flow=");
     microflow_firmware_usb_write_text(
         f, f->flow_store.running ? "running" : "stopped");
+
     microflow_firmware_usb_write_text(f, " active-bytes=");
     number(f, (uint32_t)f->flow_store.length);
+
     microflow_firmware_usb_write_text(f, " flow-version=");
     microflow_firmware_usb_write_text(f, microflow_version_string());
-    microflow_firmware_usb_write_text(f, " faults=");
-    number(f, f->supervisor.fault_count);
+
     microflow_firmware_usb_write_text(f, "\r\n");
 }
-
 /*
  * Report scheduler progress and service runtimes so field diagnostics can find
  * stalled work and services that exceed their cooperative execution budgets.
  */
 static void tasks(void *context) {
     microflow_firmware_t *f = context;
-    /* Include each service separately so one slow service is not hidden by totals. */
-    microflow_firmware_usb_write_text(f, "OK services=");
-    number(f, (uint32_t)f->supervisor.service_count);
-    microflow_firmware_usb_write_text(f, " heartbeat=");
-    number(f, f->supervisor.heartbeat);
-    microflow_firmware_usb_write_text(f, " watchdog=");
-    number(f, f->supervisor.watchdog_service_count);
-    for (size_t i = 0U; i < f->supervisor.service_count; ++i) {
-        microflow_firmware_usb_write_text(f, " s");
-        number(f, (uint32_t)i);
-        microflow_firmware_usb_write_text(f, "-runs=");
-        number(f, f->supervisor.services[i].dispatch_count);
-        microflow_firmware_usb_write_text(f, "-max-us=");
-        number(f, f->supervisor.services[i].observed_maximum_runtime);
-    }
+
+    microflow_firmware_usb_write_text(f, "OK tasks=3");
+
+    microflow_firmware_usb_write_text(f, " usb-stack-free=");
+    number(f, (uint32_t)uxTaskGetStackHighWaterMark(f->usb_task));
+
+    microflow_firmware_usb_write_text(f, " uart-stack-free=");
+    number(f, (uint32_t)uxTaskGetStackHighWaterMark(f->uart_task));
+
+    microflow_firmware_usb_write_text(f, " status-stack-free=");
+    number(f, (uint32_t)uxTaskGetStackHighWaterMark(f->status_task));
+
     microflow_firmware_usb_write_text(f, "\r\n");
 }
 

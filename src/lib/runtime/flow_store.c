@@ -18,30 +18,35 @@ void microflow_flow_store_initialize(
 }
 
 /* Atomically replace the active flow with a validated staged image. */
-bool microflow_flow_store_activate(void *context, const uint8_t *image,
-                                   size_t length) {
+bool microflow_flow_store_activate(void *context, const uint8_t *image, size_t length) {
     microflow_flow_store_t *store = context;
+
     /* Lock/unlock are a pair: accepting only one would publish state unsafely. */
     if ((store == NULL) || (store->storage == NULL) || (image == NULL) ||
         (length > store->capacity) ||
         ((store->lock == NULL) != (store->unlock == NULL))) {
         return false;
     }
+
     uint32_t state = 0U;
     if (store->lock != NULL) {
         /* Preserve the platform's prior interrupt/critical-section state. */
         state = store->lock(store->context);
     }
+
     /* Fixed caller storage decouples execution from the mutable upload buffer. */
     for (size_t i = 0U; i < length; ++i) {
         store->storage[i] = image[i];
     }
+
     store->length = length;
+
     /* A replacement image must be explicitly started after activation. */
     store->running = false;
     if (store->unlock != NULL) {
         store->unlock(store->context, state);
     }
+    
     return true;
 }
 

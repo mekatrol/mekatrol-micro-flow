@@ -4,7 +4,6 @@
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/sync.h"
-#include "hardware/timer.h"
 #include "hardware/uart.h"
 #include "hardware/watchdog.h"
 #include "pico/stdlib.h"
@@ -21,23 +20,14 @@
 /* Tracks TX policy because the SDK exposes enable state only indirectly. */
 static bool uart_transmit_interrupt_enabled;
 
-/* Forward SDK alarm-zero expiry into the board-defined supervisor event hook. */
-static void alarm0_callback(uint alarm_number) {
-    /* Ignore the known alarm number and transfer policy to board code. */
-    (void)alarm_number;
-    microflow_rp2040_timer_alarm0_event();
+/* Initialize the RP2040 platform without reserving a supervisor alarm. */
+void microflow_rp2040_initialize(void) {
+    /* No supervisor-specific hardware initialization is required. */
 }
 
 /* Forward UART0 IRQ work to the board composition layer that owns its queues. */
 static void uart0_irq_handler(void) {
     microflow_rp2040_uart0_event();
-}
-
-/* Reserve and connect the hardware alarm used for supervisor deadline wakeups. */
-void microflow_rp2040_initialize(void) {
-    /* Alarm zero is reserved as the supervisor's next-deadline wake source. */
-    hardware_alarm_claim(0U);
-    hardware_alarm_set_callback(0U, alarm0_callback);
 }
 
 /* Expose the SDK's wrapping microsecond timer using a project-owned scalar type. */
@@ -94,25 +84,6 @@ void microflow_rp2040_ws2812_write(uint32_t pin, uint8_t red, uint8_t green,
 /* Provide an explicit millisecond blocking delay for startup/fatal paths only. */
 void microflow_rp2040_delay_ms(uint32_t milliseconds) {
     sleep_ms(milliseconds);
-}
-
-/* Sleep efficiently until pending work exists or an optional deadline arrives. */
-void microflow_rp2040_wait_until(const volatile uint32_t *wake_events,
-                                 bool has_deadline, uint32_t deadline) {
-    uint32_t state = save_and_disable_interrupts();
-    if ((*wake_events == 0U) && has_deadline) {
-        const int32_t remaining = (int32_t)(deadline - time_us_32());
-        if (remaining > 0) {
-            (void)hardware_alarm_set_target(0U, make_timeout_time_us((uint32_t)remaining));
-        }
-    }
-    if ((*wake_events == 0U) &&
-        (!has_deadline || ((int32_t)(deadline - time_us_32()) > 0))) {
-        __wfi();
-    }
-    restore_interrupts(state);
-    hardware_alarm_cancel(0U);
-    microflow_rp2040_usb_event();
 }
 
 /* Start the hardware watchdog with a conservatively rounded timeout. */

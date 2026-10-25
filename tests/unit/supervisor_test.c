@@ -1,5 +1,5 @@
 /* Host regression tests for supervisor queues, dispatch, timing, and faults. */
-#include <microflow/supervisor.h>
+#include <microflow/byte_ring.h>
 
 #include <stdint.h>
 #include <stdlib.h>
