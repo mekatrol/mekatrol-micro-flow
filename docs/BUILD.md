@@ -71,8 +71,9 @@ packaging are incomplete.
 
 ## Clean build wrappers
 
-The wrappers delete the complete `build/` directory before configuring and
-building one preset:
+The wrappers format all tracked C and C++ source files, run the project-specific
+C function-spacing formatter, delete the complete `build/` directory, and then
+configure and build one preset:
 
 ```sh
 ./tools/build.sh pico-debug

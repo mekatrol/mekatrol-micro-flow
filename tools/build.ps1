@@ -36,7 +36,8 @@ function Initialize-PicoSdk {
 function Show-Usage {
     Write-Host 'Usage: .\tools\build.ps1 <target>'
     Write-Host ''
-    Write-Host 'Deletes build/, configures the selected target, and builds it.'
+    Write-Host 'Formats the source tree, deletes build/, configures the selected target,'
+    Write-Host 'and builds it.'
     Write-Host ''
     Write-Host 'Available targets:'
     foreach ($name in $availableTargets) {
@@ -63,7 +64,7 @@ $requiredCompiler = switch ($Target) {
     default { $null }
 }
 
-$requiredTools = @('cmake', 'ninja')
+$requiredTools = @('git', 'cmake', 'ninja')
 if ($null -ne $requiredCompiler) {
     $requiredTools += $requiredCompiler
 }
@@ -73,6 +74,29 @@ foreach ($tool in $requiredTools) {
         exit 1
     }
 }
+$clangFormat = $null
+foreach ($candidate in @(
+    'clang-format',
+    'clang-format-20',
+    'clang-format-19',
+    'clang-format-18',
+    'clang-format-17',
+    'clang-format-16',
+    'clang-format-15')) {
+    $clangFormat = Get-Command $candidate -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -ne $clangFormat) { break }
+}
+if ($null -eq $clangFormat) {
+    Write-Error 'Required tool not found: clang-format 15 or newer'
+    exit 1
+}
+$pythonAvailable =
+    ($null -ne (Get-Command py -CommandType Application -ErrorAction SilentlyContinue)) -or
+    ($null -ne (Get-Command python -CommandType Application -ErrorAction SilentlyContinue))
+if (-not $pythonAvailable) {
+    Write-Error 'Required tool not found: Python 3'
+    exit 1
+}
 if (($Target -in 'pico-debug', 'waveshare-rp2040-zero-debug') -and
     (-not (Initialize-PicoSdk))) {
     exit 1
@@ -81,6 +105,16 @@ if (($Target -in 'pico-debug', 'waveshare-rp2040-zero-debug') -and
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 try {
+    Write-Host 'Formatting source files...'
+    $sourceFiles = @(& git ls-files -- '*.c' '*.h' '*.cc' '*.cpp' '*.hpp')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    foreach ($sourceFile in $sourceFiles) {
+        & $clangFormat.Source -i -- $sourceFile
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+    & (Join-Path $PSScriptRoot 'format-c-functions.ps1')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
     & cmake -E remove_directory (Join-Path $repoRoot 'build')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & cmake --preset $Target

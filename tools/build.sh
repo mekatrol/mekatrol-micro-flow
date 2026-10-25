@@ -25,7 +25,8 @@ print_usage()
     printf '%s\n' \
         "Usage: ./tools/build.sh <target> [--flash] [--device <name>]" \
         "" \
-        "Deletes build/, configures the selected target, and builds it." \
+        "Formats the source tree, deletes build/, configures the selected target," \
+        "and builds it." \
         "With --flash, copies its UF2 to the mounted device after building." \
         "The default device name is RPI-RP2." \
         "" \
@@ -99,12 +100,30 @@ if [ "$flash" = true ]; then
     esac
 fi
 
-for required_tool in cmake ninja $required_compiler; do
+for required_tool in git cmake ninja $required_compiler; do
     if ! command -v "$required_tool" >/dev/null 2>&1; then
         printf 'Required tool not found: %s\n' "$required_tool" >&2
         exit 1
     fi
 done
+
+clang_format=
+for candidate in clang-format clang-format-20 clang-format-19 clang-format-18 clang-format-17 clang-format-16 clang-format-15; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        clang_format=$candidate
+        break
+    fi
+done
+if [ -z "$clang_format" ]; then
+    printf 'Required tool not found: clang-format 15 or newer\n' >&2
+    exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1 &&
+   ! command -v python >/dev/null 2>&1; then
+    printf 'Required tool not found: Python 3\n' >&2
+    exit 1
+fi
 
 if [ "$target" = pico-debug ] || [ "$target" = waveshare-rp2040-zero-debug ]; then
     prepare_pico_sdk
@@ -113,6 +132,13 @@ fi
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 cd "$repo_root"
+
+printf 'Formatting source files...\n'
+git ls-files '*.c' '*.h' '*.cc' '*.cpp' '*.hpp' |
+while IFS= read -r source_file; do
+    "$clang_format" -i -- "$source_file"
+done
+"$script_dir/format-c-functions.sh"
 
 cmake -E remove_directory "$repo_root/build"
 cmake --preset "$target"

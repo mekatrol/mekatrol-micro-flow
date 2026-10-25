@@ -8,13 +8,13 @@ All builds require:
 - CMake 3.25 or newer
 - Ninja
 - a host C11 compiler
+- Python 3
 - clang-format 15 or newer for source formatting
 
 Firmware builds additionally require:
 
 - GNU Arm Embedded toolchain with `arm-none-eabi-gcc` for Pico and Pico 2 Arm
 - a bare-metal `riscv32-unknown-elf-gcc` toolchain for Pico 2 RISC-V
-- Python 3 for the Pico image utilities
 - Raspberry Pi Pico SDK 2.3.1, including its TinyUSB submodule, for the Pico
   and Waveshare RP2040-Zero builds
 

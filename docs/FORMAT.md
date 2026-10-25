@@ -13,6 +13,22 @@ tools:
 clang-format 15 or newer is required because the configuration uses
 `InsertBraces`.
 
+The clean-build wrappers run both formatters automatically before configuring
+or compiling a target:
+
+```sh
+./tools/build.sh host-debug
+```
+
+```powershell
+.\tools\build.ps1 host-debug
+```
+
+Consequently, running a build wrapper can modify tracked source files. The
+wrappers use `clang-format` when available and also recognize versioned command
+names from `clang-format-15` through `clang-format-20`. The commands below are
+useful when formatting separately from a build.
+
 ## Install clang-format
 
 ### Linux
