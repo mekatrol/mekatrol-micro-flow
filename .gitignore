@@ -77,3 +77,6 @@ CMakeUserPresets.json
 
 # Developer-local Python environments
 .venv/
+
+# Developer-local third-party dependencies
+/third_party/
