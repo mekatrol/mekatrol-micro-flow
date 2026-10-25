@@ -36,6 +36,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "FREERTOS_KERNEL_PATH": "${sourceDir}/third_party/FreeRTOS-Kernel",
         "MICROFLOW_BUILD_TESTS": "OFF"
       }
     },

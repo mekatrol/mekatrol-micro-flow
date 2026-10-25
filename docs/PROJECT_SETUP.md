@@ -36,6 +36,98 @@ also discover it in `~/.pico-sdk/sdk/2.3.1` and `~/sdk/pico-sdk-2.3.1`.
 Pico 2 architecture smoke builds use source-controlled startup and linker
 support and do not currently link the SDK.
 
+## FreeRTOS kernel submodule
+
+FreeRTOS is a firmware-only dependency. Keep the portable code under `src/lib`
+independent of FreeRTOS. The kernel is installed as a Git submodule at
+`third_party/FreeRTOS-Kernel` and pinned to an exact release commit. FreeRTOS
+release names such as `V11.3.0` are tags, not branches; do not pass a release
+tag to `git submodule add -b`. The shared `pico-base` CMake preset sets
+`FREERTOS_KERNEL_PATH` to `${sourceDir}/third_party/FreeRTOS-Kernel`, so no
+shell environment variable or command-line cache override is required.
+
+### Add the pinned kernel to this repository
+
+Run these commands from the repository root. The `--force` option is required
+because `/third_party/` is otherwise ignored for developer-local dependencies.
+
+```sh
+git submodule add --force \
+  https://github.com/FreeRTOS/FreeRTOS-Kernel.git \
+  third_party/FreeRTOS-Kernel
+git -C third_party/FreeRTOS-Kernel fetch --tags origin
+git -C third_party/FreeRTOS-Kernel switch --detach V11.3.0
+git -C third_party/FreeRTOS-Kernel submodule update --init --recursive
+git add .gitmodules third_party/FreeRTOS-Kernel
+git diff --cached --submodule
+git commit -m "Add FreeRTOS kernel V11.3.0"
+```
+
+Confirm that the submodule is at the intended release:
+
+```sh
+git -C third_party/FreeRTOS-Kernel describe --tags --exact-match
+git submodule status --recursive
+```
+
+The first command must print `V11.3.0`. A leading `-` in `git submodule
+status` means that a submodule has not been initialized; a leading `+` means
+that its checkout does not match the commit recorded by this repository.
+
+### Clone a repository that already contains the submodule
+
+For a new clone, initialize all submodules in the clone operation:
+
+```sh
+git clone --recurse-submodules \
+  https://github.com/mekatrol/mekatrol-micro-flow.git
+cd mekatrol-micro-flow
+git submodule status --recursive
+```
+
+For an existing clone, or after switching to a revision that changes the
+pinned FreeRTOS commit, run:
+
+```sh
+git submodule sync --recursive
+git submodule update --init --recursive
+```
+
+### Update FreeRTOS to a new release
+
+First fetch the upstream tags and inspect the available releases:
+
+```sh
+git -C third_party/FreeRTOS-Kernel fetch --tags --prune origin
+git -C third_party/FreeRTOS-Kernel tag --list 'V*' \
+  --sort=-version:refname | head -n 20
+```
+
+After selecting and reviewing a release, replace `V11.3.1` below with its
+actual tag, check out the tag in detached-HEAD state, and initialize any nested
+dependencies added by that release:
+
+```sh
+git -C third_party/FreeRTOS-Kernel switch --detach V11.3.1
+git -C third_party/FreeRTOS-Kernel submodule update --init --recursive
+git -C third_party/FreeRTOS-Kernel describe --tags --exact-match
+git add third_party/FreeRTOS-Kernel
+git diff --cached --submodule
+git commit -m "Update FreeRTOS kernel to V11.3.1"
+```
+
+Build and test every supported firmware target before pushing the update. To
+abandon an uncommitted update and restore the version recorded by the parent
+repository, run:
+
+```sh
+git submodule update --init --recursive \
+  third_party/FreeRTOS-Kernel
+```
+
+Do not use `git submodule update --remote` for release updates. That follows a
+moving branch instead of selecting and recording a reviewed release tag.
+
 ## Verify installation
 
 ```sh
