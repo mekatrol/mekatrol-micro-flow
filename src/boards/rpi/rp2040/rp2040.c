@@ -51,41 +51,6 @@ void microflow_rp2040_interrupt_unlock(uint32_t state) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* WS2812                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/*
- * Software-generated WS2812 waveform.
- *
- * WARNING:
- * Timing depends on CPU frequency and compiler output.
- * This implementation must be calibrated before use.
- * RP2040 PIO is recommended for reliable WS2812 communication.
- */
-
-/* Generate one timing-sensitive WS2812 bit while the caller excludes interrupts. */
-static void microflow_rp2040_ws2812_bit(uint32_t mask, uint32_t value) {
-    RP2040_SIO_GPIO_OUT_SET = mask;
-
-    if (value != 0U) {
-        microflow_rp2040_delay_cycles(2U);
-        RP2040_SIO_GPIO_OUT_CLR = mask;
-        microflow_rp2040_delay_cycles(1U);
-    } else {
-        microflow_rp2040_delay_cycles(1U);
-        RP2040_SIO_GPIO_OUT_CLR = mask;
-        microflow_rp2040_delay_cycles(2U);
-    }
-}
-
-/* Shift one WS2812 byte most-significant bit first onto a selected GPIO. */
-static void microflow_rp2040_ws2812_byte(uint32_t mask, uint8_t value) {
-    for (uint32_t bit = 0x80U; bit != 0U; bit >>= 1U) {
-        microflow_rp2040_ws2812_bit(mask, (uint32_t)value & bit);
-    }
-}
-
-/* -------------------------------------------------------------------------- */
 /* Platform initialization                                                    */
 /* -------------------------------------------------------------------------- */
 
