@@ -6,28 +6,13 @@
 #include "supervisor.h"
 #include "upload_transport.h"
 #include "console.h"
+#include "firmware_config.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Period between visible status changes and timer service releases. */
-#define HEARTBEAT_PERIOD_US 500000U
-/* Maximum unserviced interval before hardware resets stalled firmware. */
-#define WATCHDOG_TIMEOUT_US 2000000U
-/* Cooperative maximum intended execution time for status work. */
-#define STATUS_SERVICE_BUDGET_US 2000U
-/* Cooperative maximum intended execution time for UART work. */
-#define UART_SERVICE_BUDGET_US 5000U
-/* Conventional host-compatible debug/upload UART bit rate. */
-#define UART_BAUD_RATE 115200U
-/* Abandon incomplete UART frames after one second without input. */
-#define UART_RECEIVE_TIMEOUT_US 1000000U
 /* Minimum byte count accepted by the current flow-envelope validator. */
 #define FLOW_IMAGE_HEADER_SIZE 16U
-/* Cooperative maximum intended execution time for USB CDC work. */
-#define USB_SERVICE_BUDGET_US 5000U
-/* Fixed per-direction USB queue size; prevents dynamic allocation. */
-#define USB_QUEUE_CAPACITY 256U
 
 /* Static state keeps the firmware's RAM requirements link-time measurable. */
 static microflow_supervisor_t       supervisor;
@@ -38,8 +23,8 @@ static volatile uint8_t             active_flow[MICROFLOW_UPLOAD_MAX_IMAGE_SIZE]
 static volatile size_t              active_flow_length;
 static bool                         flow_running;
 static microflow_rp2040_usb_cdc_t   usb_cdc;
-static uint8_t                      usb_driver_receive[USB_QUEUE_CAPACITY];
-static uint8_t                      usb_driver_transmit[USB_QUEUE_CAPACITY];
+static uint8_t                      usb_driver_receive[MICROFLOW_USB_QUEUE_CAPACITY];
+static uint8_t                      usb_driver_transmit[MICROFLOW_USB_QUEUE_CAPACITY];
 static microflow_byte_ring_t        console_receive;
 static microflow_console_t          console;
 static microflow_board_gpio_t       board_gpio;
@@ -366,7 +351,8 @@ static void status_service(void *context, uint32_t events) {
     (void)events;
     illuminated = !illuminated;
     (void)microflow_upload_transport_expire(&upload_transport,
-                                            microflow_board_monotonic_ticks(), UART_RECEIVE_TIMEOUT_US);
+                                            microflow_board_monotonic_ticks(),
+                                            MICROFLOW_UART_RECEIVE_TIMEOUT_US);
 #if defined(MICROFLOW_WAVESHARE_RP2040_ZERO)
     if (illuminated) {
         microflow_board_status_rgb(colours[colour][0], colours[colour][1],
@@ -453,20 +439,23 @@ int main(void) {
     microflow_byte_ring_initialize(&console_receive);
     microflow_upload_transport_initialize(&upload_transport, &uart_receive,
                                           &uart_transmit, validate_flow, activate_flow, NULL);
-    microflow_rp2040_watchdog_initialize(WATCHDOG_TIMEOUT_US);
+    microflow_rp2040_watchdog_initialize(MICROFLOW_WATCHDOG_TIMEOUT_US);
     const microflow_supervisor_platform_t platform = {
         .now = platform_now, .wait_until = platform_wait, .watchdog_service = platform_watchdog, .fault_report = platform_fault, .critical_enter = platform_critical_enter, .critical_exit = platform_critical_exit, .context = NULL};
     microflow_console_initialize(&console, &console_receive, &console_operations);
     /* Refuse normal operation unless every required service can be registered. */
-    if (!microflow_supervisor_initialize(&supervisor, &platform, HEARTBEAT_PERIOD_US) ||
+    if (!microflow_supervisor_initialize(&supervisor, &platform,
+                                         MICROFLOW_HEARTBEAT_PERIOD_US) ||
         !microflow_supervisor_add_service(&supervisor, 10U,
-                                          MICROFLOW_SUPERVISOR_EVENT_TIMER, STATUS_SERVICE_BUDGET_US,
+                                          MICROFLOW_SUPERVISOR_EVENT_TIMER,
+                                          MICROFLOW_STATUS_SERVICE_BUDGET_US,
                                           status_service, NULL) ||
         !microflow_supervisor_add_service(&supervisor, 2U,
                                           MICROFLOW_SUPERVISOR_EVENT_UART0_RX | MICROFLOW_SUPERVISOR_EVENT_UART0_TX,
-                                          UART_SERVICE_BUDGET_US, uart_service, NULL) ||
+                                          MICROFLOW_UART_SERVICE_BUDGET_US, uart_service, NULL) ||
         !microflow_supervisor_add_service(&supervisor, 1U,
-                                          MICROFLOW_SUPERVISOR_EVENT_USB, USB_SERVICE_BUDGET_US, usb_service, NULL)) {
+                                          MICROFLOW_SUPERVISOR_EVENT_USB,
+                                          MICROFLOW_USB_SERVICE_BUDGET_US, usb_service, NULL)) {
         for (;;) {
             /* A red half-second blink is the allocation-free fatal fallback. */
             microflow_board_status_rgb(16U, 0U, 0U);
@@ -474,7 +463,7 @@ int main(void) {
         }
     }
     /* Peripheral interrupts start only after their supervisor state exists. */
-    microflow_rp2040_uart0_initialize(UART_BAUD_RATE);
+    microflow_rp2040_uart0_initialize(MICROFLOW_UART_BAUD_RATE);
     if (!microflow_rp2040_usb_cdc_initialize(&usb_cdc, usb_driver_receive,
                                              sizeof(usb_driver_receive), usb_driver_transmit, sizeof(usb_driver_transmit))) {
         microflow_supervisor_report_fault(&supervisor,
