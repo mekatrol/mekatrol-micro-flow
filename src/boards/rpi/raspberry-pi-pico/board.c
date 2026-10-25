@@ -28,12 +28,6 @@ void microflow_board_initialize(void) {
 #endif
 }
 
-/* Present RP2040 microseconds as the portable runtime's monotonic tick source. */
-uint32_t microflow_board_monotonic_ticks(void) {
-    /* Microseconds give portable scheduling a useful, deterministic unit. */
-    return microflow_rp2040_monotonic_microseconds();
-}
-
 /* Map portable RGB status requests onto the indicator available on this board. */
 void microflow_board_status_rgb(uint8_t red, uint8_t green, uint8_t blue) {
 #if defined(MICROFLOW_WAVESHARE_RP2040_ZERO)

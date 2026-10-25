@@ -8,8 +8,8 @@ The repository has six public presets:
 |---|---|
 | `host-debug` | Host tests with supported sanitizers |
 | `host-release` | Optimized host tests |
-| `pico-debug` | Pico RP2040 supervisor with GPIO25 status LED and USB CDC |
-| `waveshare-rp2040-zero-debug` | Waveshare RP2040-Zero supervisor with GPIO16 WS2812 status LED and USB CDC |
+| `pico-debug` | Pico RP2040 FreeRTOS firmware with GPIO25 status LED and USB CDC |
+| `waveshare-rp2040-zero-debug` | Waveshare RP2040-Zero FreeRTOS firmware with GPIO16 WS2812 status LED and USB CDC |
 | `pico2-arm-debug` | Pico 2 Cortex-M33 compile/link smoke build |
 | `pico2-riscv-debug` | Pico 2 Hazard3 RISC-V compile/link smoke build |
 
@@ -47,9 +47,14 @@ cmake --preset pico2-riscv-debug
 cmake --build --preset pico2-riscv-debug
 ```
 
-The Pico builds produce ELF, map, BIN, and UF2 files. They include the bounded
-supervisor, UART upload transport, native TinyUSB CDC console, logical GPIO,
-and watchdog. The `pico-debug` preset drives the Pico's GPIO25 status LED; the
+The Pico builds produce ELF, map, BIN, and UF2 files. They use the FreeRTOS
+RP2040 SMP port with statically allocated USB and status tasks. The USB task
+owns TinyUSB CDC and console processing; the lower-priority status task updates
+the board LED every 500 ms. Both application tasks are initially pinned to
+core 0. Flow execution, uploads, application GPIO, and watchdog supervision are
+not enabled in this integration.
+
+The `pico-debug` preset drives the Pico's GPIO25 status LED; the
 `waveshare-rp2040-zero-debug` preset drives the RP2040-Zero's WS2812 status LED
 on GPIO16. Hold BOOTSEL while connecting the board, then use the flash wrapper
 to copy the generated UF2 to its mass-storage volume. A normal build does not

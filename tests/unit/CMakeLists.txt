@@ -12,22 +12,8 @@ microflow_set_warnings(microflow-flow-test)
 microflow_enable_sanitizers(microflow-flow-test)
 add_test(NAME microflow.flow COMMAND microflow-flow-test)
 
-add_executable(microflow-scheduler-test scheduler_test.c)
-target_link_libraries(microflow-scheduler-test PRIVATE Microflow::runtime)
-
-microflow_set_warnings(microflow-scheduler-test)
-microflow_enable_sanitizers(microflow-scheduler-test)
-
-add_test(NAME microflow.scheduler COMMAND microflow-scheduler-test)
-
 set(pico_board_dir
     ${PROJECT_SOURCE_DIR}/src/boards/rpi/raspberry-pi-pico)
-
-add_executable(microflow-supervisor-test supervisor_test.c)
-target_link_libraries(microflow-supervisor-test PRIVATE Microflow::runtime)
-microflow_set_warnings(microflow-supervisor-test)
-microflow_enable_sanitizers(microflow-supervisor-test)
-add_test(NAME microflow.supervisor COMMAND microflow-supervisor-test)
 
 add_executable(microflow-upload-transport-test upload_transport_test.c)
 target_link_libraries(microflow-upload-transport-test PRIVATE Microflow::runtime)
@@ -50,7 +36,7 @@ add_test(NAME microflow.board-gpio COMMAND microflow-board-gpio-test)
 
 if(MICROFLOW_ENABLE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set_tests_properties(
-        microflow.version microflow.flow microflow.scheduler microflow.supervisor
+        microflow.version microflow.flow
         microflow.upload-transport microflow.console microflow.board-gpio
         PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0"
     )

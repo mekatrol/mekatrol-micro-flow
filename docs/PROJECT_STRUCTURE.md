@@ -28,7 +28,7 @@ src/
     runtime/                 Portable runtime contracts
     host/                    Host simulation and test support
   boards/rpi/
-    rp2040/                  RP2040 startup, drivers, and linker layout
+    rp2040/                  Pico SDK-backed RP2040 and USB CDC adapters
     rp2350/                  RP2350 Arm/RISC-V startup and linker layouts
     raspberry-pi-pico/       Pico/RP2040-Zero entry point and resource mappings
     raspberry-pi-pico-2/     Pico 2 entry point and resource mapping
@@ -46,10 +46,11 @@ The physical board directories own entry points, pins, exposed logical
 resources, board limits, and board documentation. The SoC directories own
 startup, interrupt dispatch, register support, chip drivers, and linker layouts.
 
-Portable flow storage, supervision, console parsing, and upload framing belong
-in `src/lib`. Board applications inject hardware operations into those modules.
+Portable flow storage, console parsing, and upload framing belong in `src/lib`.
+Board applications inject hardware operations into those modules.
 Physical GPIO mappings and firmware presentation remain in the board directory;
-SDK calls and peripheral drivers remain in the SoC directory. RP2040 and RP2350
+SDK calls and peripheral drivers remain in the SoC directory. FreeRTOS is a
+firmware integration detail and must not leak into `src/lib`. RP2040 and RP2350
 differences must remain explicit.
 
 `cmake/boards` contains build composition, not production C or assembly.

@@ -6,8 +6,6 @@
 
 /* Initializes all board facilities required by the portable runtime. */
 void microflow_board_initialize(void);
-/* Return wrapping monotonic ticks so portable runtime code can schedule without a board clock type. */
-uint32_t microflow_board_monotonic_ticks(void);
 /* Present runtime state through the available indicator so diagnostics survive transport failure. */
 void microflow_board_status_rgb(uint8_t red, uint8_t green, uint8_t blue);
 /* Performs a board delay used only where deliberate blocking is acceptable. */

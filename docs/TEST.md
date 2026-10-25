@@ -11,8 +11,6 @@ The registered cases are:
 |---|---|
 | `microflow.version` | Public version API |
 | `microflow.flow` | Portable flow-image format and validation |
-| `microflow.scheduler` | Scheduling, capacity, priority, cancellation, timing, and wraparound |
-| `microflow.supervisor` | Supervisor queues, timing, watchdog, and faults |
 | `microflow.upload-transport` | Framing, upload ordering, CRC, and activation |
 | `microflow.console` | USB console command parsing and bounds |
 | `microflow.board-gpio` | Pico logical GPIO mapping and safe states |
@@ -32,7 +30,7 @@ ctest --preset host-release
 Run one case with:
 
 ```sh
-ctest --preset host-debug -R '^microflow\.scheduler$'
+ctest --preset host-debug -R '^microflow\.console$'
 ```
 
 ## Firmware compile checks
@@ -52,8 +50,10 @@ cmake --build --preset pico2-riscv-debug
 
 Physical hardware evidence must record board revision, firmware commit,
 toolchain version, procedure, duration, measurements, and result. Required
-coverage includes boot, resets, timer progression and wraparound, GPIO,
-scheduling, overruns, watchdog recovery, capability rejection, and diagnostics.
+coverage for the current RP2040 firmware includes boot, USB enumeration,
+console commands, task scheduling, stack high-water reporting, status output,
+reboot, and sustained operation. Future capabilities require their own hardware
+coverage when they are enabled.
 
 ## Adding tests
 

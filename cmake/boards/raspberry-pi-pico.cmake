@@ -12,8 +12,6 @@ add_executable(microflow-raspberry-pi-pico
     "${board_dir}/firmware_console.c"
     "${board_dir}/firmware_usb.c"
     "${board_dir}/board.c"
-    "${board_dir}/board_gpio.c"
-    "${board_dir}/board_gpio_rp2040.c"
     "${board_dir}/usb_descriptors.c"
     "${soc_dir}/rp2040_sdk.c"
     "${soc_dir}/rp2040_usb_cdc_sdk.c"
@@ -48,11 +46,7 @@ target_link_libraries(microflow-raspberry-pi-pico
         # Pico SDK
         pico_stdlib
         hardware_gpio
-        hardware_irq
         hardware_pio
-        hardware_sync
-        hardware_timer
-        hardware_uart
         hardware_watchdog
 
         # TinyUSB

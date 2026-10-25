@@ -10,6 +10,8 @@ portable reference and regression tests.
 
 The flow engine is the product. Board support exists to run, test, and
 demonstrate it and must not couple portable code to Raspberry Pi silicon.
+The maintained RP2040 firmware uses FreeRTOS SMP, while the portable library
+must remain usable without an RTOS.
 
 ## Design rules
 
@@ -29,12 +31,14 @@ demonstrate it and must not couple portable code to Raspberry Pi silicon.
 
 `PROJECT_STRUCTURE.md` is authoritative for repository layout and dependency
 direction. Pico and Pico 2 board directories own physical resource mappings and
-entry points. RP2040 and RP2350 directories own SoC startup, linker layouts,
-register support, and chip drivers. Do not duplicate an SoC driver tree in a
-board directory.
+entry points. RP2040 and RP2350 directories own SoC adapters and chip drivers;
+startup and linker support may instead come from the pinned SDK for a target.
+Do not duplicate an SoC driver tree in a board directory.
 
 Interrupt handlers stay in the relevant SoC layer and transfer work through
 bounded structures with documented concurrency and overflow rules.
+FreeRTOS tasks, handles, synchronization, and core-affinity policy stay in
+firmware integration code and must not leak into `src/lib`.
 
 ## Vendor dependencies
 

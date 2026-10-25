@@ -38,16 +38,19 @@ changing it.
 
 ## Phase 3: Raspberry Pi Pico reference target
 
-1. Boot Pico into the standalone runtime.
-2. Implement monotonic time, deadline waiting, diagnostics, GPIO, reset, and
-   watchdog support.
-3. Execute a timer-to-digital-output flow.
-4. Validate interrupt timing, wraparound, resets, and overrun detection.
-5. Produce documented ELF, map, BIN, and UF2 artifacts.
+1. Maintain the FreeRTOS SMP boot path, static USB/status tasks, USB CDC
+   console, reset support, and board-specific status output.
+2. Define the task and core ownership required by the flow engine.
+3. Integrate a bounded flow task and capability-controlled GPIO without
+   coupling portable code to FreeRTOS.
+4. Add watchdog ownership and measured deadline/overrun diagnostics.
+5. Validate interrupt timing, resets, task stack margins, and sustained USB
+   operation on both board variants.
 6. Record flash, RAM, cycle-time, and jitter measurements.
 
-Exit criterion: Pico passes hardware conformance and an extended runtime test
-without drift, memory growth, or watchdog failure.
+Exit criterion: Pico executes a useful flow under FreeRTOS and passes hardware
+conformance and an extended runtime test without drift, memory growth, stack
+exhaustion, or watchdog failure.
 
 The Waveshare RP2040-Zero compatibility preset reuses this target while
 selecting its GPIO16 WS2812 status LED at compile time. Hardware evidence for

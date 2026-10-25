@@ -169,6 +169,8 @@ cmake --build --preset waveshare-rp2040-zero-debug
 The two RP2040 presets compile the same firmware target with different status
 LED mappings. The Pico uses a digital LED on GPIO25. The RP2040-Zero defines
 `MICROFLOW_WAVESHARE_RP2040_ZERO` and drives its WS2812 RGB LED on GPIO16.
+Both builds use the FreeRTOS RP2040 SMP port and statically allocated USB and
+status tasks.
 
 Build both Pico 2 architecture smoke targets:
 
