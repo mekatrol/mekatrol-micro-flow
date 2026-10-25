@@ -1,4 +1,4 @@
-add_library(microflow-core STATIC version.c)
+add_library(microflow-core STATIC flow.c version.c)
 add_library(Microflow::core ALIAS microflow-core)
 
 target_compile_features(microflow-core PUBLIC c_std_11)

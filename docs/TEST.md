@@ -10,6 +10,7 @@ The registered cases are:
 | CTest name | Purpose |
 |---|---|
 | `microflow.version` | Public version API |
+| `microflow.flow` | Portable flow-image format and validation |
 | `microflow.scheduler` | Scheduling, capacity, priority, cancellation, timing, and wraparound |
 | `microflow.supervisor` | Supervisor queues, timing, watchdog, and faults |
 | `microflow.upload-transport` | Framing, upload ordering, CRC, and activation |

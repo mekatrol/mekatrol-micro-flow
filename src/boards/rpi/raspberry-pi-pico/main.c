@@ -1,5 +1,6 @@
 /* Raspberry Pi Pico firmware composition root and service wiring. */
 #include <microflow/internal/board.h>
+#include <microflow/flow.h>
 #include "rp2040_sdk.h"
 #include "rp2040_usb_cdc_sdk.h"
 #include "board_gpio.h"
@@ -10,9 +11,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-
-/* Minimum byte count accepted by the current flow-envelope validator. */
-#define FLOW_IMAGE_HEADER_SIZE 16U
 
 /* Static state keeps the firmware's RAM requirements link-time measurable. */
 static microflow_supervisor_t       supervisor;
@@ -28,8 +26,6 @@ static uint8_t                      usb_driver_transmit[MICROFLOW_USB_QUEUE_CAPA
 static microflow_byte_ring_t        console_receive;
 static microflow_console_t          console;
 static microflow_board_gpio_t       board_gpio;
-
-static bool validate_flow(void *context, const uint8_t *image, size_t length);
 
 /*
  * Write a NUL-terminated constant or locally assembled string to USB CDC.
@@ -158,7 +154,8 @@ static bool console_flow_validate(void *context) {
     /* An empty active slot is not a valid executable flow. */
     (void)context;
     return active_flow_length != 0U &&
-           validate_flow(NULL, (const uint8_t *)(uintptr_t)active_flow, active_flow_length);
+           microflow_flow_validate(NULL, (const uint8_t *)(uintptr_t)active_flow,
+                                   active_flow_length);
 }
 
 /* Enter running state only when the currently active image remains valid. */
@@ -250,33 +247,6 @@ static const microflow_board_gpio_driver_t board_gpio_driver = {
     .configure = board_gpio_configure,
     .read      = board_gpio_read_pin,
     .write     = board_gpio_write_pin};
-
-/* Decode a flow-image uint32 independently of CPU alignment and byte order. */
-static uint32_t image_u32(const uint8_t *p) {
-    /* Flow image integers use an architecture-independent little-endian form. */
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8U) | ((uint32_t)p[2] << 16U) |
-           ((uint32_t)p[3] << 24U);
-}
-
-/*
- * Validate the complete portable flow envelope before it can be activated or
- * started.  Structural fields are checked before the payload CRC so malformed
- * lengths can never cause an out-of-bounds checksum read.
- */
-static bool validate_flow(void *context, const uint8_t *image, size_t length) {
-    (void)context;
-    /* Validate envelope magic/version/header/length before payload access. */
-    if ((length < FLOW_IMAGE_HEADER_SIZE) || (image[0] != 'M') ||
-        (image[1] != 'F') || (image[2] != 'F') || (image[3] != 'L') ||
-        (image[4] != 1U) || (image[5] != 0U) ||
-        (image[6] != FLOW_IMAGE_HEADER_SIZE) || (image[7] != 0U) ||
-        (image_u32(&image[8]) != length)) {
-        return false;
-    }
-    /* Payload CRC detects corruption beyond the structurally checked header. */
-    return image_u32(&image[12]) ==
-           microflow_upload_crc32(&image[FLOW_IMAGE_HEADER_SIZE], length - FLOW_IMAGE_HEADER_SIZE);
-}
 
 /*
  * Atomically replace the active flow with a previously validated staged image.
@@ -438,7 +408,8 @@ int main(void) {
     microflow_byte_ring_initialize(&uart_transmit);
     microflow_byte_ring_initialize(&console_receive);
     microflow_upload_transport_initialize(&upload_transport, &uart_receive,
-                                          &uart_transmit, validate_flow, activate_flow, NULL);
+                                          &uart_transmit, microflow_flow_validate,
+                                          activate_flow, NULL);
     microflow_rp2040_watchdog_initialize(MICROFLOW_WATCHDOG_TIMEOUT_US);
     const microflow_supervisor_platform_t platform = {
         .now = platform_now, .wait_until = platform_wait, .watchdog_service = platform_watchdog, .fault_report = platform_fault, .critical_enter = platform_critical_enter, .critical_exit = platform_critical_exit, .context = NULL};
