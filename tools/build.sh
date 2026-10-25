@@ -23,7 +23,7 @@ prepare_pico_sdk()
 print_usage()
 {
     printf '%s\n' \
-        "Usage: ./build.sh <target>" \
+        "Usage: ./tools/build.sh <target>" \
         "" \
         "Deletes build/, configures the selected target, and builds it." \
         "" \
@@ -70,8 +70,9 @@ if [ "$1" = pico-debug ] || [ "$1" = waveshare-rp2040-zero-debug ]; then
 fi
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-cd "$script_dir"
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+cd "$repo_root"
 
-cmake -E remove_directory "$script_dir/build"
+cmake -E remove_directory "$repo_root/build"
 cmake --preset "$1"
 cmake --build --preset "$1"

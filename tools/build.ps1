@@ -34,7 +34,7 @@ function Initialize-PicoSdk {
 }
 
 function Show-Usage {
-    Write-Host 'Usage: .\build.ps1 <target>'
+    Write-Host 'Usage: .\tools\build.ps1 <target>'
     Write-Host ''
     Write-Host 'Deletes build/, configures the selected target, and builds it.'
     Write-Host ''
@@ -78,9 +78,10 @@ if (($Target -in 'pico-debug', 'waveshare-rp2040-zero-debug') -and
     exit 1
 }
 
-Push-Location $PSScriptRoot
+$repoRoot = Split-Path -Parent $PSScriptRoot
+Push-Location $repoRoot
 try {
-    & cmake -E remove_directory (Join-Path $PSScriptRoot 'build')
+    & cmake -E remove_directory (Join-Path $repoRoot 'build')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & cmake --preset $Target
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

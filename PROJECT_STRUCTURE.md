@@ -37,7 +37,7 @@ cmake/
   toolchains/                Arm and RISC-V compiler selection
 tests/
   unit/                      Host regression tests
-tools/                       Build and image utilities
+tools/                       Build, clean, and image utilities
 ```
 
 ## Ownership rules

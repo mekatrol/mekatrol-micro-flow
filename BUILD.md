@@ -75,20 +75,32 @@ The wrappers delete the complete `build/` directory before configuring and
 building one preset:
 
 ```sh
-./build.sh pico-debug
-./build.sh waveshare-rp2040-zero-debug
-./build.sh pico2-arm-debug
-./build.sh pico2-riscv-debug
+./tools/build.sh pico-debug
+./tools/build.sh waveshare-rp2040-zero-debug
+./tools/build.sh pico2-arm-debug
+./tools/build.sh pico2-riscv-debug
 ```
 
 On Windows:
 
 ```powershell
-.\build.ps1 pico-debug
-.\build.ps1 waveshare-rp2040-zero-debug
+.\tools\build.ps1 pico-debug
+.\tools\build.ps1 waveshare-rp2040-zero-debug
 ```
 
 Use direct preset commands when retaining multiple build directories matters.
+
+To remove the complete `build/` directory without starting another build, run:
+
+```sh
+./tools/clean.sh
+```
+
+or on Windows:
+
+```powershell
+.\tools\clean.ps1
+```
 
 ## Prerequisites
 
