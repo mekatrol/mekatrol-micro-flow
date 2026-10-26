@@ -42,6 +42,16 @@ use output_expander::uid;
 // Stop execution if an unrecoverable panic occurs.
 use panic_halt as _;
 
+/// USART1 receive interrupt handler.
+///
+/// Invoked when the UART receives data or reports an enabled
+/// receive error. The completed Modbus request will be processed
+/// by the main loop, not inside this interrupt.
+#[hal::interrupt]
+fn USART1() {
+    // USART receive handling will be added here.
+}
+
 #[qingke_rt::entry]
 fn main() -> ! {
     // Initialize the microcontroller hardware abstraction layer.
@@ -49,6 +59,13 @@ fn main() -> ! {
     // This configures clocks and returns ownership of the
     // available hardware peripherals.
     let p = hal::init(hal::Config::default());
+
+    // Initialize the free-running SysTick timer for Modbus RTU timing
+    // and RS-485 turnaround delays.
+    //
+    // The timer will be used when the UART receive interrupt and
+    // non-blocking timing logic are integrated.
+    let timer = output_expander::monotonic::Monotonic::new();
 
     // ---------------------------------------------------------
     // RS-485 direction control
@@ -283,18 +300,15 @@ fn main() -> ! {
             continue;
         }
 
-        // Send the response using the Serial driver.
+        // Transmit the Modbus RTU response using the free-running SysTick timer.
         //
-        // The driver is responsible for:
-        // 1. RS-485 turnaround delay.
-        // 2. Enabling the transmitter.
-        // 3. Writing response bytes.
-        // 4. Waiting for transmission completion.
-        // 5. Returning the transceiver to receive mode.
-        //
-        // WHY:
-        // These are hardware communication responsibilities
-        // and do not belong in the application main loop.
-        let _ = serial.write_response(&response[..outcome.response_len]);
+        // If UART transmission fails, keep the firmware running so it can
+        // continue processing subsequent Modbus requests.
+        if serial
+            .write_response(&response[..outcome.response_len], &timer)
+            .is_err()
+        {
+            // TODO: Record the UART transmission error in a diagnostic counter.
+        }
     }
 }

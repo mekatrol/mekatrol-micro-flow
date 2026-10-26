@@ -8,29 +8,65 @@
 //! its owner must serialize ISR and foreground access using short critical
 //! sections or transfer ownership through a verified interrupt-safe channel.
 
-use crate::timer::{Gap, T3_5_US, classify_gap};
+use crate::timer::{T1_5_US, T3_5_US};
 use crate::uart::RxHandoff;
 
-/// A timed receiver with one accumulating and one completed frame.
+/// A timed Modbus RTU receiver with two frame buffers.
 ///
-/// Timestamp arithmetic wraps safely when the timer is a wrapping `u32`
-/// microsecond counter. The caller must invoke `poll` frequently enough to
-/// detect a 3.5-character gap before the next frame starts.
+/// Timestamps and timing thresholds use the same unit:
+/// microseconds by default, or hardware ticks in firmware.
+///
+/// Wrapping subtraction supports a wrapping 32-bit counter,
+/// provided the receiver is polled frequently enough.
 pub struct RtuReceiver {
     frames: RxHandoff,
     last_byte_us: Option<u32>,
     invalid: bool,
     rejected: u32,
+
+    /// Maximum permitted interval within a frame.
+    t1_5: u32,
+
+    /// Minimum silence required to complete a frame.
+    t3_5: u32,
 }
 
 impl RtuReceiver {
-    /// Construct a receiver without allocating memory.
+    /// Construct a receiver using microsecond timestamps.
+    ///
+    /// This preserves the existing interface for unit tests
+    /// and hardware-independent callers.
     pub const fn new() -> Self {
+        Self::new_with_thresholds(T1_5_US, T3_5_US)
+    }
+
+    /// Construct a receiver using hardware counter ticks.
+    ///
+    /// `ticks_per_us` must be the number of hardware counter
+    /// increments occurring in one microsecond.
+    ///
+    /// For example, at 48 MHz:
+    /// - t1.5 = T1_5_US * 48 ticks
+    /// - t3.5 = T3_5_US * 48 ticks
+    pub const fn new_with_tick_rate(ticks_per_us: u32) -> Self {
+        assert!(ticks_per_us > 0);
+        assert!(T3_5_US <= u32::MAX / ticks_per_us);
+
+        Self::new_with_thresholds(T1_5_US * ticks_per_us, T3_5_US * ticks_per_us)
+    }
+
+    /// Construct a receiver with explicit timing thresholds.
+    ///
+    /// All timestamps supplied to `on_byte()` and `poll()`
+    /// must use the same units as these thresholds.
+    const fn new_with_thresholds(t1_5: u32, t3_5: u32) -> Self {
         Self {
             frames: RxHandoff::new(),
             last_byte_us: None,
             invalid: false,
             rejected: 0,
+            t1_5,
+            t3_5,
         }
     }
 
@@ -41,10 +77,14 @@ impl RtuReceiver {
     /// the preceding frame before this byte starts the next one.
     pub fn on_byte(&mut self, byte: u8, now_us: u32) {
         if let Some(last) = self.last_byte_us {
-            match classify_gap(now_us.wrapping_sub(last)) {
-                Gap::WithinFrame => {}
-                Gap::InvalidFrame => self.invalid = true,
-                Gap::FrameComplete => self.finish(),
+            let elapsed = now_us.wrapping_sub(last);
+
+            if elapsed >= self.t3_5 {
+                // Sufficient silence separates two Modbus RTU frames.
+                self.finish();
+            } else if elapsed > self.t1_5 {
+                // An intermediate gap invalidates the current frame.
+                self.invalid = true;
             }
         }
         if !self.frames.push_byte(byte) {
@@ -64,7 +104,7 @@ impl RtuReceiver {
     /// This must be driven by a timer even when no further UART bytes arrive.
     pub fn poll(&mut self, now_us: u32) {
         if let Some(last) = self.last_byte_us {
-            if now_us.wrapping_sub(last) >= T3_5_US {
+            if now_us.wrapping_sub(last) >= self.t3_5 {
                 self.finish();
             }
         }
@@ -225,5 +265,31 @@ mod tests {
         rx.on_uart_error();
         rx.poll(T3_5_US);
         assert!(!rx.frames().has_ready_frame());
+    }
+
+    #[test]
+    fn hardware_ticks_preserve_rtu_timing() {
+        // Simulate a SysTick counter running at 48 MHz.
+        const TICKS_PER_US: u32 = 48;
+
+        let mut rx = RtuReceiver::new_with_tick_rate(TICKS_PER_US);
+
+        // Four bytes arriving 100 microseconds apart.
+        rx.on_byte(0x11, 100 * TICKS_PER_US);
+        rx.on_byte(0x03, 200 * TICKS_PER_US);
+        rx.on_byte(0x00, 300 * TICKS_PER_US);
+        rx.on_byte(0x00, 400 * TICKS_PER_US);
+
+        // The frame must not be published before t3.5.
+        rx.poll((400 + T3_5_US - 1) * TICKS_PER_US);
+        assert!(!rx.frames().has_ready_frame());
+
+        // At t3.5, the frame becomes available.
+        rx.poll((400 + T3_5_US) * TICKS_PER_US);
+
+        assert_eq!(
+            rx.frames().ready_frame(),
+            Some(&[0x11, 0x03, 0x00, 0x00][..])
+        );
     }
 }

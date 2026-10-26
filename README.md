@@ -27,6 +27,7 @@ controller.
 ```sh
 cd output-expander
 cargo test
+cargo test --lib --target x86_64-unknown-linux-gnu
 ```
 
 Each project owns its source, documentation, tests, dependencies, and build

@@ -36,6 +36,13 @@ pub mod serial;
 /// Hardware-independent RTU timing and completed-frame publication.
 pub mod rtu_receiver;
 
+/// Free-running SysTick timer for Modbus RTU timing and hardware delays.
+///
+/// Provides microsecond-resolution timing without resetting the SysTick
+/// counter, allowing accurate RTU frame detection and RS-485 turnaround
+/// delays. Available only on the RISC-V firmware target.
+#[cfg(target_arch = "riscv32")]
+pub mod monotonic;
 /// MODBUS message handling
 pub mod server;
 /// Conversion from operating state to status-LED colours.

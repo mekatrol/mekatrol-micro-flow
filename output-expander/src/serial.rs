@@ -1,9 +1,9 @@
 use ch32_hal as hal;
 
 use crate::board::RS485_BAUD;
+use crate::monotonic::Monotonic;
 use crate::rs485::Rs485Direction;
 use hal::Peri;
-use hal::delay::Delay;
 use hal::mode::Blocking;
 use hal::peripherals::USART1;
 use hal::usart::{Config as UartConfig, DataBits, Parity, StopBits, Uart};
@@ -95,17 +95,23 @@ impl<'d> Serial<'d> {
     ///
     /// Handles the RS-485 turnaround delay, transmitter
     /// enable, UART transmission, and return to receive mode.
-    pub fn write_response(&mut self, response: &[u8]) -> Result<(), hal::usart::Error> {
+    ///
+    /// Uses the shared free-running SysTick timer to avoid
+    /// resetting the counter used for Modbus RTU frame timing.
+    pub fn write_response(
+        &mut self,
+        response: &[u8],
+        timer: &Monotonic,
+    ) -> Result<(), hal::usart::Error> {
         // Broadcast requests and some commands do not
         // require a response.
         if response.is_empty() {
             return Ok(());
         }
 
-        // Preserve the existing turnaround delay.
-        //
-        // Proper RTU t3.5 timing will be implemented later.
-        Delay.delay_us(1_000);
+        // Allow the RS-485 bus to settle before transmission
+        // without resetting the free-running SysTick counter.
+        timer.delay_us(1_000);
 
         // Enable the RS-485 transmitter.
         self.direction.transmit();
