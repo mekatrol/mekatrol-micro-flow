@@ -34,7 +34,7 @@ use output_expander::serial::Serial;
 use output_expander::server::Server;
 
 // UART framing helpers.
-use output_expander::uart::{MAX_REQUEST, request_length};
+use output_expander::uart::{RX_CAPACITY, RxFrame, request_length};
 
 // Device silicon unique identifier.
 use output_expander::uid;
@@ -119,11 +119,16 @@ fn main() -> ! {
     // and the MCU's unique silicon identifier.
     let mut server = Server::new(config, uid::read());
 
-    // Fixed-size request buffer.
+    // Buffer used to assemble one incoming Modbus RTU request.
+    //
+    // WHAT:
+    // RxFrame owns the received bytes, current length,
+    // and overflow status.
     //
     // WHY:
-    // The firmware operates without a heap allocator.
-    let mut request = [0u8; MAX_REQUEST];
+    // The same buffer abstraction can later be used by
+    // an interrupt-driven receiver.
+    let mut request = RxFrame::new();
 
     // Fixed-size response buffer.
     let mut response = [0u8; MAX_RESPONSE];
@@ -145,69 +150,73 @@ fn main() -> ! {
     // operations can run without being blocked.
 
     loop {
-        // Number of bytes received for the current request.
-        let mut len = 0usize;
-
-        // Expected total request length.
+        // Prepare the receive buffer for a new request.
         //
-        // None means the header is incomplete or unsupported.
+        // WHY:
+        // Resetting clears the previous request's length and
+        // overflow status without clearing every stored byte.
+        request.reset();
+
+        // The expected length is unknown until enough
+        // request-header bytes have been received.
         let mut expected = None;
 
         // -----------------------------------------------------
         // Receive a Modbus request
         // -----------------------------------------------------
-
         loop {
-            // Prevent writing beyond the request buffer.
-            if len == MAX_REQUEST {
+            // Never attempt to receive beyond the buffer capacity.
+            //
+            // This preserves the existing fixed-size framing limit.
+            if request.len() == RX_CAPACITY {
                 break;
             }
 
-            // Read one byte using the Serial driver.
+            // Receive one byte using the existing blocking driver.
             //
-            // WHY:
-            // main.rs should not know the details of how
-            // the UART hardware receives data.
-            //
-            // WARNING:
-            // This operation currently blocks.
-            match serial.read_byte() {
-                Ok(byte) => {
-                    request[len] = byte;
-                }
+            // Later, an interrupt handler will collect bytes instead.
+            let byte = match serial.read_byte() {
+                Ok(byte) => byte,
 
                 Err(_) => {
-                    // Abort the current request if UART
-                    // reception reports an error.
+                    // Discard the incomplete request after a UART error.
                     break;
                 }
+            };
+
+            // Store the byte in RxFrame.
+            //
+            // push() performs its own bounds check and records
+            // overflow if the buffer cannot accept another byte.
+            if !request.push(byte) {
+                break;
             }
 
-            // Record the newly received byte.
-            len += 1;
+            // Determine the expected Modbus request length
+            // using the bytes accumulated so far.
+            expected = request_length(request.as_slice());
 
-            // Determine the expected request length.
-            //
-            // This is temporary length-based framing.
-            // Proper RTU timing-based framing comes later.
-            expected = request_length(&request[..len]);
-
-            // Stop when the complete request has arrived
-            // or the advertised size exceeds our buffer.
             if let Some(n) = expected {
-                if n > MAX_REQUEST || len >= n {
+                // Stop when the request is complete or its
+                // expected size exceeds our buffer capacity.
+                if n > RX_CAPACITY || request.len() >= n {
                     break;
                 }
             }
         }
 
-        // Reject requests whose length could not be determined.
+        // An overflowed frame must never reach the Modbus server.
+        if request.overflowed() {
+            continue;
+        }
+
+        // If the request length is unknown, discard the frame.
         let Some(expected_len) = expected else {
             continue;
         };
 
         // Reject incomplete or incorrectly sized requests.
-        if expected_len != len {
+        if expected_len != request.len() {
             continue;
         }
 
@@ -215,12 +224,12 @@ fn main() -> ! {
         // Process Modbus request
         // -----------------------------------------------------
 
-        // Pass the complete request to the Modbus server.
+        // Pass only the bytes actually received.
         //
-        // The server validates the CRC, checks the slave
-        // address, executes supported commands, and builds
-        // the response.
-        let outcome = server.handle(&request[..len], &mut response);
+        // WHY:
+        // RxFrame exposes a slice of its valid data rather
+        // than the entire fixed-capacity backing array.
+        let outcome = server.handle(request.as_slice(), &mut response);
 
         // -----------------------------------------------------
         // Apply application changes

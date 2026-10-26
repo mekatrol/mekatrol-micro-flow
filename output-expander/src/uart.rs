@@ -201,6 +201,271 @@ pub fn request_length(bytes: &[u8]) -> Option<usize> {
     }
 }
 
+/// Capacity of the UART receive buffer.
+///
+/// WHAT:
+/// Reserves enough space for the largest request currently
+/// supported by our Modbus server.
+///
+/// WHY:
+/// A fixed-size buffer avoids heap allocation, which is
+/// important on the memory-constrained CH32V003.
+///
+/// This is not yet a general-purpose 256-byte Modbus RTU buffer.
+/// We can increase the capacity if the supported protocol
+/// functions require larger requests.
+pub const RX_CAPACITY: usize = MAX_REQUEST;
+
+/// Receive buffer used to assemble incoming UART bytes.
+///
+/// WHAT:
+/// Stores bytes received from USART1 until the application
+/// can process them as a complete Modbus request.
+///
+/// WHY:
+/// With interrupt-driven reception, bytes can arrive while
+/// the main loop is doing other work.
+///
+/// The interrupt handler will eventually append bytes here,
+/// while the main loop processes completed frames.
+///
+/// IMPORTANT:
+/// This structure does not provide synchronization.
+/// Sharing it between interrupt and main contexts will
+/// require critical sections or another safe ownership scheme.
+pub struct RxFrame {
+    bytes: [u8; RX_CAPACITY],
+    len: usize,
+    overflowed: bool,
+}
+
+impl RxFrame {
+    /// Construct an empty receive frame.
+    ///
+    /// This is const so the structure can eventually be
+    /// initialized in static storage without a heap.
+    pub const fn new() -> Self {
+        Self {
+            bytes: [0; RX_CAPACITY],
+            len: 0,
+            overflowed: false,
+        }
+    }
+
+    /// Append one received byte.
+    ///
+    /// Returns true if the byte was stored successfully.
+    /// Returns false if the buffer is already full.
+    ///
+    /// WHY:
+    /// The future USART interrupt handler must never
+    /// write beyond the end of the receive buffer.
+    ///
+    /// Once an overflow occurs, the frame is marked
+    /// invalid until reset() is called.
+    pub fn push(&mut self, byte: u8) -> bool {
+        if self.overflowed || self.len >= RX_CAPACITY {
+            self.overflowed = true;
+            return false;
+        }
+
+        self.bytes[self.len] = byte;
+        self.len += 1;
+
+        true
+    }
+
+    /// Return the bytes received so far.
+    ///
+    /// The returned slice contains only valid received
+    /// bytes, not unused buffer capacity.
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+
+    /// Return the number of stored bytes.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Report whether no bytes have been received.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Report whether the current frame overflowed.
+    ///
+    /// An overflowed frame must be discarded rather
+    /// than passed to the Modbus server.
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
+    }
+
+    /// Discard the current frame and prepare for the next.
+    ///
+    /// WHY:
+    /// Clearing the length is sufficient because unused
+    /// bytes are never exposed by as_slice().
+    ///
+    /// This avoids unnecessarily clearing the entire
+    /// buffer on every request.
+    pub fn reset(&mut self) {
+        self.len = 0;
+        self.overflowed = false;
+    }
+}
+
+impl Default for RxFrame {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Two-buffer receive handoff for Modbus RTU frames.
+///
+/// WHAT:
+/// Keeps the frame currently being received separate from
+/// the frame waiting for application processing.
+///
+/// WHY:
+/// In the future interrupt-driven implementation, the UART
+/// interrupt must be able to continue receiving bytes while
+/// the main loop processes a completed Modbus request.
+///
+/// This structure owns both buffers and tracks whether a
+/// completed frame is waiting.
+///
+/// IMPORTANT:
+/// This structure does not provide synchronization by itself.
+/// Access from interrupt and main contexts must be protected
+/// by critical sections or an equivalent safe ownership scheme.
+pub struct RxHandoff {
+    receiving: RxFrame,
+    ready: RxFrame,
+    ready_pending: bool,
+    dropped_frames: u32,
+}
+
+impl RxHandoff {
+    /// Construct an empty two-buffer receiver.
+    ///
+    /// Const initialization allows eventual use in static
+    /// storage without heap allocation.
+    pub const fn new() -> Self {
+        Self {
+            receiving: RxFrame::new(),
+            ready: RxFrame::new(),
+            ready_pending: false,
+            dropped_frames: 0,
+        }
+    }
+
+    /// Append one byte to the currently receiving frame.
+    ///
+    /// This will eventually be called from the UART ISR.
+    ///
+    /// The method only stores a byte; it does not interpret
+    /// Modbus function codes or execute protocol commands.
+    pub fn push_byte(&mut self, byte: u8) -> bool {
+        self.receiving.push(byte)
+    }
+
+    /// Mark the current frame complete.
+    ///
+    /// This will eventually be called when RTU frame-gap
+    /// timing indicates the end of a request.
+    ///
+    /// Returns true if the frame was accepted into the
+    /// ready buffer, or false if it was discarded.
+    pub fn complete_frame(&mut self) -> bool {
+        // An empty frame is not a Modbus request.
+        if self.receiving.is_empty() {
+            return false;
+        }
+
+        // Never publish a frame that exceeded capacity.
+        if self.receiving.overflowed() {
+            self.receiving.reset();
+            self.dropped_frames = self.dropped_frames.saturating_add(1);
+            return false;
+        }
+
+        // The application has not consumed the previous
+        // completed frame.
+        //
+        // POLICY:
+        // Preserve the older completed frame and discard
+        // the newly received frame.
+        //
+        // WHY:
+        // Overwriting a pending request could silently
+        // replace a command before the server handles it.
+        if self.ready_pending {
+            self.receiving.reset();
+            self.dropped_frames = self.dropped_frames.saturating_add(1);
+            return false;
+        }
+
+        // Exchange the two buffers.
+        //
+        // The previous receiving buffer becomes ready,
+        // while the old (empty) ready buffer becomes
+        // available for new UART data.
+        core::mem::swap(&mut self.receiving, &mut self.ready);
+
+        // Prepare the new receiving buffer for the
+        // next Modbus request.
+        self.receiving.reset();
+
+        // Publish the completed frame.
+        self.ready_pending = true;
+
+        true
+    }
+
+    /// Report whether a completed frame is available.
+    pub fn has_ready_frame(&self) -> bool {
+        self.ready_pending
+    }
+
+    /// Borrow the completed frame without modifying it.
+    ///
+    /// Returns None when no completed frame is pending.
+    ///
+    /// IMPORTANT:
+    /// The returned reference must not be used across
+    /// an interrupt-visible buffer swap unless ownership
+    /// or synchronization guarantees its validity.
+    pub fn ready_frame(&self) -> Option<&[u8]> {
+        if self.ready_pending {
+            Some(self.ready.as_slice())
+        } else {
+            None
+        }
+    }
+
+    /// Release the completed frame after processing.
+    ///
+    /// This makes the ready buffer available for the
+    /// next completed request.
+    pub fn release_ready(&mut self) {
+        self.ready.reset();
+        self.ready_pending = false;
+    }
+
+    /// Number of completed frames discarded because
+    /// of overflow or an occupied ready buffer.
+    pub fn dropped_frames(&self) -> u32 {
+        self.dropped_frames
+    }
+}
+
+impl Default for RxHandoff {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod framing_tests {
     use super::*;
@@ -247,5 +512,94 @@ mod framing_tests {
         assert_eq!(request_length(&[0, 0x41]), Some(18));
 
         assert_eq!(request_length(&[247, 0x41]), None);
+    }
+
+    #[test]
+    fn rx_frame_stores_bytes_and_resets() {
+        let mut frame = super::RxFrame::new();
+
+        assert!(frame.is_empty());
+        assert!(frame.push(0x11));
+        assert!(frame.push(0x03));
+        assert_eq!(frame.as_slice(), &[0x11, 0x03]);
+        assert_eq!(frame.len(), 2);
+
+        frame.reset();
+
+        assert!(frame.is_empty());
+        assert!(!frame.overflowed());
+    }
+
+    #[test]
+    fn rx_frame_rejects_overflow() {
+        let mut frame = super::RxFrame::new();
+
+        for _ in 0..super::RX_CAPACITY {
+            assert!(frame.push(0xAA));
+        }
+
+        assert!(!frame.push(0xBB));
+        assert!(frame.overflowed());
+
+        // Once overflowed, the frame remains invalid.
+        assert!(!frame.push(0xCC));
+
+        frame.reset();
+
+        assert!(frame.push(0xDD));
+        assert!(!frame.overflowed());
+    }
+
+    #[test]
+    fn handoff_publishes_complete_frame() {
+        let mut rx = super::RxHandoff::new();
+
+        assert!(rx.push_byte(0xF7));
+        assert!(rx.push_byte(0x03));
+
+        assert!(rx.complete_frame());
+        assert!(rx.has_ready_frame());
+        assert_eq!(rx.ready_frame(), Some(&[0xF7, 0x03][..]));
+
+        rx.release_ready();
+
+        assert!(!rx.has_ready_frame());
+        assert_eq!(rx.ready_frame(), None);
+    }
+
+    #[test]
+    fn handoff_preserves_pending_frame() {
+        let mut rx = super::RxHandoff::new();
+
+        assert!(rx.push_byte(0x11));
+        assert!(rx.complete_frame());
+
+        // A second frame arrives before the first is consumed.
+        assert!(rx.push_byte(0x22));
+
+        // The second frame is dropped, preserving the first.
+        assert!(!rx.complete_frame());
+        assert_eq!(rx.ready_frame(), Some(&[0x11][..]));
+        assert_eq!(rx.dropped_frames(), 1);
+    }
+
+    #[test]
+    fn handoff_recovers_after_overflow() {
+        let mut rx = super::RxHandoff::new();
+
+        for _ in 0..super::RX_CAPACITY {
+            assert!(rx.push_byte(0xAA));
+        }
+
+        assert!(!rx.push_byte(0xBB));
+        assert!(!rx.complete_frame());
+
+        assert_eq!(rx.dropped_frames(), 1);
+        assert!(!rx.has_ready_frame());
+
+        // The next frame can be received normally.
+        assert!(rx.push_byte(0x55));
+        assert!(rx.complete_frame());
+        assert_eq!(rx.ready_frame(), Some(&[0x55][..]));
     }
 }
