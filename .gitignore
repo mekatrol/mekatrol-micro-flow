@@ -54,8 +54,9 @@ dkms.conf
 # debug information files
 *.dwo
 
-# Out-of-source CMake builds
-/build/
+# Project build output
+/core-controller/build/
+/triac-output-expander/target/
 
 # CMake and CTest output from non-standard or accidental in-source builds
 CMakeFiles/
@@ -79,4 +80,4 @@ CMakeUserPresets.json
 .venv/
 
 # Developer-local third-party dependencies
-/third_party/
+/core-controller/third_party/
