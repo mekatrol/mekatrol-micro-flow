@@ -189,6 +189,18 @@ pub fn read_next_from_main() -> RxQueueRead {
     critical_section::with(|cs| RX_QUEUE.borrow(cs).borrow_mut().read_next())
 }
 
+/// Execute a foreground operation while USART receive interrupts
+/// cannot modify the global event queue.
+///
+/// Keep the supplied operation short. In particular, do not perform
+/// Modbus processing, UART transmission, or flash writes inside it.
+pub fn with_rx_queue_locked<R>(f: impl FnOnce(&mut RxQueue) -> R) -> R {
+    critical_section::with(|cs| {
+        let mut queue = RX_QUEUE.borrow(cs).borrow_mut();
+        f(&mut queue)
+    })
+}
+
 /// Check whether the queue has overflowed.
 pub fn recover_overflow() -> bool {
     critical_section::with(|cs| RX_QUEUE.borrow(cs).borrow_mut().recover_overflow())

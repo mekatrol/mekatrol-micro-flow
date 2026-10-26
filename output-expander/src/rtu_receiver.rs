@@ -150,6 +150,21 @@ impl RtuReceiver {
         self.rejected = self.rejected.saturating_add(1);
     }
 
+    /// Invalidate all pending receive data after a transport-level failure.
+    ///
+    /// Unlike ordinary stream-loss recovery, this also discards a
+    /// completed frame that has not yet been processed by the server.
+    ///
+    /// Call this when the application cannot establish that a pending
+    /// frame was received before the transport failure.
+    pub fn invalidate_pending_frames(&mut self, now_ticks: u32) {
+        // Enter synchronization recovery and discard the partial frame.
+        self.on_stream_loss(now_ticks);
+
+        // Release any completed request that has not yet been processed.
+        self.frames.release_ready();
+    }
+
     /// Handle a UART parity, framing, noise, or overrun error.
     ///
     /// A corrupted UART byte invalidates the current Modbus RTU frame.
@@ -228,6 +243,34 @@ impl RtuReceiver {
         // byte begins a new independent RTU frame.
         self.invalid = false;
         self.last_byte_us = None;
+    }
+
+    /// Copy a completed RTU request into an application-owned buffer.
+    ///
+    /// Returns the request length when a completed frame is available.
+    /// Returns `None` if no frame is ready or the destination is too small.
+    ///
+    /// The ready frame is released only after a successful copy, allowing
+    /// the receiver to reuse its buffer for subsequent requests.
+    ///
+    /// This method does not validate the Modbus CRC or execute commands.
+    pub fn take_ready_frame(&mut self, destination: &mut [u8]) -> Option<usize> {
+        // Access the completed frame without modifying its contents.
+        let frame = self.frames.ready_frame()?;
+
+        // Never truncate a Modbus request.
+        if frame.len() > destination.len() {
+            return None;
+        }
+
+        // Copy the request into storage owned by the application.
+        let length = frame.len();
+        destination[..length].copy_from_slice(frame);
+
+        // Release the completed frame after the copy succeeds.
+        self.frames.release_ready();
+
+        Some(length)
     }
 }
 
@@ -408,5 +451,79 @@ mod tests {
             rx.frames().ready_frame(),
             Some(&[0x11, 0x03, 0x00, 0x00][..])
         );
+    }
+
+    #[test]
+    fn transport_failure_invalidates_pending_frame() {
+        let mut rx = RtuReceiver::new();
+
+        // Receive a complete four-byte request.
+        rx.on_byte(0x11, 100);
+        rx.on_byte(0x03, 200);
+        rx.on_byte(0x00, 300);
+        rx.on_byte(0x00, 400);
+
+        // Publish the request after the required silent interval.
+        rx.poll(400 + T3_5_US);
+
+        assert!(rx.frames().has_ready_frame());
+
+        // Simulate a transport failure before server processing.
+        rx.invalidate_pending_frames(400 + T3_5_US + 100);
+
+        // The application must not process the pending request.
+        assert!(!rx.frames().has_ready_frame());
+
+        // Recovery must not publish the damaged stream.
+        rx.poll(400 + 2 * T3_5_US + 100);
+        assert!(!rx.frames().has_ready_frame());
+    }
+
+    #[test]
+    fn completed_frame_can_be_copied_and_released() {
+        let mut rx = RtuReceiver::new();
+
+        // Receive an illustrative four-byte RTU frame.
+        // CRC validation belongs to the Modbus server.
+        rx.on_byte(0x11, 100);
+        rx.on_byte(0x03, 200);
+        rx.on_byte(0x00, 300);
+        rx.on_byte(0x00, 400);
+
+        // Publish the frame after the required silent interval.
+        rx.poll(400 + T3_5_US);
+
+        // Copy the completed request into application-owned storage.
+        let mut request = [0u8; 18];
+        let length = rx.take_ready_frame(&mut request);
+
+        assert_eq!(length, Some(4));
+        assert_eq!(&request[..4], &[0x11, 0x03, 0x00, 0x00]);
+
+        // The receiver must release its completed frame.
+        assert!(!rx.frames().has_ready_frame());
+
+        // Repeated reads must not return the same request.
+        assert_eq!(rx.take_ready_frame(&mut request), None);
+    }
+
+    #[test]
+    fn insufficient_destination_preserves_ready_frame() {
+        let mut rx = RtuReceiver::new();
+
+        // Receive and complete a four-byte frame.
+        rx.on_byte(0x11, 100);
+        rx.on_byte(0x03, 200);
+        rx.on_byte(0x00, 300);
+        rx.on_byte(0x00, 400);
+        rx.poll(400 + T3_5_US);
+
+        // A short destination must not receive a truncated request.
+        let mut short_buffer = [0u8; 2];
+
+        assert_eq!(rx.take_ready_frame(&mut short_buffer), None);
+
+        // The complete frame remains available for a later copy.
+        assert!(rx.frames().has_ready_frame());
     }
 }

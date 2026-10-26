@@ -55,7 +55,11 @@ impl<'d> Serial<'d> {
         let mut config = UartConfig::default();
 
         config.baudrate = RS485_BAUD;
-        config.data_bits = DataBits::DataBits8;
+        // The CH32V003 USART word length includes the parity bit.
+        //
+        // Modbus RTU uses eight data bits plus even parity.
+        // Therefore select a nine-bit hardware word.
+        config.data_bits = DataBits::DataBits9;
         config.parity = Parity::ParityEven;
         config.stop_bits = StopBits::STOP1;
 

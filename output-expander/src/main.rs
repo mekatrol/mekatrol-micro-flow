@@ -1,14 +1,11 @@
-//! Initial Modbus RTU integration for CH32V003.
+//! Interrupt-driven Modbus RTU firmware for the CH32V003.
 //!
-//! This bring-up version uses blocking UART reception.
+//! USART1 interrupts capture received bytes and hardware timestamps.
+//! The foreground loop reconstructs RTU frames using t1.5/t3.5
+//! silence intervals and passes completed requests to the server.
 //!
-//! UART transmission and RS-485 direction control are handled
-//! by the Serial driver rather than directly by main.rs.
-//!
-//! IMPORTANT:
-//! This is not yet a fully interrupt-driven Modbus RTU implementation.
-//! Proper frame-gap timing and nonblocking reception will be
-//! implemented in a later step.
+//! UART transmission remains blocking, with RS-485 direction
+//! controlled by the Serial driver.
 
 #![no_main]
 #![no_std]
@@ -33,8 +30,14 @@ use output_expander::serial::Serial;
 // Modbus server responsible for interpreting complete requests.
 use output_expander::server::Server;
 
-// UART framing helpers.
-use output_expander::uart::{RX_CAPACITY, RxHandoff, request_length};
+// Maximum supported Modbus RTU request size.
+use output_expander::uart::RX_CAPACITY;
+
+// Foreground processing and synchronized handoff of UART events.
+use output_expander::irq_consumer;
+
+// Modbus RTU receiver using hardware-timestamped bytes.
+use output_expander::rtu_receiver::RtuReceiver;
 
 // Device silicon unique identifier.
 use output_expander::uid;
@@ -80,6 +83,41 @@ unsafe fn USART1() {
     }
 }
 
+/// Enable USART1 receive and receive-error interrupts.
+///
+/// USART1 has already been configured by Serial::new().
+/// The foreground application must no longer call blocking_read()
+/// after this function enables interrupt-driven reception.
+///
+/// # Safety
+///
+/// The USART1 interrupt handler and global receive queue must be
+/// initialized before enabling the interrupt.
+unsafe fn enable_usart1_rx_interrupts() {
+    use hal::interrupt::InterruptExt;
+
+    let uart = hal::pac::USART1;
+
+    // Enable an interrupt whenever a received byte is available.
+    uart.ctlr1().modify(|w| {
+        w.set_rxneie(true);
+
+        // Report parity errors separately from valid received bytes.
+        w.set_peie(true);
+    });
+
+    // Enable framing, noise, and overrun error interrupts.
+    uart.ctlr3().modify(|w| {
+        w.set_eie(true);
+    });
+
+    // SAFETY:
+    // USART1 is configured and its interrupt handler is installed.
+    unsafe {
+        hal::interrupt::USART1.enable();
+    }
+}
+
 #[qingke_rt::entry]
 fn main() -> ! {
     // Initialize the microcontroller hardware abstraction layer.
@@ -87,6 +125,20 @@ fn main() -> ! {
     // This configures clocks and returns ownership of the
     // available hardware peripherals.
     let p = hal::init(hal::Config::default());
+
+    // Configure the status LED for USART1 interrupt diagnostics.
+    //
+    // Keep the pin configured as an output for the entire test.
+    // The interrupt handler will change its output state directly.
+    let _status_led = Output::new(p.PC1, Level::High, Default::default());
+
+    // Physical output channel 1.
+    //
+    // Logical output 1 corresponds to bit 0 of the Modbus
+    // output bitmap and is provisionally assigned to PC0.
+    //
+    // Initialize LOW so the output starts in its OFF state.
+    let mut output_1 = Output::new(p.PC0, Level::High, Default::default());
 
     // Initialize the free-running SysTick timer for Modbus RTU timing
     // and RS-485 turnaround delays.
@@ -164,179 +216,112 @@ fn main() -> ! {
     // and the MCU's unique silicon identifier.
     let mut server = Server::new(config, uid::read());
 
-    // Own two independent receive buffers.
+    // Frame timing uses the same SysTick tick rate as the USART interrupt.
     //
-    // WHAT:
-    // - receiving: accumulates bytes from USART1.
-    // - ready: holds a completed request for the Modbus server.
+    // RtuReceiver owns the two receive buffers and detects Modbus RTU
+    // frame boundaries using the t1.5 and t3.5 timing requirements.
+    let mut receiver = RtuReceiver::new_with_tick_rate(timer.ticks_per_us());
+
+    // Application-owned request buffer.
     //
-    // WHY:
-    // When interrupts are introduced, the UART receiver must
-    // be able to collect new bytes without modifying a frame
-    // that the application is processing.
-    let mut requests = RxHandoff::new();
+    // A completed request is copied here before Modbus processing,
+    // so Server::handle() does not need access to the receive buffers.
+    let mut request = [0u8; RX_CAPACITY];
 
     // Fixed-size response buffer.
     let mut response = [0u8; MAX_RESPONSE];
 
+    // Enable USART1 receive interrupts after the UART, Modbus server,
+    // RTU receiver, and application buffers have been initialized.
+    //
+    // From this point onward, the USART1 interrupt handler is the
+    // only code that consumes received bytes from the data register.
+    unsafe {
+        enable_usart1_rx_interrupts();
+    }
+
     // ---------------------------------------------------------
     // Main application loop
     // ---------------------------------------------------------
-    //
-    // TEMPORARY IMPLEMENTATION:
-    //
-    // The loop currently blocks while receiving UART data.
-    //
-    // Future implementation:
-    // 1. Process completed Modbus packets.
-    // 2. Update WS2812 status LED.
-    // 3. Service the watchdog when system health permits.
-    //
-    // UART reception will move to interrupts so these
-    // operations can run without being blocked.
 
     loop {
-        // -----------------------------------------------------
-        // Receive a Modbus request
-        // -----------------------------------------------------
+        // ---------------------------------------------------------
+        // Process queued UART receive events
+        // ---------------------------------------------------------
         //
-        // TEMPORARY:
-        // USART1 still uses blocking reception.
+        // USART1 timestamps incoming bytes in its interrupt handler.
+        // The foreground receiver uses those timestamps to detect
+        // RTU frame boundaries and reject malformed receive streams.
+        irq_consumer::drain_global_events(&mut receiver);
+
+        // ---------------------------------------------------------
+        // Copy a completed Modbus request
+        // ---------------------------------------------------------
         //
-        // The purpose of this step is to verify the two-buffer
-        // handoff before introducing interrupt-driven reception.
-
-        // Expected total request length.
+        // Check queue health and copy the completed request while
+        // USART interrupts are excluded by a critical section.
         //
-        // This remains temporary length-based framing.
-        // Proper Modbus RTU t1.5/t3.5 timing will be added later.
-        let mut expected = None;
-
-        let mut received_len = 0usize;
-        let mut receive_failed = false;
-
-        loop {
-            // Do not receive more than the current supported
-            // maximum Modbus request length.
-            if received_len == RX_CAPACITY {
-                break;
-            }
-
-            // Receive one byte using the blocking serial driver.
-            let byte = match serial.read_byte() {
-                Ok(byte) => byte,
-                Err(_) => {
-                    // An incomplete request must not be published
-                    // as a valid Modbus frame.
-                    receive_failed = true;
-                    break;
-                }
-            };
-
-            // Append the received byte to the active buffer.
-            //
-            // RxHandoff will eventually receive bytes from the
-            // USART interrupt rather than this blocking loop.
-            if !requests.push_byte(byte) {
-                receive_failed = true;
-                break;
-            }
-
-            received_len += 1;
-
-            // NOTE:
-            // RxHandoff intentionally does not expose its
-            // in-progress buffer. For this transitional step,
-            // we need the bytes to determine request length.
-            //
-            // That requires the small accessor added below.
-            expected = request_length(requests.receiving_bytes());
-
-            if let Some(n) = expected {
-                if n > RX_CAPACITY || received_len >= n {
-                    break;
-                }
-            }
-        }
-
-        // Reject incomplete requests and UART errors.
-        //
-        // The in-progress buffer must be cleared explicitly
-        // so that bytes from an invalid request cannot be
-        // combined with the next request.
-        if receive_failed || expected != Some(received_len) {
-            requests.discard_receiving();
+        // A None result means no request is currently available,
+        // or another queued event needs processing.
+        let Some(request_len) = irq_consumer::take_global_ready_frame(&mut receiver, &mut request)
+        else {
             continue;
-        }
-
-        // Publish the completed request into the ready buffer.
-        //
-        // This swaps the receiving and ready buffers, allowing
-        // future UART bytes to use independent storage.
-        if !requests.complete_frame() {
-            continue;
-        }
-
-        // Process the completed request.
-        //
-        // The server only receives a stable slice from the
-        // ready buffer, never the active receive buffer.
-        let outcome = {
-            let Some(frame) = requests.ready_frame() else {
-                continue;
-            };
-
-            server.handle(frame, &mut response)
         };
 
-        // Release the completed frame after the server has
-        // finished reading it.
+        // ---------------------------------------------------------
+        // Execute the Modbus request
+        // ---------------------------------------------------------
         //
-        // In the future interrupt-driven implementation,
-        // this operation will require synchronization.
-        requests.release_ready();
+        // The request now belongs to the foreground application.
+        // No receive-buffer borrow or critical section is held
+        // while the server interprets it.
+        let outcome = server.handle(&request[..request_len], &mut response);
 
-        // -----------------------------------------------------
-        // Apply application changes
-        // -----------------------------------------------------
-
+        // ---------------------------------------------------------
+        // Apply Modbus output channel 1 to physical GPIO PC0
+        // ---------------------------------------------------------
+        //
+        // The server stores eight output states in one byte.
+        // Bit 0 represents channel 1.
+        //
+        // Update PC0 only when a valid Modbus request changes
+        // the logical output state.
         if outcome.outputs_changed {
-            // TODO:
-            // Apply server.bank.outputs.mask() to the
-            // eight physical output GPIOs.
-            //
-            // Until implemented, Modbus writes only
-            // change the logical output state.
+            let mask = server.bank.outputs.mask();
+
+            if mask & 0x01 != 0 {
+                // Output 1 ON: drive PC0 HIGH.
+                output_1.set_low();
+            } else {
+                // Output 1 OFF: drive PC0 LOW.
+                output_1.set_high();
+            }
         }
 
         if outcome.config_changed {
             // TODO:
-            // Save server.bank.config to reserved flash.
-            //
-            // Until implemented, configuration changes
-            // will be lost when the device resets.
+            // Persist server.bank.config to reserved flash.
         }
 
-        // -----------------------------------------------------
-        // Transmit Modbus response
-        // -----------------------------------------------------
-
-        // Some Modbus requests must not generate a response.
+        // ---------------------------------------------------------
+        // Transmit the Modbus response
+        // ---------------------------------------------------------
         //
-        // Examples include broadcast commissioning commands.
+        // Broadcast requests and some commissioning operations
+        // intentionally produce no response.
         if outcome.response_len == 0 {
             continue;
         }
 
-        // Transmit the Modbus RTU response using the free-running SysTick timer.
-        //
-        // If UART transmission fails, keep the firmware running so it can
-        // continue processing subsequent Modbus requests.
+        // The existing Serial driver controls RS-485 direction,
+        // writes the response, waits for the final stop bit,
+        // and returns the transceiver to receive mode.
         if serial
             .write_response(&response[..outcome.response_len], &timer)
             .is_err()
         {
-            // TODO: Record the UART transmission error in a diagnostic counter.
+            // TODO:
+            // Record a UART transmission error in diagnostics.
         }
     }
 }
