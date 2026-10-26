@@ -1,12 +1,17 @@
 //! Hardware-independent Modbus RTU receive framing.
 //!
-//! The USART interrupt supplies bytes with monotonic microsecond timestamps.
-//! A periodic timer or foreground worker calls `poll` during silence. Neither
-//! operation parses Modbus commands or performs application work.
+//! The USART interrupt supplies bytes with monotonic hardware timestamps.
+//! A foreground worker consumes these events and calls `poll()` during
+//! silence to detect completed Modbus RTU frames.
 //!
-//! This module deliberately does not claim to provide interrupt safety:
-//! its owner must serialize ISR and foreground access using short critical
-//! sections or transfer ownership through a verified interrupt-safe channel.
+//! Timestamps are expressed in microseconds by default or hardware ticks
+//! when the receiver is constructed using `new_with_tick_rate()`.
+//!
+//! The receiver does not parse Modbus commands, validate CRCs, or perform
+//! application work. It only manages frame timing and buffering.
+//!
+//! This module is not independently interrupt-safe. Its owner must
+//! synchronize access or transfer events through an interrupt-safe queue.
 
 use crate::timer::{T1_5_US, T3_5_US};
 use crate::uart::RxHandoff;
@@ -29,6 +34,10 @@ pub struct RtuReceiver {
 
     /// Minimum silence required to complete a frame.
     t3_5: u32,
+
+    /// Whether incoming bytes must be discarded until an RTU t3.5
+    /// silent interval restores frame synchronization.
+    discarding: bool,
 }
 
 impl RtuReceiver {
@@ -64,6 +73,10 @@ impl RtuReceiver {
             frames: RxHandoff::new(),
             last_byte_us: None,
             invalid: false,
+
+            // Start synchronized and ready to receive a new RTU frame.
+            discarding: false,
+
             rejected: 0,
             t1_5,
             t3_5,
@@ -76,6 +89,24 @@ impl RtuReceiver {
     /// invalidates the entire frame. A gap of at least t3.5 finishes
     /// the preceding frame before this byte starts the next one.
     pub fn on_byte(&mut self, byte: u8, now_us: u32) {
+        // While synchronization is lost, ignore bytes until a complete
+        // t3.5 silent interval separates the damaged frame from a new one.
+        if self.discarding {
+            match self.last_byte_us {
+                Some(last) if now_us.wrapping_sub(last) >= self.t3_5 => {
+                    // Silence restored synchronization. Process this byte
+                    // as the beginning of a new frame.
+                    self.discarding = false;
+                    self.last_byte_us = None;
+                }
+                _ => {
+                    // The byte still belongs to the damaged stream.
+                    self.last_byte_us = Some(now_us);
+                    return;
+                }
+            }
+        }
+
         if let Some(last) = self.last_byte_us {
             let elapsed = now_us.wrapping_sub(last);
 
@@ -93,16 +124,60 @@ impl RtuReceiver {
         self.last_byte_us = Some(now_us);
     }
 
-    /// Discard the current frame after a parity, framing, or overrun error.
-    /// The remaining bytes are ignored until the next frame boundary.
-    pub fn on_uart_error(&mut self) {
-        self.invalid = true;
+    /// Handle loss of synchronization in the UART receive stream.
+    ///
+    /// This occurs when interrupt queue overflow causes received bytes
+    /// to be lost. The incomplete frame is discarded, and subsequent
+    /// bytes are ignored until a complete Modbus RTU t3.5 silent
+    /// interval has elapsed.
+    ///
+    /// `now_ticks` is the current free-running SysTick counter value.
+    pub fn on_stream_loss(&mut self, now_ticks: u32) {
+        // Discard the incomplete frame without touching a completed
+        // frame that may already be waiting for processing.
+        self.frames.discard_receiving();
+
+        // Reset the previous frame's validation state.
+        self.invalid = false;
+
+        // Ignore further bytes until a valid frame boundary is observed.
+        self.discarding = true;
+
+        // Start measuring the recovery silence interval.
+        self.last_byte_us = Some(now_ticks);
+
+        // Record the rejected frame for diagnostics.
+        self.rejected = self.rejected.saturating_add(1);
+    }
+
+    /// Handle a UART parity, framing, noise, or overrun error.
+    ///
+    /// A corrupted UART byte invalidates the current Modbus RTU frame.
+    /// The receiver must discard subsequent bytes until a complete
+    /// t3.5 silent interval restores synchronization.
+    ///
+    /// `now_ticks` is the timestamp associated with the UART error.
+    pub fn on_uart_error(&mut self, now_ticks: u32) {
+        // Use the same synchronization recovery as a lost UART event.
+        self.on_stream_loss(now_ticks);
     }
 
     /// Publish a frame only after at least t3.5 of silence.
     ///
     /// This must be driven by a timer even when no further UART bytes arrive.
     pub fn poll(&mut self, now_us: u32) {
+        // Recovery ends only after a full t3.5 interval without bytes.
+        if self.discarding {
+            if let Some(last) = self.last_byte_us {
+                if now_us.wrapping_sub(last) >= self.t3_5 {
+                    self.discarding = false;
+                    self.last_byte_us = None;
+                }
+            }
+
+            return;
+        }
+
         if let Some(last) = self.last_byte_us {
             if now_us.wrapping_sub(last) >= self.t3_5 {
                 self.finish();
@@ -261,9 +336,15 @@ mod tests {
     #[test]
     fn uart_error_discards_frame() {
         let mut rx = RtuReceiver::new();
+
+        // Begin receiving a frame.
         rx.on_byte(1, 0);
-        rx.on_uart_error();
-        rx.poll(T3_5_US);
+
+        // A UART error invalidates the incomplete frame.
+        rx.on_uart_error(100);
+
+        // The frame must not become available during recovery.
+        rx.poll(100 + T3_5_US);
         assert!(!rx.frames().has_ready_frame());
     }
 
@@ -286,6 +367,42 @@ mod tests {
 
         // At t3.5, the frame becomes available.
         rx.poll((400 + T3_5_US) * TICKS_PER_US);
+
+        assert_eq!(
+            rx.frames().ready_frame(),
+            Some(&[0x11, 0x03, 0x00, 0x00][..])
+        );
+    }
+
+    #[test]
+    fn stream_loss_discards_until_silence() {
+        let mut rx = RtuReceiver::new_with_tick_rate(1);
+
+        rx.on_byte(0x11, 0);
+        rx.on_byte(0x03, 100);
+
+        // The receive stream becomes unreliable.
+        rx.on_stream_loss(200);
+
+        // Remaining bytes of the damaged request must be ignored.
+        rx.on_byte(0x00, 300);
+        rx.on_byte(0x00, 400);
+
+        rx.poll(400 + T3_5_US - 1);
+        assert!(rx.frames().ready_frame().is_none());
+
+        // A complete silent interval restores synchronization.
+        rx.poll(400 + T3_5_US);
+
+        // A new, complete request is accepted.
+        let start = 400 + T3_5_US + 100;
+
+        rx.on_byte(0x11, start);
+        rx.on_byte(0x03, start + 100);
+        rx.on_byte(0x00, start + 200);
+        rx.on_byte(0x00, start + 300);
+
+        rx.poll(start + 300 + T3_5_US);
 
         assert_eq!(
             rx.frames().ready_frame(),

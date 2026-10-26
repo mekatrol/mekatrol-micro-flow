@@ -36,6 +36,11 @@ pub mod serial;
 /// Hardware-independent RTU timing and completed-frame publication.
 pub mod rtu_receiver;
 
+/// Foreground processor for timestamped USART receive events.
+///
+/// Transfers queued UART bytes and errors into the Modbus RTU receiver,
+/// allowing frame processing outside interrupt context.
+pub mod irq_consumer;
 /// Interrupt-safe USART1 receive event queue.
 ///
 /// Transfers timestamped UART events from the interrupt handler

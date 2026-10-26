@@ -42,14 +42,42 @@ use output_expander::uid;
 // Stop execution if an unrecoverable panic occurs.
 use panic_halt as _;
 
+use output_expander::irq_rx::{self, RxEvent};
+use output_expander::monotonic::current_ticks;
+
 /// USART1 receive interrupt handler.
 ///
 /// Invoked when the UART receives data or reports an enabled
 /// receive error. The completed Modbus request will be processed
 /// by the main loop, not inside this interrupt.
 #[hal::interrupt]
-fn USART1() {
-    // USART receive handling will be added here.
+unsafe fn USART1() {
+    let uart = hal::pac::USART1;
+
+    // Read status first.
+    let status = uart.statr().read();
+
+    let has_error = status.pe() || status.fe() || status.ne() || status.ore();
+
+    if !status.rxne() && !has_error {
+        return;
+    }
+
+    // Capture the timestamp before clearing RXNE.
+    let ticks = current_ticks();
+
+    // Reading DATAR after STATR consumes the received byte
+    // and clears the associated receive/error conditions.
+    let value = uart.datar().read().dr() as u8;
+
+    if has_error {
+        // The received byte is unreliable when a UART error is set.
+        // Preserve the error's interrupt timestamp for RTU recovery.
+        irq_rx::push_from_interrupt(RxEvent::Error { ticks });
+    } else {
+        // Preserve the byte and its original arrival timestamp.
+        irq_rx::push_from_interrupt(RxEvent::Byte { value, ticks });
+    }
 }
 
 #[qingke_rt::entry]

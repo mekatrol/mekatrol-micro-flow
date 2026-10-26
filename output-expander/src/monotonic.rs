@@ -16,6 +16,14 @@ pub struct Monotonic {
     ticks_per_us: u32,
 }
 
+/// Read the lower 32 bits of the free-running SysTick counter.
+///
+/// Safe to call from the USART1 interrupt handler after Monotonic::new().
+#[inline]
+pub fn current_ticks() -> u32 {
+    pac::SYSTICK.cnt().read() as u32
+}
+
 impl Monotonic {
     /// Configure SysTick to count continuously at HCLK.
     ///
@@ -58,7 +66,7 @@ impl Monotonic {
     /// Read the lower 32 bits of the hardware counter.
     #[inline]
     pub fn now_ticks(&self) -> u32 {
-        pac::SYSTICK.cnt().read() as u32
+        current_ticks()
     }
 
     /// Calculate elapsed microseconds since a previously captured tick value.

@@ -15,14 +15,29 @@ use critical_section::Mutex;
 /// plus any events received before the main loop drains the queue.
 pub const RX_QUEUE_CAPACITY: usize = 32;
 
-/// One event captured by the USART1 interrupt.
+/// An event captured by the USART receive interrupt.
+///
+/// Timestamps use the free-running SysTick counter and must be
+/// interpreted using the same tick rate as `RtuReceiver`.
 #[derive(Clone, Copy)]
 pub enum RxEvent {
-    /// A successfully received UART byte and its SysTick timestamp.
-    Byte { value: u8, ticks: u32 },
+    /// A successfully received UART byte and its arrival timestamp.
+    Byte {
+        /// Received byte value.
+        value: u8,
 
-    /// UART parity, framing, noise, or overrun error.
-    Error,
+        /// SysTick counter captured by the interrupt handler.
+        ticks: u32,
+    },
+
+    /// A UART parity, framing, noise, or overrun error.
+    ///
+    /// The timestamp marks when the interrupt observed the error.
+    /// The current RTU frame must be discarded after this event.
+    Error {
+        /// SysTick counter captured when the error was observed.
+        ticks: u32,
+    },
 }
 
 /// Fixed-size FIFO for interrupt-to-foreground communication.
@@ -164,7 +179,8 @@ mod tests {
             }));
         }
 
-        assert!(!queue.push(RxEvent::Error));
+        // A full queue must reject an additional UART error event.
+        assert!(!queue.push(RxEvent::Error { ticks: 1234 }));
         assert!(queue.recover_overflow());
         assert!(queue.pop().is_none());
         assert!(!queue.recover_overflow());
