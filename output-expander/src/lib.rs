@@ -16,15 +16,26 @@ pub mod modbus;
 pub mod outputs;
 /// Mapping between application state and Modbus registers.
 pub mod registers;
-/// Hardware-specific RS-485 transceiver direction control.
-///
-/// Supports both the production PCB (shared DE and /RE)
-/// and evaluation board (independent DE and /RE).
+// RS-485 direction control and USART1 access require
+// the CH32V003 hardware abstraction layer.
+//
+// These modules are compiled for firmware builds,
+// but excluded from native host unit tests.
+//
+// This allows the protocol and receive-buffer tests
+// to run on a development computer.
+#[cfg(target_arch = "riscv32")]
 pub mod rs485;
+
 /// Hardware-specific USART1 and RS-485 communication driver.
 ///
 /// Encapsulates UART reception, transmission, and bus direction.
+#[cfg(target_arch = "riscv32")]
 pub mod serial;
+
+/// Hardware-independent RTU timing and completed-frame publication.
+pub mod rtu_receiver;
+
 /// MODBUS message handling
 pub mod server;
 /// Conversion from operating state to status-LED colours.
