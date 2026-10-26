@@ -21,6 +21,10 @@ pub mod registers;
 /// Supports both the production PCB (shared DE and /RE)
 /// and evaluation board (independent DE and /RE).
 pub mod rs485;
+/// Hardware-specific USART1 and RS-485 communication driver.
+///
+/// Encapsulates UART reception, transmission, and bus direction.
+pub mod serial;
 /// MODBUS message handling
 pub mod server;
 /// Conversion from operating state to status-LED colours.
