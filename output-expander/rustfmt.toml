@@ -12,7 +12,7 @@ brace_style = "SameLineWhere"
 fn_single_line = false
 
 # Keep exactly one blank line between functions and other items
-blank_lines_lower_bound = 1
+blank_lines_lower_bound = 0
 blank_lines_upper_bound = 1
 
 # Keep function bodies expanded

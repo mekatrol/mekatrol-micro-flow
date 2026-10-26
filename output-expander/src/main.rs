@@ -1,127 +1,151 @@
-// This binary supplies its own embedded entry point instead of desktop `main`.
+//! Initial Modbus RTU integration for CH32V003.
+//!
+//! This bring-up version receives supported request sizes using blocking UART.
+//! It is NOT a complete timing-based RTU receiver: see notes accompanying file.
 #![no_main]
-// Bare-metal firmware cannot use Rust's operating-system-backed standard lib.
 #![no_std]
 
-// Give the hardware abstraction layer a short, readable local name.
 use ch32_hal as hal;
-
-// Import only the HAL types used below, keeping hardware roles visible.
 use hal::delay::Delay;
 use hal::gpio::{Level, Output};
-use hal::usart::{Config, DataBits, Parity, StopBits, Uart};
-
-// Link a panic handler that stops execution, which is safer than continuing
-// after an unrecoverable fault on an output-controlling device.
+use hal::usart::{Config as UartConfig, DataBits, Parity, StopBits, Uart};
+use output_expander::board::RS485_BAUD;
+use output_expander::config::Config as DeviceConfig;
+use output_expander::modbus::MAX_RESPONSE;
+use output_expander::server::Server;
+use output_expander::uid;
 use panic_halt as _;
 
-/// Temporary serial-monitor speed used by this hardware bring-up program.
+// Maximum supported request: broadcast UID assignment = 18 bytes.
+// Other requests are 8 bytes, except write-multiple-coils (10 bytes for 8 coils).
+const MAX_REQUEST: usize = 18;
 
-const BAUD_RATE: u32 = 19_200;
+/// Determine the full length of a supported RTU request.
+/// Return None until enough header bytes have arrived.
+fn request_length(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 2 {
+        return None;
+    }
 
-// This attribute installs the function as the reset-time firmware entry point.
+    match bytes[1] {
+        0x01 | 0x03 | 0x04 | 0x05 => Some(8),
+        0x0F => {
+            if bytes.len() < 7 {
+                None
+            } else {
+                Some(9 + bytes[6] as usize)
+            }
+        }
+        0x41 if bytes[0] == 0 => Some(18),
+        // Unsupported functions cannot be framed by length here.
+        _ => None,
+    }
+}
+
 #[qingke_rt::entry]
-/// Initialise the UART and echo complete lines over half-duplex RS-485.
-///
-/// The never type `!` documents that embedded firmware runs forever.
 
 fn main() -> ! {
-
-    // Initialise clocks and peripherals, then take unique ownership of them.
-    // Rust's ownership prevents the same hardware block being configured twice.
     let p = hal::init(hal::Config::default());
 
-    // The current PCB routes the transceiver's DE and /RE inputs separately.
-    // Drive both low before enabling the UART so the RS-485 bus starts in
-    // receive mode. A future PCB may connect both inputs to PC6.
+    // Existing prototype PCB: separate driver enable and receiver enable.
+    // Both low = receive, both high = transmit.
     let mut rs485_de = Output::new(p.PC6, Level::Low, Default::default());
 
-    // `/RE` is active-low, so low enables reception at startup.
     let mut rs485_re = Output::new(p.PC7, Level::Low, Default::default());
 
-    // Begin with the HAL's known-good UART settings, then customise framing.
-    let mut uart_config = Config::default();
+    let mut uart_config = UartConfig::default();
 
-    // Set the number of serial bits transmitted each second.
-    uart_config.baudrate = BAUD_RATE;
+    uart_config.baudrate = RS485_BAUD;
 
-    // Use the conventional serial-monitor default for initial hardware
-    // bring-up. Modbus can switch this to 8E1 when framing is implemented.
     uart_config.data_bits = DataBits::DataBits8;
 
-    // Disable parity for compatibility with ordinary serial monitors.
-    uart_config.parity = Parity::ParityNone;
+    uart_config.parity = Parity::ParityEven;
 
-    // Use one stop bit, producing the familiar 8N1 serial format.
     uart_config.stop_bits = StopBits::STOP1;
 
-    // USART1's selected CH32V003 mapping is RX=PD6 and TX=PD5.
-    // Blocking mode keeps this initial diagnostic program straightforward;
-    // unwrap halts on an impossible/unsupported peripheral configuration.
+    // Verify HAL parity/data-bits mapping against the pinned ch32-hal revision.
     let mut uart = Uart::new_blocking(p.USART1, p.PD6, p.PD5, uart_config).unwrap();
 
-    // Hold one line in fixed stack storage because no allocator is available.
-    let mut line = [0_u8; 64];
+    let mut config = DeviceConfig::default();
 
-    // Track how much of the array currently contains received data.
-    let mut line_len = 0;
+    // Temporary until persistent flash loading is implemented.
+    config.slave_address = 247;
 
-    // Firmware has no operating system to return to, so service the bus forever.
+    // Keep physical outputs safe; this demo does not drive the ULN2803 pins.
+    config.startup_outputs = 0;
+
+    let mut server = Server::new(config, uid::read());
+
+    let mut request = [0u8; MAX_REQUEST];
+
+    let mut response = [0u8; MAX_RESPONSE];
+
     loop {
+        // Blocking receive: no hardware timeout or t1.5/t3.5 gap handling yet.
+        // Resynchronization after noise/incomplete frames is not guaranteed.
+        let mut len = 0usize;
 
-        // Collect a complete serial-monitor message before replying. Echoing
-        // each byte immediately would contend with a host that is still
-        // transmitting the remaining bytes in the same RS-485 transaction.
-        if uart
-            // Borrow exactly the next free one-byte slot for the blocking read.
-            .blocking_read(&mut line[line_len..line_len + 1])
-            .is_err()
-        {
+        let mut expected = None;
 
-            // Discard a partial line after a UART error to avoid echoing damage.
-            line_len = 0;
+        loop {
+            if len == MAX_REQUEST {
+                break;
+            }
 
-            // Restart the loop and wait for a fresh message.
+            if uart.blocking_read(&mut request[len..len + 1]).is_err() {
+                break;
+            }
+
+            len += 1;
+
+            expected = request_length(&request[..len]);
+
+            if let Some(n) = expected {
+                if n > MAX_REQUEST || len >= n {
+                    break;
+                }
+            }
+        }
+
+        let Some(expected_len) = expected else {
+            continue;
+        };
+
+        if expected_len != len {
             continue;
         }
 
-        // The read succeeded, so include that byte in the buffered length.
-        line_len += 1;
+        let outcome = server.handle(&request[..len], &mut response);
 
-        // Keep receiving until newline or a full buffer ends the message.
-        if line[line_len - 1] != b'\n' && line_len < line.len() {
+        if outcome.outputs_changed {
+            // TODO: Apply server.bank.outputs.mask() to the actual eight GPIOs.
+            // Do not connect loads expecting Modbus writes to switch them yet.
+        }
 
+        if outcome.config_changed {
+            // TODO: Save server.bank.config to reserved flash page.
+            // Address changes currently last only until reset.
+        }
+
+        if outcome.response_len == 0 {
             continue;
         }
 
-        // Allow the host adapter to release its driver after the final stop
-        // bit. At 19,200 8N1 one character is about 521 microseconds.
+        // Allow the host's RS-485 driver to release the bus.
         Delay.delay_us(1_000);
 
-        // DE=HIGH enables the driver; /RE=HIGH disables the receiver. Keeping
-        // the pins at the same level also matches the planned single-PC6 PCB.
-        rs485_de.set_high();
-
-        // `/RE=HIGH` disables local reception to avoid hearing our own reply.
         rs485_re.set_high();
 
-        // Send only the filled portion, not unused zeroes in the fixed array.
-        if uart.blocking_write(&line[..line_len]).is_ok() {
+        rs485_de.set_high();
 
-            // Do not release the RS-485 driver until the final stop bit has
-            // physically left the USART shift register.
-            // Ignore the flush result here because direction must be restored
-            // regardless; production code can count/report this fault.
-            let _ = uart.blocking_flush();
-        }
+        // Wait for the UART to finish sending the final stop bit before
+        // returning to receive mode.
+        let _ = uart.blocking_write(&response[..outcome.response_len]);
 
-        // Disable the transmitter so another RS-485 participant may drive.
+        let _ = uart.blocking_flush();
+
         rs485_de.set_low();
 
-        // Re-enable the receiver in preparation for the next request.
         rs485_re.set_low();
-
-        // Reuse the line buffer from index zero; clearing bytes is unnecessary.
-        line_len = 0;
     }
 }

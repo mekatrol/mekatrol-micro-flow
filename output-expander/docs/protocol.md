@@ -21,6 +21,6 @@ Supported standard functions are 01, 03, 04, 05 and 0F. Function 06 remains disa
 
 The safe first release supports isolated-device assignment only. A controller must ensure exactly one unconfigured device is attached.
 
-`ASSIGN_UID` is a broadcast request with payload `03 | UID[12] | NEW_ID`, covered by the normal RTU CRC. Only an unconfigured device whose entire 96-bit UID matches may commit an ID from 1 through 247. It sends no broadcast response. The controller then addresses `NEW_ID`, reads input registers 3–8, and requires an exact UID match.
+`ASSIGN_UID` is a broadcast request with payload `03 | UID[12] | NEW_ID`, covered by the normal RTU CRC. A configured or unconfigured device whose entire 96-bit UID matches may commit an ID from 1 through 247. This allows the board owner to recover or reorganise bus addresses without erasing the device. It sends no broadcast response. The controller then addresses `NEW_ID`, reads input registers 3–8, and requires an exact UID match.
 
-Prefix discovery and unsolicited slot responses are not enabled: collision detection cannot be guaranteed without a separately specified and tested master timing protocol. Readdressing configured devices also remains disabled. CRC detects transmission errors but does not authenticate a commissioning command.
+Prefix discovery and unsolicited slot responses are not enabled: collision detection cannot be guaranteed without a separately specified and tested master timing protocol. Address assignment and readdressing require the complete UID, limiting the command to the intended board. CRC detects transmission errors but does not authenticate a commissioning command.

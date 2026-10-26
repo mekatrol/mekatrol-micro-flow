@@ -53,11 +53,39 @@ pub fn parse_assignment(payload: &[u8]) -> Option<Assignment> {
 
 /// Return whether the local device should accept this assignment.
 ///
-/// A configured device must not be moved accidentally, and an unconfigured
-/// device accepts only a request containing its exact silicon UID.
+/// Both configured and unconfigured devices may be assigned, but only a
+/// request containing the exact silicon UID can select this physical board.
 
-pub fn applies(assignment: &Assignment, local: &[u8; UID_BYTES], configured: bool) -> bool {
+pub fn applies(assignment: &Assignment, local: &[u8; UID_BYTES], _configured: bool) -> bool {
 
     // Dereference `local` to compare the array contents, not the references.
-    !configured && assignment.uid == *local
+    assignment.uid == *local
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn matching_uid_can_assign_or_readdress() {
+
+        let uid = [0xA5; UID_BYTES];
+        let assignment = Assignment { uid, address: 42 };
+
+        assert!(applies(&assignment, &uid, false));
+        assert!(applies(&assignment, &uid, true));
+    }
+
+    #[test]
+    fn wrong_uid_never_applies() {
+
+        let assignment = Assignment {
+            uid: [0xA5; UID_BYTES],
+            address: 42,
+        };
+
+        assert!(!applies(&assignment, &[0x5A; UID_BYTES], false));
+        assert!(!applies(&assignment, &[0x5A; UID_BYTES], true));
+    }
 }

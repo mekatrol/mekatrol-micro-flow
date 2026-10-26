@@ -148,7 +148,7 @@ Avoid unslotted responses from multiple unconfigured devices. Proposed subcomman
 | 12 | 48 | Reserved, all 0xFF | 0xFF |
 | 60 | 4 | CRC32 of bytes 0..59, little-endian | computed |
 
-- On blank/invalid record: use address state **UNCONFIGURED**, outputs OFF, safe defaults, and accept only documented commissioning commands; do not use address 0 as normal slave identity.
+- On blank/invalid record: use address state **247**, outputs OFF, safe defaults, and accept only documented commissioning commands; do not use address 0 as normal slave identity.
 - On startup: read and validate magic/version/address/ranges/CRC; do not write defaults automatically at every boot.
 - On config change: validate entire proposed config in RAM, prepare complete page image, wait for UART TX completion and idle bus, quiesce affected interrupts if required, unlock/erase/program/verify, restore interrupt state and respond/verify using defined protocol. Ensure watchdog timeout allows worst-case Flash operation; do not feed blindly from a stalled system.
 - **Power-loss warning:** single-page erase-and-rewrite is not power-fail atomic; interrupted erase can destroy old configuration. Implement detection and safe unconfigured recovery. If retaining the previous config after unexpected power loss is required, reserve **two** erase pages with generation numbers and commit markers, changing the linker plan accordingly.

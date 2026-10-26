@@ -26,3 +26,5 @@ pub mod uart;
 pub mod uid;
 /// Progress checks that decide whether the watchdog may be fed.
 pub mod watchdog;
+/// MODBUS message handling
+pub mod server;

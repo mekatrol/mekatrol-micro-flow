@@ -10,16 +10,17 @@ pub const MAGIC: u32 = 0x4D45_4B31;
 
 pub const VERSION: u16 = 1;
 
-/// Erased-flash value used to mean that no slave address is assigned.
+/// The default factory address is 247 so that we can read the UID from a device that has not been assigned an ID already
+/// Address 0 (zero) is reserved for broadcast messages in MODBUS so should not be used for this purpose
 
-pub const UNCONFIGURED: u8 = 0xFF;
+pub const FACTORY_ADDRESS: u8 = 247;
 
 // Configuration is a compact value that can be copied and compared in tests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Settings that survive power cycles after being stored in flash.
 
 pub struct Config {
-    /// Modbus address, or `UNCONFIGURED` before commissioning.
+    /// Modbus address, or `247` before commissioning.
     pub slave_address: u8,
     /// Output bit mask applied when firmware starts.
     pub startup_outputs: u8,
@@ -37,7 +38,7 @@ impl Default for Config {
 
         // Start unaddressed with outputs off and a five-second timeout.
         Self {
-            slave_address: UNCONFIGURED,
+            slave_address: FACTORY_ADDRESS,
             startup_outputs: 0,
             comms_timeout_ms: 5000,
             timeout_outputs: 0,
@@ -52,7 +53,7 @@ impl Config {
     pub const fn is_valid(&self) -> bool {
 
         // Modbus reserves zero and 248..254; 255 is our unconfigured marker.
-        self.slave_address == UNCONFIGURED || (self.slave_address >= 1 && self.slave_address <= 247)
+        self.slave_address == 247 || (self.slave_address >= 1 && self.slave_address <= 247)
     }
 
     /// Report whether the device has a usable unicast Modbus address.
