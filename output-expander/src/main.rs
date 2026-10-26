@@ -12,46 +12,27 @@ use hal::usart::{Config as UartConfig, DataBits, Parity, StopBits, Uart};
 use output_expander::board::RS485_BAUD;
 use output_expander::config::Config as DeviceConfig;
 use output_expander::modbus::MAX_RESPONSE;
+use output_expander::rs485::Rs485Direction;
 use output_expander::server::Server;
+use output_expander::uart::{MAX_REQUEST, request_length};
 use output_expander::uid;
 use panic_halt as _;
-
-// Maximum supported request: broadcast UID assignment = 18 bytes.
-// Other requests are 8 bytes, except write-multiple-coils (10 bytes for 8 coils).
-const MAX_REQUEST: usize = 18;
-
-/// Determine the full length of a supported RTU request.
-/// Return None until enough header bytes have arrived.
-fn request_length(bytes: &[u8]) -> Option<usize> {
-    if bytes.len() < 2 {
-        return None;
-    }
-
-    match bytes[1] {
-        0x01 | 0x03 | 0x04 | 0x05 => Some(8),
-        0x0F => {
-            if bytes.len() < 7 {
-                None
-            } else {
-                Some(9 + bytes[6] as usize)
-            }
-        }
-        0x41 if bytes[0] == 0 => Some(18),
-        // Unsupported functions cannot be framed by length here.
-        _ => None,
-    }
-}
 
 #[qingke_rt::entry]
 
 fn main() -> ! {
     let p = hal::init(hal::Config::default());
 
-    // Existing prototype PCB: separate driver enable and receiver enable.
-    // Both low = receive, both high = transmit.
-    let mut rs485_de = Output::new(p.PC6, Level::Low, Default::default());
+    // Evaluation board:
+    // PC6 controls DE.
+    // PC7 controls the active-low receiver enable (/RE).
+    //
+    // Both signals start LOW so the transceiver begins
+    // in receive mode without driving the RS-485 bus.
+    let de = Output::new(p.PC6, Level::Low, Default::default());
+    let re = Output::new(p.PC7, Level::Low, Default::default());
 
-    let mut rs485_re = Output::new(p.PC7, Level::Low, Default::default());
+    let mut rs485 = Rs485Direction::new(de, Some(re));
 
     let mut uart_config = UartConfig::default();
 
@@ -134,9 +115,8 @@ fn main() -> ! {
         // Allow the host's RS-485 driver to release the bus.
         Delay.delay_us(1_000);
 
-        rs485_re.set_high();
-
-        rs485_de.set_high();
+        // Enable the RS-485 transmitter before writing the reply.
+        rs485.transmit();
 
         // Wait for the UART to finish sending the final stop bit before
         // returning to receive mode.
@@ -144,8 +124,8 @@ fn main() -> ! {
 
         let _ = uart.blocking_flush();
 
-        rs485_de.set_low();
-
-        rs485_re.set_low();
+        // Return to receive mode only after UART transmission
+        // has completed, including the final stop bit.
+        rs485.receive();
     }
 }

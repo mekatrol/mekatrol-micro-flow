@@ -16,6 +16,13 @@ pub mod modbus;
 pub mod outputs;
 /// Mapping between application state and Modbus registers.
 pub mod registers;
+/// Hardware-specific RS-485 transceiver direction control.
+///
+/// Supports both the production PCB (shared DE and /RE)
+/// and evaluation board (independent DE and /RE).
+pub mod rs485;
+/// MODBUS message handling
+pub mod server;
 /// Conversion from operating state to status-LED colours.
 pub mod status_led;
 /// Modbus character-gap timing calculations.
@@ -26,5 +33,3 @@ pub mod uart;
 pub mod uid;
 /// Progress checks that decide whether the watchdog may be fed.
 pub mod watchdog;
-/// MODBUS message handling
-pub mod server;
