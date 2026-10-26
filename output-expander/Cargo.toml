@@ -5,14 +5,20 @@ edition = "2024"
 publish = false
 description = "Firmware for CH32V003-based Mekatrol output expansion boards"
 
-[lib]
-path = "src/lib.rs"
+[target.'cfg(all(target_arch = "riscv32", target_os = "none"))'.dependencies]
+ch32-hal = { git = "https://github.com/ch32-rs/ch32-hal", features = [
+    "ch32v003f4p6",
+    "memory-x",
+    "rt",
+] }
+panic-halt = "1.0"
+qingke-rt = { version = "0.8.2", features = ["highcode"] }
 
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = "s"
-strip = true
+strip = false
 
 [profile.dev]
 opt-level = 1
