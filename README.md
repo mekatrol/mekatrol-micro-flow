@@ -17,14 +17,15 @@ cmake --build --preset host-debug
 ctest --preset host-debug
 ```
 
-### [Triac Output Expander](triac-output-expander/README.md)
+### [Output Expander](output-expander/README.md)
 
-Firmware for the independent eight-channel triac output expansion board. It is
-a Rust `no_std` project and does not share code or build tooling with the core
+Firmware for the independent eight-channel output expansion boards, using the
+WCH CH32V003 processor. Triac and FET hardware variants are supported by this
+Rust `no_std` project, which does not share code or build tooling with the core
 controller.
 
 ```sh
-cd triac-output-expander
+cd output-expander
 cargo test
 ```
 

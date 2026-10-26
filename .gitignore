@@ -56,7 +56,7 @@ dkms.conf
 
 # Project build output
 /core-controller/build/
-/triac-output-expander/target/
+/output-expander/target/
 
 # CMake and CTest output from non-standard or accidental in-source builds
 CMakeFiles/

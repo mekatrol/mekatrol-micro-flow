@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "triac-output-expander"
+name = "output-expander"
 version = "0.1.0"

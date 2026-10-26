@@ -1,8 +1,9 @@
 [package]
-name = "triac-output-expander"
+name = "output-expander"
 version = "0.1.0"
 edition = "2024"
 publish = false
+description = "Firmware for CH32V003-based Mekatrol output expansion boards"
 
 [lib]
 path = "src/lib.rs"

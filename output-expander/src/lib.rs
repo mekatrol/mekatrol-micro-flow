@@ -1,9 +1,9 @@
 #![no_std]
 
-/// Number of independently controlled triac outputs on the board.
+/// Number of independently controlled outputs on the board.
 pub const OUTPUT_COUNT: usize = 8;
 
-/// Logical state of the eight triac outputs.
+/// Logical state shared by the eight-output hardware variants.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OutputState(u8);
 
