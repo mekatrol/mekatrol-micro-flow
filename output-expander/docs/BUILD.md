@@ -26,12 +26,22 @@ CH32V003F4P6 peripheral definitions, memory layout, and runtime support.
 
 ## Firmware behavior
 
-The firmware configures PC1 as an active-low output. It turns LED1 on for 500
-ms and off for 500 ms, giving a one-second period and 50 percent duty cycle.
+The current firmware is a minimal half-duplex RS-485 echo test. USART1 uses
+PD5 for TX and PD6 for RX at 19,200 baud, 8 data bits, no parity, and one stop
+bit (8N1). Input is buffered until a newline is received (or the 64-byte
+buffer fills), then the complete message is sent back unchanged after a short
+RS-485 turnaround delay.
 
-The board requires a jumper from P4 pin 1 (`LED1`) to P2 pin 14 (`PC1`). See
-[PROJECT_SETUP.md](PROJECT_SETUP.md) for the complete board and programmer
-wiring.
+PC6 drives the transceiver's active-high DE input and PC7 drives its
+active-low /RE input. Firmware deliberately gives both pins the same level:
+LOW while receiving and HIGH while transmitting. This matches the planned
+hardware revision where DE and /RE are tied together and driven by PC6. The
+driver remains enabled until USART transmission-complete indicates that the
+last stop bit has left the pin.
+
+Configure the host adapter for 19,200 8N1 and disable local echo when testing.
+This firmware is intentionally blocking; it is a physical-transport bring-up
+step, not the final interrupt-driven transport or a Modbus implementation.
 
 ## Flashing
 
@@ -50,7 +60,8 @@ wlink -v flash <firmware-elf>
 ```
 
 A successful flash reports the attached CH32V003, programs flash memory,
-resets the target, and resumes execution. LED1 should then blink continuously.
+resets the target, and resumes execution. Bytes sent by an attached RS-485
+host should then be returned unchanged.
 
 If `wlink` reports `failed to open device (errno 13)`, install the Linux udev
 rule documented in [PROJECT_SETUP.md](PROJECT_SETUP.md), then unplug and
