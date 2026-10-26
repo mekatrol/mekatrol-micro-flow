@@ -436,6 +436,7 @@ dependencies = [
  "ch32-hal",
  "critical-section",
  "panic-halt",
+ "qingke",
  "qingke-rt",
 ]
 

@@ -40,7 +40,6 @@ pub mod rtu_receiver;
 ///
 /// Transfers timestamped UART events from the interrupt handler
 /// to the foreground Modbus RTU receiver.
-#[cfg(target_arch = "riscv32")]
 pub mod irq_rx;
 /// Free-running SysTick timer for Modbus RTU timing and hardware delays.
 ///
