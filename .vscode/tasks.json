@@ -1,0 +1,92 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Core Controller: Configure",
+      "type": "process",
+      "command": "cmake",
+      "args": ["--preset", "host-debug"],
+      "options": {
+        "cwd": "${workspaceFolder}/core-controller"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Core Controller: Build",
+      "type": "process",
+      "command": "cmake",
+      "args": ["--build", "--preset", "host-debug"],
+      "options": {
+        "cwd": "${workspaceFolder}/core-controller"
+      },
+      "dependsOn": "Core Controller: Configure",
+      "problemMatcher": "$gcc",
+      "group": "build"
+    },
+    {
+      "label": "Core Controller: Test",
+      "type": "process",
+      "command": "ctest",
+      "args": ["--preset", "host-debug"],
+      "options": {
+        "cwd": "${workspaceFolder}/core-controller"
+      },
+      "dependsOn": "Core Controller: Build",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Output Expander: Format Check",
+      "type": "process",
+      "command": "cargo",
+      "args": ["fmt", "--check"],
+      "options": {
+        "cwd": "${workspaceFolder}/output-expander"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Output Expander: Test",
+      "type": "process",
+      "command": "cargo",
+      "args": ["test"],
+      "options": {
+        "cwd": "${workspaceFolder}/output-expander"
+      },
+      "problemMatcher": "$rustc",
+      "group": "test"
+    },
+    {
+      "label": "Output Expander: Clippy",
+      "type": "process",
+      "command": "cargo",
+      "args": ["clippy", "--all-targets", "--", "-D", "warnings"],
+      "options": {
+        "cwd": "${workspaceFolder}/output-expander"
+      },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "Output Expander: Check",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Output Expander: Format Check",
+        "Output Expander: Test",
+        "Output Expander: Clippy"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Check All Projects",
+      "dependsOn": [
+        "Core Controller: Test",
+        "Output Expander: Check"
+      ],
+      "problemMatcher": [],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    }
+  ]
+}

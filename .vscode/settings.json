@@ -1,0 +1,27 @@
+{
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/core-controller/build/host-debug",
+    "--query-driver=**/arm-none-eabi-gcc,**/riscv32-unknown-elf-gcc"
+  ],
+  "clangd.fallbackFlags": [
+    "-xc",
+    "-std=c11",
+    "-I${workspaceFolder}/core-controller/src/lib/include",
+    "-I${workspaceFolder}/core-controller/src/lib/runtime/include",
+    "-I${workspaceFolder}/core-controller/src/boards/rpi/raspberry-pi-pico",
+    "-I${workspaceFolder}/core-controller/src/boards/rpi/raspberry-pi-pico-2",
+    "-I${workspaceFolder}/core-controller/src/boards/rpi/rp2040",
+    "-I${workspaceFolder}/core-controller/src/boards/rpi/rp2350"
+  ],
+  "cmake.configureOnOpen": true,
+  "cmake.sourceDirectory": "${workspaceFolder}/core-controller",
+  "cmake.useCMakePresets": "always",
+  "editor.semanticHighlighting.enabled": true,
+  "files.associations": {
+    "*.h": "c"
+  },
+  "rust-analyzer.linkedProjects": [
+    "${workspaceFolder}/output-expander/Cargo.toml"
+  ]
+}
