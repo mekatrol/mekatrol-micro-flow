@@ -458,6 +458,29 @@ impl RxHandoff {
     pub fn dropped_frames(&self) -> u32 {
         self.dropped_frames
     }
+
+    /// Borrow the bytes currently being received.
+    ///
+    /// WHY:
+    /// The temporary blocking receiver still needs to
+    /// inspect partial requests to determine their length.
+    ///
+    /// IMPORTANT:
+    /// Do not use this accessor from the main loop after
+    /// interrupt-driven reception is enabled. The interrupt
+    /// could modify the buffer concurrently.
+    pub fn receiving_bytes(&self) -> &[u8] {
+        self.receiving.as_slice()
+    }
+
+    /// Discard an incomplete or invalid receive frame.
+    ///
+    /// WHY:
+    /// A UART error or unsupported request must not leave
+    /// partial bytes that contaminate the next request.
+    pub fn discard_receiving(&mut self) {
+        self.receiving.reset();
+    }
 }
 
 impl Default for RxHandoff {
