@@ -1,0 +1,26 @@
+# rustfmt.toml
+
+# The style options below require the nightly rustfmt selected by
+# rust-toolchain.toml. Without this opt-in, rustfmt silently falls back to the
+# stable defaults for unstable options such as `brace_style`.
+unstable_features = true
+
+# Keep opening braces on the same line as function signatures
+brace_style = "SameLineWhere"
+
+# Prevent short functions from being collapsed onto one line
+fn_single_line = false
+
+# Keep exactly one blank line between functions and other items
+blank_lines_lower_bound = 1
+blank_lines_upper_bound = 1
+
+# Keep function bodies expanded
+fn_params_layout = "Tall"
+
+# Standard indentation
+hard_tabs = false
+tab_spaces = 4
+
+# Maximum line width
+max_width = 100
