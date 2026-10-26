@@ -40,6 +40,21 @@ pub enum RxEvent {
     },
 }
 
+/// Result of retrieving an event from the interrupt receive queue.
+///
+/// Overflow takes priority over queued data because the receive
+/// stream is no longer trustworthy after an event has been lost.
+pub enum RxQueueRead {
+    /// An event was retrieved successfully.
+    Event(RxEvent),
+
+    /// No events are currently queued.
+    Empty,
+
+    /// Receive data was lost; the queue has been cleared.
+    Overflow,
+}
+
 /// Fixed-size FIFO for interrupt-to-foreground communication.
 pub struct RxQueue {
     events: [Option<RxEvent>; RX_QUEUE_CAPACITY],
@@ -61,16 +76,37 @@ impl RxQueue {
         }
     }
 
-    /// Insert one event, returning false if the queue is full.
+    /// Insert a UART receive event into the circular queue.
+    ///
+    /// Returns `true` when the event is stored successfully.
+    ///
+    /// Returns `false` when the queue is full or a previous overflow
+    /// has made the queued receive stream unreliable.
+    ///
+    /// Once overflow occurs, further events are rejected until
+    /// `recover_overflow()` explicitly resets the queue.
     pub fn push(&mut self, event: RxEvent) -> bool {
+        // Keep rejecting events after an overflow, even if the
+        // foreground consumer has freed some queue space.
+        if self.overflowed {
+            return false;
+        }
+
+        // Detect queue exhaustion and latch the overflow condition.
         if self.len == RX_QUEUE_CAPACITY {
             self.overflowed = true;
             return false;
         }
 
+        // Store the event at the current circular-buffer write position.
         self.events[self.head] = Some(event);
+
+        // Advance the write position, wrapping at the queue boundary.
         self.head = (self.head + 1) % RX_QUEUE_CAPACITY;
+
+        // Record the newly occupied queue slot.
         self.len += 1;
+
         true
     }
 
@@ -104,6 +140,23 @@ impl RxQueue {
 
         true
     }
+
+    /// Retrieve the next event, checking for overflow first.
+    ///
+    /// If overflow occurred, discard all queued events rather than
+    /// returning potentially incomplete Modbus RTU data.
+    pub fn read_next(&mut self) -> RxQueueRead {
+        // A lost event invalidates the queued receive stream.
+        if self.recover_overflow() {
+            return RxQueueRead::Overflow;
+        }
+
+        // Return the oldest event, or indicate that the queue is empty.
+        match self.pop() {
+            Some(event) => RxQueueRead::Event(event),
+            None => RxQueueRead::Empty,
+        }
+    }
 }
 
 /// Shared queue protected by short critical sections.
@@ -125,6 +178,15 @@ pub fn push_from_interrupt(event: RxEvent) {
 /// Pop one event from the foreground loop.
 pub fn pop_from_main() -> Option<RxEvent> {
     critical_section::with(|cs| RX_QUEUE.borrow(cs).borrow_mut().pop())
+}
+
+/// Atomically retrieve one UART event or detect queue overflow.
+///
+/// The overflow check and event retrieval occur within the same
+/// critical section, preventing the USART interrupt from changing
+/// queue state between these operations.
+pub fn read_next_from_main() -> RxQueueRead {
+    critical_section::with(|cs| RX_QUEUE.borrow(cs).borrow_mut().read_next())
 }
 
 /// Check whether the queue has overflowed.
@@ -236,5 +298,36 @@ mod tests {
         }
 
         assert!(queue.pop().is_none());
+    }
+
+    #[test]
+    fn overflow_remains_latched_until_recovery() {
+        let mut queue = RxQueue::new();
+
+        // Fill the receive queue to capacity.
+        for ticks in 0..RX_QUEUE_CAPACITY as u32 {
+            assert!(queue.push(RxEvent::Byte { value: 0x55, ticks }));
+        }
+
+        // Exceeding capacity latches the overflow condition.
+        assert!(!queue.push(RxEvent::Error { ticks: 1000 }));
+
+        // Removing an event frees space but must not clear overflow.
+        assert!(queue.pop().is_some());
+
+        // Reject subsequent events until explicit recovery.
+        assert!(!queue.push(RxEvent::Byte {
+            value: 0x11,
+            ticks: 1100,
+        }));
+
+        // Recovery discards the unreliable queued events.
+        assert!(queue.recover_overflow());
+
+        // New events can be accepted after recovery.
+        assert!(queue.push(RxEvent::Byte {
+            value: 0x22,
+            ticks: 1200,
+        }));
     }
 }
