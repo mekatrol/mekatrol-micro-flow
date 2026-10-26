@@ -25,3 +25,6 @@ strip = false
 
 [profile.dev]
 opt-level = 1
+
+[dependencies]
+critical-section = "1.2"

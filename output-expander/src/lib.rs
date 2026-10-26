@@ -36,6 +36,12 @@ pub mod serial;
 /// Hardware-independent RTU timing and completed-frame publication.
 pub mod rtu_receiver;
 
+/// Interrupt-safe USART1 receive event queue.
+///
+/// Transfers timestamped UART events from the interrupt handler
+/// to the foreground Modbus RTU receiver.
+#[cfg(target_arch = "riscv32")]
+pub mod irq_rx;
 /// Free-running SysTick timer for Modbus RTU timing and hardware delays.
 ///
 /// Provides microsecond-resolution timing without resetting the SysTick

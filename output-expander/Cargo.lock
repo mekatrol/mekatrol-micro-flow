@@ -434,6 +434,7 @@ name = "output-expander"
 version = "0.1.0"
 dependencies = [
  "ch32-hal",
+ "critical-section",
  "panic-halt",
  "qingke-rt",
 ]
