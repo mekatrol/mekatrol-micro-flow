@@ -10,9 +10,7 @@ pub const MAGIC: u32 = 0x4D45_4B31;
 
 pub const VERSION: u16 = 1;
 
-/// The default factory address is 247 so that we can read the UID from a device that has not been assigned an ID already
-/// Address 0 (zero) is reserved for broadcast messages in MODBUS so should not be used for this purpose
-
+/// Reachable factory address used until persistent commissioning is available.
 pub const FACTORY_ADDRESS: u8 = 247;
 
 // Configuration is a compact value that can be copied and compared in tests.
@@ -20,7 +18,7 @@ pub const FACTORY_ADDRESS: u8 = 247;
 /// Settings that survive power cycles after being stored in flash.
 
 pub struct Config {
-    /// Modbus address, or `247` before commissioning.
+    /// Protocol address; factory-fresh devices use address 247.
     pub slave_address: u8,
     /// Output bit mask applied when firmware starts.
     pub startup_outputs: u8,
@@ -35,7 +33,6 @@ pub struct Config {
 // `Default` defines safe, usable settings for a blank device.
 impl Default for Config {
     fn default() -> Self {
-
         // Start unaddressed with outputs off and a five-second timeout.
         Self {
             slave_address: FACTORY_ADDRESS,
@@ -51,23 +48,19 @@ impl Config {
     /// Check whether all fields that have restricted values are legal.
 
     pub const fn is_valid(&self) -> bool {
-
-        // Modbus reserves zero and 248..254; 255 is our unconfigured marker.
-        self.slave_address == 247 || (self.slave_address >= 1 && self.slave_address <= 247)
+        self.slave_address >= 1 && self.slave_address <= 0xFE
     }
 
-    /// Report whether the device has a usable unicast Modbus address.
+    /// Report whether the device has a usable unicast protocol address.
 
     pub const fn is_configured(&self) -> bool {
-
         // Only the standard slave-address range counts as commissioned.
-        self.slave_address >= 1 && self.slave_address <= 247
+        self.slave_address >= 1 && self.slave_address <= 0xFE
     }
 
     /// Serialise settings into the versioned, checksummed flash format.
 
     pub fn encode(&self) -> [u8; RECORD_LEN] {
-
         // Initialise unused bytes to erased-flash 0xFF for deterministic data.
         let mut out = [0xFF; RECORD_LEN];
 
@@ -104,13 +97,11 @@ impl Config {
     /// Validate and decode one raw flash record.
 
     pub fn decode(raw: &[u8; RECORD_LEN]) -> Option<Self> {
-
         // `try_into` checks the slice length; `?` turns failure into `None`.
         // Reject records belonging to another format or schema version.
         if u32::from_le_bytes(raw[0..4].try_into().ok()?) != MAGIC
             || u16::from_le_bytes(raw[4..6].try_into().ok()?) != VERSION
         {
-
             return None;
         }
 
@@ -119,7 +110,6 @@ impl Config {
         if u32::from_le_bytes(raw[60..64].try_into().ok()?) != crc32(&raw[..60])
             || raw[12..60].iter().any(|b| *b != 0xFF)
         {
-
             return None;
         }
 
@@ -140,19 +130,16 @@ impl Config {
 /// Compute the standard reflected CRC-32 used to detect record corruption.
 
 pub fn crc32(bytes: &[u8]) -> u32 {
-
     // The algorithm begins with every accumulator bit set.
     let mut crc = 0xFFFF_FFFFu32;
 
     // Mix every input byte into the low end of the accumulator.
     for &byte in bytes {
-
         // Widen the byte before XOR so it matches the accumulator type.
         crc ^= byte as u32;
 
         // Process each of the byte's eight bits, least-significant first.
         for _ in 0..8 {
-
             // `wrapping_sub(bit)` becomes all ones when bit is one, selecting
             // the polynomial without a branch; otherwise it selects zero.
             crc = (crc >> 1) ^ (0xEDB8_8320 & (0u32.wrapping_sub(crc & 1)));
@@ -175,7 +162,6 @@ mod tests {
     /// Check successful round-tripping and rejection after bit corruption.
 
     fn round_trip_and_corruption() {
-
         // Use the known-safe default as representative configuration data.
         let c = Config::default();
 

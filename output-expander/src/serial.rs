@@ -28,7 +28,7 @@ impl<'d> Serial<'d> {
     /// Initialize USART1 and construct the serial driver.
     ///
     /// WHAT:
-    /// Configures USART1 for Modbus RTU at 19200 baud, 8E1.
+    /// Configures USART1 for the device protocol at 19200 baud, 8N1.
     ///
     /// WHY:
     /// UART configuration belongs with the hardware driver,
@@ -49,18 +49,17 @@ impl<'d> Serial<'d> {
         tx: Peri<'d, hal::peripherals::PD5>,
         direction: Rs485Direction<'d>,
     ) -> Self {
-        // Configure Modbus RTU serial communication.
+        // Configure proprietary protocol serial communication.
         //
-        // 19200 baud, 8 data bits, even parity, 1 stop bit.
+        // 19200 baud, 8 data bits, no parity, 1 stop bit.
         let mut config = UartConfig::default();
 
         config.baudrate = RS485_BAUD;
         // The CH32V003 USART word length includes the parity bit.
         //
-        // Modbus RTU uses eight data bits plus even parity.
-        // Therefore select a nine-bit hardware word.
-        config.data_bits = DataBits::DataBits9;
-        config.parity = Parity::ParityEven;
+        // The protocol uses eight data bits without parity.
+        config.data_bits = DataBits::DataBits8;
+        config.parity = Parity::ParityNone;
         config.stop_bits = StopBits::STOP1;
 
         // Initialize the hardware UART.
@@ -95,13 +94,13 @@ impl<'d> Serial<'d> {
         Ok(byte[0])
     }
 
-    /// Transmit a complete Modbus RTU response.
+    /// Transmit a complete encoded protocol response.
     ///
     /// Handles the RS-485 turnaround delay, transmitter
     /// enable, UART transmission, and return to receive mode.
     ///
     /// Uses the shared free-running SysTick timer to avoid
-    /// resetting the counter used for Modbus RTU frame timing.
+    /// resetting the shared free-running counter.
     pub fn write_response(
         &mut self,
         response: &[u8],

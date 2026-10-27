@@ -5,7 +5,7 @@ Status: desktop/source validation updated 2026-10-28; production PCB and bench v
 ## Verified from pinned sources
 
 - `Cargo.lock` pins `ch32-hal` commit `bbcabaac96f482b1cfaea111d2fc938095b9a2fd`. The firmware has no direct `qingke-rt` dependency and does not enable its `highcode` feature; `qingke-rt` 0.8.2 remains transitively required by the HAL's `rt` feature for startup and interrupt support.
-- The 2026-10-28 release build succeeds with no `.highcode` section. Its `.vector_table`, `.text`, and `.rodata` are Flash-addressed; allocated SRAM sections are `.data` (280 bytes) and `.bss` (280 bytes), before stack usage.
+- The release build has no broad `.highcode` section: vectors and interrupt handlers remain in Flash. The 164-byte WS2812 waveform routine is temporarily placed in executable `.data` because its existing timing fails with Flash wait states. The current image uses `.data` 508 bytes and `.bss` 280 bytes, leaving 1,260 bytes for stack and runtime headroom.
 - CH32V003F4P6 has 16 KiB program Flash, 2 KiB SRAM and a 96-bit electronic signature UID. The pinned HAL reads 12 bytes at `0x1FFFF7E8` through `signature::unique_id()`.
 - Manufacturer TSSOP-20 signals include USART1 `PD5/UTX` and `PD6/URX`; PD1 is SWIO and PD7 can be NRST.
 - The pinned HAL accepts blocking USART construction on RX PD6/TX PD5. Existing firmware builds with this mapping.
@@ -18,6 +18,6 @@ Status: desktop/source validation updated 2026-10-28; production PCB and bench v
 - Confirm the production PCB revision and physical routing for all eight output channels, the output-stage type/polarity, RS485 DE and `/RE`, and WS2812 data.
 - Confirm whether the board is ULN2803A, triac, or FET. The repository README says triac and FET variants; the plan assumes ULN2803A.
 - Confirm Flash erase granularity/endurance from the applicable silicon revision, linker override strategy, and whether `wlink` mass-erases the reserved page.
-- Bench-check 19,200 8E1 baud error, DE timing through TC, RTU gaps, WS2812 voltage/timing, LSI/IWDG tolerance, and reset-cause registers.
+- Bench-check 19,200 8N1 baud error, DE timing through TC, COBS framing, WS2812 voltage/timing, LSI/IWDG tolerance, and reset-cause registers.
 
 Until those gates close, GPIO names in `board.rs` are provisional metadata, outputs remain OFF at startup, and production Flash/IWDG/WS2812 bindings are intentionally not enabled.

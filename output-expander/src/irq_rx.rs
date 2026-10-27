@@ -1,7 +1,7 @@
 //! Fixed-capacity USART1 interrupt receive queue.
 //!
 //! The interrupt produces timestamped UART events.
-//! The main loop consumes them and performs Modbus RTU framing.
+//! The main loop consumes them and performs delimiter-based packet framing.
 //!
 //! This module does not access UART registers or enable interrupts.
 
@@ -11,14 +11,14 @@ use critical_section::Mutex;
 
 /// Number of events the queue can hold.
 ///
-/// Must be large enough to accommodate a complete Modbus request
+/// Must be large enough to accommodate a complete encoded request
 /// plus any events received before the main loop drains the queue.
-pub const RX_QUEUE_CAPACITY: usize = 32;
+pub const RX_QUEUE_CAPACITY: usize = 40;
 
 /// An event captured by the USART receive interrupt.
 ///
-/// Timestamps use the free-running SysTick counter and must be
-/// interpreted using the same tick rate as `RtuReceiver`.
+/// Arrival timestamps are retained for diagnostics; framing itself depends
+/// only on the zero delimiter.
 #[derive(Clone, Copy)]
 pub enum RxEvent {
     /// A successfully received UART byte and its arrival timestamp.
@@ -33,7 +33,7 @@ pub enum RxEvent {
     /// A UART parity, framing, noise, or overrun error.
     ///
     /// The timestamp marks when the interrupt observed the error.
-    /// The current RTU frame must be discarded after this event.
+    /// The current encoded frame must be discarded after this event.
     Error {
         /// SysTick counter captured when the error was observed.
         ticks: u32,
@@ -126,7 +126,7 @@ impl RxQueue {
     ///
     /// Returns true if at least one event was lost.
     ///
-    /// The caller must also invalidate the current RTU frame.
+    /// The caller must also invalidate the current encoded frame.
     pub fn recover_overflow(&mut self) -> bool {
         if !self.overflowed {
             return false;
@@ -144,7 +144,7 @@ impl RxQueue {
     /// Retrieve the next event, checking for overflow first.
     ///
     /// If overflow occurred, discard all queued events rather than
-    /// returning potentially incomplete Modbus RTU data.
+    /// returning a potentially incomplete encoded packet.
     pub fn read_next(&mut self) -> RxQueueRead {
         // A lost event invalidates the queued receive stream.
         if self.recover_overflow() {
@@ -193,7 +193,7 @@ pub fn read_next_from_main() -> RxQueueRead {
 /// cannot modify the global event queue.
 ///
 /// Keep the supplied operation short. In particular, do not perform
-/// Modbus processing, UART transmission, or flash writes inside it.
+/// Protocol processing, UART transmission, or storage writes inside it.
 pub fn with_rx_queue_locked<R>(f: impl FnOnce(&mut RxQueue) -> R) -> R {
     critical_section::with(|cs| {
         let mut queue = RX_QUEUE.borrow(cs).borrow_mut();

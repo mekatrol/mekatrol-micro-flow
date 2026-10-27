@@ -1,7 +1,7 @@
 # Release checklist
 
 - [x] Locked dependencies recorded and baseline `cargo firmware` succeeds.
-- [x] Pure logic tests cover output mapping, Modbus CRC/parser, UID word order, and config corruption.
+- [x] Pure logic tests cover output mapping, COBS/CCITT framing, command dispatch, and config corruption.
 - [x] Eight-channel GPIO driver implemented with safe initialization and coherent bitmask updates.
 - [ ] Production schematic/pinout and output polarity approved.
 - [ ] Eight output channels independently verified on a logic analyzer with glitch-free startup.

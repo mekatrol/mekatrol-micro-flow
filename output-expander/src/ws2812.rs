@@ -44,6 +44,11 @@ impl<'d> Ws2812<'d> {
     }
 
     /// Emit 24 bits, most-significant bit first, followed by the latch LOW.
+    // Flash wait states make the sub-microsecond GPIO edges miss their timing.
+    // Keep only this small routine in executable SRAM; interrupt vectors and
+    // handlers remain in Flash unlike qingke-rt's broad `highcode` feature.
+    #[inline(never)]
+    #[unsafe(link_section = ".data.ws2812")]
     fn write_word(&mut self, word: u32) {
         for bit in (0..24).rev() {
             let start = current_ticks();

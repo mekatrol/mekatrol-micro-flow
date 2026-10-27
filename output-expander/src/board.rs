@@ -15,9 +15,8 @@ pub const RS485_BAUD: u32 = 19_200;
 
 pub const RS485_DATA_BITS: u8 = 8;
 
-/// Whether serial parity is even, as required by the selected Modbus format.
-
-pub const RS485_EVEN_PARITY: bool = true;
+/// The proprietary protocol uses 8N1, so parity is disabled.
+pub const RS485_EVEN_PARITY: bool = false;
 
 /// Number of stop bits marking the end of each serial character.
 

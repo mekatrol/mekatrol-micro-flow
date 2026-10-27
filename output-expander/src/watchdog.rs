@@ -1,16 +1,5 @@
-/// Vendor-specific Modbus function used to deliberately stop watchdog feeds.
-pub const STOP_FEED_FUNCTION: u8 = 0x42;
-
 /// Nominal independent-watchdog period.
 pub const TIMEOUT_MS: u32 = 2_000;
-
-/// Return whether an RTU frame is the complete stop-feeding command.
-///
-/// Address and CRC validation are performed by the Modbus server before this
-/// helper is called. The command deliberately has no data bytes.
-pub const fn is_stop_feed_command(frame: &[u8]) -> bool {
-    frame.len() == 4 && frame[1] == STOP_FEED_FUNCTION
-}
 
 #[cfg(all(target_arch = "riscv32", target_os = "none"))]
 /// CH32V003 independent watchdog, configured for a nominal two-second period.
@@ -73,7 +62,6 @@ impl HealthGate {
     /// Start with both progress timestamps at tick zero.
 
     pub const fn new() -> Self {
-
         // Explicit field names make the two monitored execution paths clear.
         Self {
             last_main: 0,
@@ -84,7 +72,6 @@ impl HealthGate {
     /// Record the main loop's latest progress tick.
 
     pub fn main_progress(&mut self, n: u32) {
-
         // Mutation requires `&mut self`, preventing concurrent unsafe writes.
         self.last_main = n
     }
@@ -92,7 +79,6 @@ impl HealthGate {
     /// Record the interrupt-side worker's latest progress tick.
 
     pub fn isr_progress(&mut self, n: u32) {
-
         // Store the caller's monotonic wrapping counter value.
         self.last_isr = n
     }
@@ -100,7 +86,6 @@ impl HealthGate {
     /// Allow a watchdog feed only while every required worker is responsive.
 
     pub const fn may_feed(&self, now: u32, max_stall: u32, pending_work: bool) -> bool {
-
         // `wrapping_sub` handles a u32 tick counter rolling through zero. The
         // interrupt timestamp matters only when interrupt work is pending.
         now.wrapping_sub(self.last_main) <= max_stall
@@ -111,20 +96,7 @@ impl HealthGate {
 // A default gate has the same well-defined initial state as `new`.
 impl Default for HealthGate {
     fn default() -> Self {
-
         // Delegate so future initialisation changes live in one place.
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stop_command_has_no_payload() {
-        assert!(is_stop_feed_command(&[17, STOP_FEED_FUNCTION, 0, 0]));
-        assert!(!is_stop_feed_command(&[17, STOP_FEED_FUNCTION, 1, 0, 0]));
-        assert!(!is_stop_feed_command(&[17, 0x41, 0, 0]));
     }
 }

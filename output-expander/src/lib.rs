@@ -6,19 +6,17 @@
 // unit tests and future firmware entry points to reuse the same logic.
 /// Board-level constants and provisional signal mapping.
 pub mod board;
-/// Device discovery and address-assignment message handling.
-pub mod commissioning;
 /// Persistent configuration encoding, validation, and defaults.
 pub mod config;
-/// Modbus RTU parsing, checksums, and output command handling.
-pub mod modbus;
+/// Hardware-independent command execution.
+pub mod dispatcher;
 /// Physical eight-channel GPIO output driver.
 #[cfg(target_arch = "riscv32")]
 pub mod output_gpio;
 /// Compact logical representation of the eight output channels.
 pub mod outputs;
-/// Mapping between application state and Modbus registers.
-pub mod registers;
+/// Proprietary packet framing, COBS, and CRC-16/CCITT-FALSE.
+pub mod protocol;
 // RS-485 direction control and USART1 access require
 // the CH32V003 hardware abstraction layer.
 //
@@ -36,34 +34,19 @@ pub mod rs485;
 #[cfg(target_arch = "riscv32")]
 pub mod serial;
 
-/// Hardware-independent RTU timing and completed-frame publication.
-pub mod rtu_receiver;
-
-/// Foreground processor for timestamped USART receive events.
-///
-/// Transfers queued UART bytes and errors into the Modbus RTU receiver,
-/// allowing frame processing outside interrupt context.
-pub mod irq_consumer;
 /// Interrupt-safe USART1 receive event queue.
 ///
-/// Transfers timestamped UART events from the interrupt handler
-/// to the foreground Modbus RTU receiver.
+/// Transfers UART events from the interrupt handler to the foreground parser.
 pub mod irq_rx;
-/// Free-running SysTick timer for Modbus RTU timing and hardware delays.
+/// Free-running SysTick timer for hardware delays and application timing.
 ///
 /// Provides microsecond-resolution timing without resetting the SysTick
-/// counter, allowing accurate RTU frame detection and RS-485 turnaround
-/// delays. Available only on the RISC-V firmware target.
+/// counter, allowing application timing and RS-485 turnaround delays.
+/// Available only on the RISC-V firmware target.
 #[cfg(target_arch = "riscv32")]
 pub mod monotonic;
-/// MODBUS message handling
-pub mod server;
 /// Conversion from operating state to status-LED colours.
 pub mod status_led;
-/// Modbus character-gap timing calculations.
-pub mod timer;
-/// UART receive buffering and half-duplex state definitions.
-pub mod uart;
 /// Silicon unique-ID reading and register conversion.
 pub mod uid;
 /// Progress checks that decide whether the watchdog may be fed.

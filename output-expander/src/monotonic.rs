@@ -1,7 +1,7 @@
 //! Free-running SysTick clock for the CH32V003.
 //!
 //! SysTick is configured once and must not be reset by subsequent delays.
-//! The lower 32 bits are sufficient for measuring short RTU intervals.
+//! The lower 32 bits are sufficient for short hardware and UI intervals.
 //!
 //! All elapsed-time calculations use wrapping subtraction so they remain
 //! correct when the 32-bit counter wraps.

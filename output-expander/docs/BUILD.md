@@ -38,27 +38,37 @@ LLVM_TOOLS="$(rustc +nightly --print sysroot)/lib/rustlib/x86_64-unknown-linux-g
 "$LLVM_TOOLS/llvm-size" -A -x "$ELF"
 ```
 
-The first command gives a compact summary. For this target, interpret it as:
+The first command gives a compact summary, but its `data` column is not a
+reliable SRAM total. `llvm-size` classifies the executable `.data.ws2812`
+input as text even though the linker places it in SRAM. Interpret the compact
+summary only as:
 
 - Flash used = `text + data`. `data` counts here because its initial values are
   stored in Flash and copied to SRAM during startup.
-- Static SRAM used = `data + bss`.
-- Maximum initial stack headroom = 2,048 bytes minus static SRAM used. The
-  firmware has no heap.
+- Static SRAM and maximum initial stack headroom must be calculated from the
+  linker symbols `_data_vma`, `_ebss`, and `_stack_start`. The firmware has no
+  heap.
 
 The following command calculates those totals and percentages against the
 CH32V003F4P6's 16 KiB Flash and 2 KiB SRAM capacities:
 
 ```sh
-"$LLVM_TOOLS/llvm-size" "$ELF" | tail -n 1 | awk '
-{
-    flash_used = $1 + $2
-    static_ram = $2 + $3
-    ram_after_variables = 2048 - static_ram
-    printf "Flash:              %5d / 16384 bytes (%5.1f%%), %d free\n", flash_used, 100 * flash_used / 16384, 16384 - flash_used
-    printf "Static SRAM:        %5d /  2048 bytes (%5.1f%%)\n", static_ram, 100 * static_ram / 2048
-    printf "RAM remaining after static/global variables: %d bytes\n", ram_after_variables
-    printf "Maximum available for runtime stack:         %d bytes\n", ram_after_variables
+FW_FLASH_USED=$("$LLVM_TOOLS/llvm-size" "$ELF" | awk 'NR == 2 { print $1 + $2 }')
+FW_RAM_BASE_HEX=$("$LLVM_TOOLS/llvm-nm" -n "$ELF" | awk '$3 == "_data_vma" { print $1 }')
+FW_EBSS_HEX=$("$LLVM_TOOLS/llvm-nm" -n "$ELF" | awk '$3 == "_ebss" { print $1 }')
+FW_STACK_TOP_HEX=$("$LLVM_TOOLS/llvm-nm" -n "$ELF" | awk '$3 == "_stack_start" { print $1 }')
+
+FW_RAM_BASE=$((0x$FW_RAM_BASE_HEX))
+FW_EBSS=$((0x$FW_EBSS_HEX))
+FW_STACK_TOP=$((0x$FW_STACK_TOP_HEX))
+FW_STATIC_RAM=$((FW_EBSS - FW_RAM_BASE))
+FW_STACK_MAX=$((FW_STACK_TOP - FW_EBSS))
+
+awk -v flash="$FW_FLASH_USED" -v ram="$FW_STATIC_RAM" -v stack="$FW_STACK_MAX" 'BEGIN {
+    printf "Flash:               %4d / 16384 bytes (%5.1f%%), %d free\n", flash, 100 * flash / 16384, 16384 - flash
+    printf "Static SRAM:         %4d /  2048 bytes (%5.1f%%)\n", ram, 100 * ram / 2048
+    printf "RAM remaining after static/global variables: %d bytes\n", stack
+    printf "Maximum available for runtime stack:         %d bytes\n", stack
 }'
 ```
 
@@ -66,10 +76,10 @@ For example, the current firmware prints the remaining value explicitly—no
 manual subtraction is required:
 
 ```text
-Flash:               8132 / 16384 bytes ( 49.6%), 8252 free
-Static SRAM:          560 /  2048 bytes ( 27.3%)
-RAM remaining after static/global variables: 1488 bytes
-Maximum available for runtime stack:         1488 bytes
+Flash:               6976 / 16384 bytes ( 42.6%), 9408 free
+Static SRAM:          788 /  2048 bytes ( 38.5%)
+RAM remaining after static/global variables: 1260 bytes
+Maximum available for runtime stack:         1260 bytes
 ```
 
 `llvm-size -A -x` shows the individual sections and their addresses. Executable
@@ -85,8 +95,9 @@ symbols, run:
 ```
 
 On this MCU, `_stack_start` should be `0x20000800`, the top of its 2 KiB SRAM.
-The stack grows downward toward `_ebss`, so `_stack_start - _ebss` agrees with
-the remaining RAM calculated above.
+The stack grows downward toward `_ebss`. Static SRAM is `_ebss - _data_vma`,
+and maximum initial stack headroom is `_stack_start - _ebss`; these symbol
+calculations include executable code placed in `.data`.
 
 This headroom is an upper bound, not a measured worst-case free-stack value.
 The ELF does not account for the maximum call chain, local variables that are

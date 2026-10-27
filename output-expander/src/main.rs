@@ -1,126 +1,84 @@
-//! Interrupt-driven Modbus RTU firmware for the CH32V003.
+//! Interrupt-driven proprietary RS-485 firmware for the CH32V003.
 //!
-//! USART1 interrupts capture received bytes and hardware timestamps.
-//! The foreground loop reconstructs RTU frames using t1.5/t3.5
-//! silence intervals and passes completed requests to the server.
-//!
-//! UART transmission remains blocking, with RS-485 direction
-//! controlled by the Serial driver.
-
+//! USART1 interrupts do the minimum work needed to preserve incoming bytes in
+//! a circular queue. The foreground loop owns framing, command execution,
+//! GPIO changes, RS-485 transmission, status indication, and watchdog feeds so
+//! no interrupt can perform an unbounded or safety-sensitive operation.
 #![no_main]
 #![no_std]
 
-// Hardware abstraction layer for the CH32V003.
 use ch32_hal as hal;
-
-// GPIO types needed to initialize RS-485 direction pins.
 use hal::gpio::{Input, Level, Output, Pull};
-
 use output_expander::config::Config as DeviceConfig;
-
-// Maximum response size supported by the Modbus server.
-use output_expander::modbus::MAX_RESPONSE;
-
+use output_expander::dispatcher::{Dispatcher, STATUS_CONFIG_FAULT, STATUS_UART_ERROR};
+use output_expander::irq_rx::{self, RxEvent, RxQueueRead};
+use output_expander::monotonic::{Monotonic, current_ticks};
 use output_expander::output_gpio::OutputGpios;
-
-// Hardware abstraction for RS-485 direction control.
+use output_expander::protocol::{self, FrameReceiver, ReceiveResult};
 use output_expander::rs485::Rs485Direction;
-
-// Serial driver encapsulating UART communication and RS-485 control.
 use output_expander::serial::Serial;
-
-// Modbus server responsible for interpreting complete requests.
-use output_expander::server::Server;
-
-// Maximum supported Modbus RTU request size.
-use output_expander::uart::RX_CAPACITY;
-
-// Foreground processing and synchronized handoff of UART events.
-use output_expander::irq_consumer;
-
-// Modbus RTU receiver using hardware-timestamped bytes.
-use output_expander::rtu_receiver::RtuReceiver;
-
-// Device silicon unique identifier.
-use output_expander::uid;
-
-// Stop execution if an unrecoverable panic occurs.
-use panic_halt as _;
-
-use output_expander::irq_rx::{self, RxEvent};
-use output_expander::monotonic::current_ticks;
-use output_expander::registers::{STATUS_COMMS_TIMEOUT, STATUS_CONFIG_FAULT, STATUS_UART_ERROR};
 use output_expander::status_led::{OFF, Rgb, pattern_color};
+use output_expander::uid;
 use output_expander::watchdog::IndependentWatchdog;
 use output_expander::ws2812::Ws2812;
+use panic_halt as _;
 
+/// Conservative LED intensity used until EEPROM configuration is integrated.
 const STATUS_LED_BRIGHTNESS: u8 = 32;
 
-/// USART1 receive interrupt handler.
+/// Capture one USART byte or error and hand it to the foreground ring buffer.
 ///
-/// Invoked when the UART receives data or reports an enabled
-/// receive error. The completed Modbus request will be processed
-/// by the main loop, not inside this interrupt.
+/// Reading STATR before DATAR follows the peripheral's required clearing
+/// sequence. Parsing and transmission are intentionally excluded because an
+/// interrupt must remain short enough not to starve the foreground watchdog.
 #[hal::interrupt]
 unsafe fn USART1() {
     let uart = hal::pac::USART1;
 
-    // Read status first.
+    // Snapshot all status bits before DATAR clears receive/error conditions.
     let status = uart.statr().read();
-
     let has_error = status.pe() || status.fe() || status.ne() || status.ore();
 
+    // Shared interrupt vectors may occasionally fire without receive work.
     if !status.rxne() && !has_error {
         return;
     }
 
-    // Capture the timestamp before clearing RXNE.
+    // Keep the arrival timestamp for diagnostics even though COBS framing no
+    // longer depends on inter-character silence.
     let ticks = current_ticks();
 
-    // Reading DATAR after STATR consumes the received byte
-    // and clears the associated receive/error conditions.
+    // Reading DATAR consumes RXNE. A byte accompanied by an error is marked
+    // unusable rather than allowing corrupt data into the frame decoder.
     let value = uart.datar().read().dr() as u8;
-
-    if has_error {
-        // The received byte is unreliable when a UART error is set.
-        // Preserve the error's interrupt timestamp for RTU recovery.
-        irq_rx::push_from_interrupt(RxEvent::Error { ticks });
+    irq_rx::push_from_interrupt(if has_error {
+        RxEvent::Error { ticks }
     } else {
-        // Preserve the byte and its original arrival timestamp.
-        irq_rx::push_from_interrupt(RxEvent::Byte { value, ticks });
-    }
+        RxEvent::Byte { value, ticks }
+    });
 }
 
-/// Enable USART1 receive and receive-error interrupts.
-///
-/// USART1 has already been configured by Serial::new().
-/// The foreground application must no longer call blocking_read()
-/// after this function enables interrupt-driven reception.
+/// Enable USART receive and error sources after every consumer is initialized.
 ///
 /// # Safety
 ///
-/// The USART1 interrupt handler and global receive queue must be
-/// initialized before enabling the interrupt.
+/// The USART peripheral, global queue, and foreground receiver must be ready
+/// before unmasking this interrupt, otherwise an early byte could be lost.
 unsafe fn enable_usart1_rx_interrupts() {
     use hal::interrupt::InterruptExt;
-
     let uart = hal::pac::USART1;
 
-    // Enable an interrupt whenever a received byte is available.
+    // RXNE delivers ordinary bytes; PE reports parity errors even though the
+    // configured 8N1 link should never intentionally generate parity.
     uart.ctlr1().modify(|w| {
         w.set_rxneie(true);
-
-        // Report parity errors separately from valid received bytes.
         w.set_peie(true);
     });
+    // EIE adds framing, noise, and overrun errors so every broken receive
+    // stream forces the current packet to be discarded.
+    uart.ctlr3().modify(|w| w.set_eie(true));
 
-    // Enable framing, noise, and overrun error interrupts.
-    uart.ctlr3().modify(|w| {
-        w.set_eie(true);
-    });
-
-    // SAFETY:
-    // USART1 is configured and its interrupt handler is installed.
+    // SAFETY: handler, UART, and queue state are fully initialized above.
     unsafe {
         hal::interrupt::USART1.enable();
     }
@@ -128,21 +86,18 @@ unsafe fn enable_usart1_rx_interrupts() {
 
 #[hal::entry]
 fn main() -> ! {
-    // Initialize the microcontroller hardware abstraction layer.
-    //
-    // This configures clocks and returns ownership of the
-    // available hardware peripherals.
-    // The GPIO WS2812 waveform is calibrated for a 48 MHz core clock.
+    // Run from the internal 48 MHz HSI because UART timing, SysTick conversion,
+    // and the calibrated WS2812 waveform all depend on this clock rate.
     let mut hal_config = hal::Config::default();
     hal_config.rcc = hal::rcc::Config::SYSCLK_FREQ_48MHZ_HSI;
     let p = hal::init(hal_config);
 
-    // WS2812 data idles LOW. The driver owns PC1 for the life of the firmware.
+    // WS2812 data idles LOW. PC1 ownership remains with the LED driver for the
+    // entire program so another peripheral cannot disturb its waveform.
     let mut status_led = Ws2812::new(Output::new(p.PC1, Level::Low, Default::default()));
 
-    // Configure all output pins OFF before placing them under application
-    // control. Channel order follows board::PROVISIONAL_OUTPUT_SIGNALS.
-    // The current board is active-low, hence HIGH is the safe OFF level.
+    // Drive every active-low channel HIGH/OFF before constructing application
+    // state. This prevents a startup glitch from energizing an attached load.
     let mut outputs = OutputGpios::new([
         Output::new(p.PC0, Level::High, Default::default()),
         Output::new(p.PC3, Level::High, Default::default()),
@@ -153,132 +108,63 @@ fn main() -> ! {
         Output::new(p.PD3, Level::High, Default::default()),
         Output::new(p.PD4, Level::High, Default::default()),
     ]);
+    // Configure one free-running counter shared by status timing, UART event
+    // timestamps, and bounded RS-485 turnaround delays.
+    let timer = Monotonic::new();
 
-    // Initialize the free-running SysTick timer for Modbus RTU timing
-    // and RS-485 turnaround delays.
-    //
-    // The timer will be used when the UART receive interrupt and
-    // non-blocking timing logic are integrated.
-    let timer = output_expander::monotonic::Monotonic::new();
+    // DE and active-low /RE are electrically tied on the planned board. LOW
+    // starts in receive mode so reset cannot accidentally drive the shared bus.
+    let direction = Rs485Direction::new(Output::new(p.PC6, Level::Low, Default::default()));
 
-    // ---------------------------------------------------------
-    // RS-485 direction control
-    // ---------------------------------------------------------
-    //
-    // PC6 drives the electrically tied DE and /RE signals. It starts LOW:
-    // - Transmitter disabled
-    // - Receiver enabled
-    //
-    // WHY:
-    // Starting in receive mode prevents the device from
-    // unintentionally driving the shared RS-485 bus.
-    //
-    let direction = Rs485Direction::new(Output::new(
-        p.PC6,
-        Level::Low,
-        Default::default(),
-    ));
-
-    // PC7 is active LOW: wire a normally-open push button to ground.
+    // PC7 is pulled up and becomes true only when the active-low button closes.
     let button = Input::new(p.PC7, Pull::Up);
 
-    // ---------------------------------------------------------
-    // Serial communication driver
-    // ---------------------------------------------------------
-    //
-    // WHAT:
-    // Initialize USART1 and transfer ownership of the UART
-    // peripheral, RX/TX pins, and RS-485 direction controller.
-    //
-    // WHY:
-    // All UART configuration is now encapsulated in serial.rs.
-    //
-    // main.rs no longer needs to know the baud rate, parity,
-    // stop bits, or UART initialization API.
+    // Serial owns USART1, its pins, and transceiver direction so every response
+    // waits for transmission-complete before returning the bus to receive mode.
     let mut serial = Serial::new(p.USART1, p.PD6, p.PD5, direction);
 
-    // ---------------------------------------------------------
-    // Application configuration
-    // ---------------------------------------------------------
+    // EEPROM loading is not integrated yet, so use safe factory defaults and
+    // the immutable silicon UID to establish protocol state.
+    let mut dispatcher = Dispatcher::new(DeviceConfig::default(), uid::read());
 
-    // Load default configuration.
-    //
-    // TODO:
-    // Replace this with configuration loaded from flash.
-    let mut config = DeviceConfig::default();
+    // Apply startup state only after all physical outputs were first made safe.
+    outputs.apply_mask(dispatcher.outputs.mask());
 
-    // Factory Modbus address.
-    //
-    // Address 247 is currently used until commissioning
-    // assigns a different device address.
-    config.slave_address = 247;
+    // Both receive and response storage are fixed-size, making their complete
+    // SRAM cost visible and preventing malformed traffic from allocating memory.
+    let mut receiver = FrameReceiver::new();
+    let mut wire_response = [0u8; protocol::MAX_WIRE];
 
-    // Keep all eight outputs disabled at startup.
-    //
-    // Physical output GPIO handling is not implemented yet.
-    config.startup_outputs = 0;
-
-    // ---------------------------------------------------------
-    // Modbus server
-    // ---------------------------------------------------------
-
-    // Create the Modbus server using device configuration
-    // and the MCU's unique silicon identifier.
-    let mut server = Server::new(config, uid::read());
-
-    status_led.set_rgb(OFF);
+    // Cache visible status to avoid retransmitting an identical WS2812 word on
+    // every fast foreground iteration.
     let mut displayed_color = OFF;
     let mut command_flash_started = None;
-    let mut receiver_rejections = 0;
-    let mut error_present =
-        server.bank.status & (STATUS_COMMS_TIMEOUT | STATUS_UART_ERROR | STATUS_CONFIG_FAULT) != 0;
+    let mut error_present = false;
+    let mut watchdog_feed_enabled = true;
+    status_led.set_rgb(OFF);
 
-    // Apply the configured startup mask only after every channel has first
-    // reached the safe OFF level.
-    outputs.apply_mask(server.bank.outputs.mask());
-
-    // Frame timing uses the same SysTick tick rate as the USART interrupt.
-    //
-    // RtuReceiver owns the two receive buffers and detects Modbus RTU
-    // frame boundaries using the t1.5 and t3.5 timing requirements.
-    let mut receiver = RtuReceiver::new_with_tick_rate(timer.ticks_per_us());
-
-    // Application-owned request buffer.
-    //
-    // A completed request is copied here before Modbus processing,
-    // so Server::handle() does not need access to the receive buffers.
-    let mut request = [0u8; RX_CAPACITY];
-
-    // Fixed-size response buffer.
-    let mut response = [0u8; MAX_RESPONSE];
-
-    // Enable USART1 receive interrupts after the UART, Modbus server,
-    // RTU receiver, and application buffers have been initialized.
-    //
-    // From this point onward, the USART1 interrupt handler is the
-    // only code that consumes received bytes from the data register.
+    // Interrupts begin only after the queue, decoder, dispatcher, and response
+    // buffer exist, closing the startup race with the first received byte.
     unsafe {
         enable_usart1_rx_interrupts();
     }
 
-    // Start only after outputs, UART reception, and all foreground state are
-    // ready. Feeding is intentionally performed at the lowest-priority point
-    // in the main loop.
+    // Start the independent watchdog last. The only feed point is at the end
+    // of the foreground loop, so a stall in any work above causes a reset.
     let mut watchdog = IndependentWatchdog::start();
-    let mut watchdog_feed_enabled = true;
-
-    // ---------------------------------------------------------
-    // Main application loop
-    // ---------------------------------------------------------
-
     loop {
+        // Convert the command activity timestamp into milliseconds without
+        // resetting the counter used by other subsystems.
         let now_ticks = timer.now_ticks();
         let command_elapsed_ms = command_flash_started
             .map(|started| now_ticks.wrapping_sub(started) / timer.ticks_per_us() / 1_000);
         if matches!(command_elapsed_ms, Some(elapsed) if elapsed >= 100) {
+            // Stop giving activity priority after its documented 100 ms pulse.
             command_flash_started = None;
         }
 
+        // Reset requests deliberately hold solid red while the watchdog counts
+        // down; normal operation delegates heartbeat/error priority selection.
         let desired_color = if watchdog_feed_enabled {
             pattern_color(
                 now_ticks / timer.ticks_per_us() / 1_000,
@@ -287,119 +173,100 @@ fn main() -> ! {
                 command_elapsed_ms,
             )
         } else {
-            // Once reset has been requested, hold solid red until the IWDG
-            // expires instead of returning to the normal status pattern.
             Rgb(STATUS_LED_BRIGHTNESS, 0, 0)
         };
         if desired_color != displayed_color {
+            // WS2812 transmission briefly masks interrupts, so send only when
+            // the requested color actually changes.
             status_led.set_rgb(desired_color);
             displayed_color = desired_color;
         }
 
-        // ---------------------------------------------------------
-        // Process queued UART receive events
-        // ---------------------------------------------------------
-        //
-        // USART1 timestamps incoming bytes in its interrupt handler.
-        // The foreground receiver uses those timestamps to detect
-        // RTU frame boundaries and reject malformed receive streams.
-        irq_consumer::drain_global_events(&mut receiver);
-
-        if receiver.rejected() != receiver_rejections {
-            receiver_rejections = receiver.rejected();
-            server.bank.status |= STATUS_UART_ERROR;
-            error_present = true;
-        }
-
-        // ---------------------------------------------------------
-        // Copy a completed Modbus request
-        // ---------------------------------------------------------
-        //
-        // Check queue health and copy the completed request while
-        // USART interrupts are excluded by a critical section.
-        //
-        // A None result means no request is currently available,
-        // or another queued event needs processing.
-        let request_len = irq_consumer::take_global_ready_frame(&mut receiver, &mut request);
-
-        if let Some(request_len) = request_len {
-            // Discrete input zero is true while the PC7 button is pressed.
-            server.bank.discrete_inputs = u8::from(button.is_low());
-            // ---------------------------------------------------------
-            // Execute the Modbus request
-            // ---------------------------------------------------------
-            //
-            // The request now belongs to the foreground application.
-            // No receive-buffer borrow or critical section is held
-            // while the server interprets it.
-            let outcome = server.handle(&request[..request_len], &mut response);
-
-            let modbus_error = !output_expander::modbus::valid_crc(&request[..request_len])
-                || (outcome.response_len >= 2 && response[1] & 0x80 != 0);
-            let message_handled =
-                outcome.response_len != 0 || outcome.outputs_changed || outcome.config_changed;
-            if modbus_error {
-                error_present = true;
-            } else if message_handled {
-                // A valid, successfully handled request acknowledges transient
-                // communication faults. Configuration faults remain latched until
-                // their underlying storage problem is resolved.
-                server.bank.status &= !(STATUS_COMMS_TIMEOUT | STATUS_UART_ERROR);
-                error_present = server.bank.status & STATUS_CONFIG_FAULT != 0;
-            }
-
-            // A reset request gets immediate, persistent red feedback. Other
-            // handled commands retain the normal short blue activity pulse.
-            if outcome.stop_watchdog_feed {
-                displayed_color = Rgb(STATUS_LED_BRIGHTNESS, 0, 0);
-                status_led.set_rgb(displayed_color);
-                command_flash_started = None;
-            } else if message_handled {
-                displayed_color = pattern_color(0, STATUS_LED_BRIGHTNESS, error_present, Some(0));
-                status_led.set_rgb(displayed_color);
-                command_flash_started = Some(timer.now_ticks());
-            }
-
-            // Apply all eight logical output states as one bitmask update.
-            if outcome.outputs_changed {
-                outputs.apply_mask(server.bank.outputs.mask());
-            }
-
-            if outcome.config_changed {
-                // TODO:
-                // Persist server.bank.config to reserved flash.
-            }
-
-            // ---------------------------------------------------------
-            // Transmit the Modbus response
-            // ---------------------------------------------------------
-            //
-            // Broadcast requests and some commissioning operations
-            // intentionally produce no response.
-            if outcome.response_len != 0 {
-                // The existing Serial driver controls RS-485 direction,
-                // writes the response, waits for the final stop bit,
-                // and returns the transceiver to receive mode.
-                if serial
-                    .write_response(&response[..outcome.response_len], &timer)
-                    .is_err()
-                {
-                    server.bank.status |= STATUS_UART_ERROR;
+        // Drain every queued event before feeding the watchdog. This prevents a
+        // sustained but manageable byte stream from overflowing the ring merely
+        // because only one event was consumed per foreground iteration.
+        loop {
+            let event = match irq_rx::read_next_from_main() {
+                RxQueueRead::Event(event) => event,
+                RxQueueRead::Empty => break,
+                RxQueueRead::Overflow => {
+                    // Any dropped byte makes packet boundaries and CRC contents
+                    // untrustworthy. Discard through the next zero delimiter.
+                    receiver.reject_current();
+                    dispatcher.status |= STATUS_UART_ERROR;
+                    error_present = true;
+                    break;
+                }
+            };
+            let result = match event {
+                // Ordinary bytes are assembled into a COBS frame outside ISR
+                // context, where decoding time cannot lengthen interrupt latency.
+                RxEvent::Byte { value, .. } => receiver.push(value),
+                RxEvent::Error { .. } => {
+                    // A hardware receive error invalidates the entire partial
+                    // packet rather than only the byte carrying the flag.
+                    receiver.reject_current();
+                    dispatcher.status |= STATUS_UART_ERROR;
+                    error_present = true;
+                    ReceiveResult::None
+                }
+            };
+            match result {
+                // Most bytes only advance the collector and require no action.
+                ReceiveResult::None => {}
+                ReceiveResult::Rejected => {
+                    // Malformed COBS, length, version, type, or CRC is observable
+                    // as a latched communication fault but receives no reply.
+                    dispatcher.status |= STATUS_UART_ERROR;
                     error_present = true;
                 }
-            }
+                ReceiveResult::Frame(packet) => {
+                    // Sample the physical button immediately before status
+                    // dispatch so GET_STATUS returns a recent input value.
+                    dispatcher.inputs = u8::from(button.is_low());
 
-            // Arm the reset only after the acknowledgement has completely
-            // left the UART and the transceiver is back in receive mode.
-            if outcome.stop_watchdog_feed {
-                watchdog_feed_enabled = false;
+                    // The dispatcher can now trust framing and checksum and may
+                    // update only logical state; main retains hardware ownership.
+                    let outcome = dispatcher.handle(packet);
+                    if outcome.outputs_changed {
+                        // Convert the coherent logical mask to all active-low
+                        // GPIO levels only after successful command validation.
+                        outputs.apply_mask(dispatcher.outputs.mask());
+                    }
+                    if outcome.config_changed {
+                        // Keep storage changes visibly faulted until the P1 EEPROM
+                        // layer can commit and verify them atomically.
+                        dispatcher.status |= STATUS_CONFIG_FAULT;
+                        error_present = true;
+                    }
+                    if let Some(response) = outcome.response {
+                        // Encode into bounded storage, then let Serial control DE,
+                        // wait for TC, and release the half-duplex bus.
+                        let len = protocol::encode(&response, &mut wire_response);
+                        if serial
+                            .write_response(&wire_response[..len], &timer)
+                            .is_err()
+                        {
+                            // A failed response is a communication fault, but the
+                            // foreground continues so watchdog policy remains live.
+                            dispatcher.status |= STATUS_UART_ERROR;
+                            error_present = true;
+                        }
+                    }
+                    if outcome.stop_watchdog_feed {
+                        // This flag is set only after write_response returned, so
+                        // the reset acknowledgement has completely left the UART.
+                        watchdog_feed_enabled = false;
+                    }
+                    // Any valid addressed command produces short blue activity
+                    // feedback, including commands with no state change.
+                    command_flash_started = Some(timer.now_ticks());
+                }
             }
         }
-
-        // This is deliberately the final, lowest-priority operation. If the
-        // foreground loop stalls anywhere above, or function 0x42 disables
-        // feeding, the independent watchdog resets the device.
         if watchdog_feed_enabled {
+            // Keep this as the final, lowest-priority operation. Moving it above
+            // receive, dispatch, GPIO, LED, or TX work would hide a stalled loop.
             watchdog.feed();
         }
     }

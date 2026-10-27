@@ -3,7 +3,7 @@
 /// Operating conditions represented by the RGB status LED.
 
 pub enum Status {
-    /// The device has no assigned Modbus address yet.
+    /// The device has no assigned protocol address yet.
     Unconfigured,
     /// The device is operating normally.
     Healthy,
