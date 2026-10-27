@@ -3,6 +3,16 @@
 //! This module owns only wire representation. It deliberately does not execute
 //! commands, touch hardware, or allocate memory, which makes malformed-frame
 //! handling deterministic and allows the exact same vectors to run on a host.
+//!
+//! COBS means **Consistent Overhead Byte Stuffing**. It transforms an arbitrary
+//! packet into an encoded body containing no `0x00` bytes. Instead of copying a
+//! zero, the encoder writes a small count telling the decoder how many non-zero
+//! bytes occur before that zero. For example, decoded bytes `11 22 00 33` become
+//! `03 11 22 02 33`: `03` describes the first two data bytes plus the suppressed
+//! zero, and `02` describes the final byte. Firmware can therefore reserve an
+//! actual `0x00` byte as an unmistakable end-of-frame delimiter. If bytes are
+//! dropped or corrupted, the receiver discards through the next zero and starts
+//! the following packet at a known boundary; no timing gap is needed.
 
 /// Protocol version carried in every decoded packet.
 pub const VERSION: u8 = 1;

@@ -14,6 +14,39 @@ A small, open, binary master/device protocol for CH32V003-based output expanders
 
 ## 3. Framing
 
+### What COBS means
+
+COBS stands for **Consistent Overhead Byte Stuffing**. It is a reversible byte
+encoding which guarantees that the encoded frame body contains no `0x00`
+bytes. The encoder replaces each zero with a count describing the run of
+non-zero bytes before the next zero. The decoder uses those counts to restore
+the original zeros.
+
+For example, this decoded data:
+
+```text
+11 22 00 33
+```
+
+is COBS-encoded as:
+
+```text
+03 11 22 02 33
+```
+
+The first `03` means that two data bytes follow before a zero must be restored;
+the final `02` describes the remaining one-byte run. The exact encoded values
+are less important to users than the resulting property: because the encoded
+body can never contain zero, a real `0x00` byte can safely mark the end of every
+frame.
+
+This firmware uses COBS so framing does not depend on precise silent intervals
+between UART characters. After noise, corruption, or dropped bytes, a receiver
+can discard input through the next `0x00` delimiter and begin the following
+frame at a known boundary. COBS provides framing only; CRC-16 separately detects
+accidental corruption, and neither mechanism provides authentication or
+encryption.
+
 Each decoded frame contains the following fields, in order:
 
 | Offset | Size | Field | Description |
