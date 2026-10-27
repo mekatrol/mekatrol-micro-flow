@@ -6,17 +6,23 @@
 // unit tests and future firmware entry points to reuse the same logic.
 /// Board-level constants and provisional signal mapping.
 pub mod board;
+
 /// Persistent configuration encoding, validation, and defaults.
 pub mod config;
+
 /// Hardware-independent command execution.
 pub mod dispatcher;
+
 /// Physical eight-channel GPIO output driver.
 #[cfg(target_arch = "riscv32")]
 pub mod output_gpio;
+
 /// Compact logical representation of the eight output channels.
 pub mod outputs;
+
 /// Proprietary packet framing, COBS, and CRC-16/CCITT-FALSE.
 pub mod protocol;
+
 // RS-485 direction control and USART1 access require
 // the CH32V003 hardware abstraction layer.
 //
@@ -45,12 +51,19 @@ pub mod irq_rx;
 /// Available only on the RISC-V firmware target.
 #[cfg(target_arch = "riscv32")]
 pub mod monotonic;
+
 /// Conversion from operating state to status-LED colours.
 pub mod status_led;
+
 /// Silicon unique-ID reading and register conversion.
 pub mod uid;
+
+/// USART1 configuration and interrupt handling.
+pub mod usart;
+
 /// Progress checks that decide whether the watchdog may be fed.
 pub mod watchdog;
+
 /// GPIO waveform driver for the single PC1 WS2812 status LED.
 #[cfg(target_arch = "riscv32")]
 pub mod ws2812;
