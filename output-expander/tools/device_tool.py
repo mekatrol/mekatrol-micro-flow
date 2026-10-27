@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Reference CLI for the output-expander proprietary RS-485 protocol.
 
-The framing functions intentionally mirror the no-heap firmware codec. Keeping
-an independent host implementation makes it possible to verify byte order,
-COBS framing, CRC behavior, and response matching without special libraries.
+The framing functions intentionally mirror the no-heap firmware codec.
+An independent host implementation verifies byte order, COBS encoding,
+CRC validation, and response matching without special libraries.
 """
 
 import argparse
@@ -19,8 +19,8 @@ VERSION = 1
 REQUEST, RESPONSE, ERROR = 0, 1, 2
 MAX_PAYLOAD = 24
 
-# Translate numeric device errors at the CLI boundary so the wire codec remains
-# concerned only with bytes and callers receive an actionable diagnostic.
+# Translate numeric device errors at the CLI boundary so the protocol codec
+# remains concerned only with bytes and callers receive an actionable diagnostic.
 ERROR_NAMES = {
     1: "unknown command",
     2: "bad length",
@@ -137,10 +137,10 @@ def encode_packet(packet: Packet) -> bytes:
     return cobs_encode(protected) + b"\0"
 
 
-def decode_packet(wire: bytes) -> Packet:
-    """Decode and fully validate one optional-delimiter wire frame."""
+def decode_packet(encoded_frame: bytes) -> Packet:
+    """Decode and validate a COBS frame with an optional zero delimiter."""
 
-    decoded = cobs_decode(wire.removesuffix(b"\0"))
+    decoded = cobs_decode(encoded_frame.removesuffix(b"\0"))
 
     # Validate the minimum header, version, and packet type before indexing any
     # payload fields which depend on those semantics.
@@ -310,16 +310,16 @@ class OutputExpander:
     def send_bad_crc(self, addr: int) -> bytes:
         """Send one intentionally corrupted packet for fault-path testing."""
 
-        wire = bytearray(encode_packet(Packet(addr, self.sequence, REQUEST, 0x01)))
+        encoded_frame = bytearray(encode_packet(Packet(addr, self.sequence, REQUEST, 0x01)))
 
         # Flip an encoded body byte rather than the delimiter. The device must
         # reject the resulting CRC/COBS failure without transmitting a reply.
-        wire[-2] ^= 1
+        encoded_frame[-2] ^= 1
         self.port.reset_input_buffer()
-        self.port.write(wire)
+        self.port.write(encoded_frame)
         self.port.flush()
         self.sequence = (self.sequence + 1) & 0xFF
-        return bytes(wire)
+        return bytes(encoded_frame)
 
 
 def build_parser() -> argparse.ArgumentParser:

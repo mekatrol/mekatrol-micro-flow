@@ -51,6 +51,7 @@ fn main() -> ! {
         Output::new(p.PD3, Level::High, Default::default()),
         Output::new(p.PD4, Level::High, Default::default()),
     ]);
+
     // Configure one free-running counter shared by status timing, UART event
     // timestamps, and bounded RS-485 turnaround delays.
     let timer = Monotonic::new();
@@ -76,7 +77,7 @@ fn main() -> ! {
     // Both receive and response storage are fixed-size, making their complete
     // SRAM cost visible and preventing malformed traffic from allocating memory.
     let mut receiver = FrameReceiver::new();
-    let mut wire_response = [0u8; protocol::MAX_WIRE];
+    let mut response_buffer = [0u8; protocol::MAX_ENCODED_FRAME_LEN];
 
     // Cache visible status to avoid retransmitting an identical WS2812 word on
     // every fast foreground iteration.
@@ -185,9 +186,9 @@ fn main() -> ! {
                     if let Some(response) = outcome.response {
                         // Encode into bounded storage, then let Serial control DE,
                         // wait for TC, and release the half-duplex bus.
-                        let len = protocol::encode(&response, &mut wire_response);
+                        let len = protocol::encode(&response, &mut response_buffer);
                         if serial
-                            .write_response(&wire_response[..len], &timer)
+                            .write_response(&response_buffer[..len], &timer)
                             .is_err()
                         {
                             // A failed response is a communication fault, but the

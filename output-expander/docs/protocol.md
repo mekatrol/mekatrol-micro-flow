@@ -146,4 +146,4 @@ The Python reference implementation must expose COBS encoding/decoding, CRC-16, 
 - EEPROM blank/corrupt slots, interrupted writes, failed readback, sequence wraparound and repeated commits.
 - RS-485 DE/TC timing and power-up output safety.
 
-The v1 wire format should be frozen only after a host-side reference encoder/decoder and embedded parser pass the same test vectors.
+The v1 protocol format should be finalized only after the host-side reference encoder/decoder and embedded parser pass the same test vectors.

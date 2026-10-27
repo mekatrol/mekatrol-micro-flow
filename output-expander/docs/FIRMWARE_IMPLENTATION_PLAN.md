@@ -62,7 +62,7 @@ Use the ordered **SOT-23-5 24C02-class I²C EEPROM**, nominal capacity 2 Kbit = 
 
 ### Record format and recovery
 
-Retain a fixed **64-byte versioned configuration record**, with magic, schema version, address, startup output mask, communications timeout, timeout output mask, LED brightness, sequence number and CRC-32. The existing `config.rs` codec can be adapted, but its field layout and reserved bytes must be reviewed before adding the sequence number. CRC-32 here protects stored records; wire frames use CRC-16.
+Retain a fixed **64-byte versioned configuration record**, with magic, schema version, address, startup output mask, communications timeout, timeout output mask, LED brightness, sequence number and CRC-32. The existing `config.rs` codec can be adapted, but its field layout and reserved bytes must be reviewed before adding the sequence number. CRC-32 here protects stored records; message frames use CRC-16.
 
 | EEPROM byte range | Allocation |
 |---|---|
@@ -169,7 +169,7 @@ The target has only 2 KiB SRAM. Do not enable the `qingke-rt` `highcode` feature
 
 Budget at least 48 bytes of static SRAM for one 24-entry `u16` WS2812 duty buffer plus explicit driver state. If double buffering is selected, budget 96 bytes for duty arrays and justify why a single DMA-owned buffer plus one pending RGB value is insufficient. Include DMA/HAL state introduced by enabling the selected channel in the measured `.data` and `.bss` totals; source-level array sizes alone are not the complete cost.
 
-Measure `.data`, `.bss`, the `main` stack frame, nested calls and interrupt stack usage on every release build. A successful link is not proof of stack safety. Eliminate RAM-resident internal-Flash and WS2812 routines and avoid duplicated event/request/response buffers. Define a maximum decoded packet length of **32 bytes** and allocate bounded COBS wire buffers; revise only with a documented command requirement. Use no heap.
+Measure `.data`, `.bss`, the `main` stack frame, nested calls and interrupt stack usage on every release build. A successful link is not proof of stack safety. Eliminate RAM-resident internal-Flash and WS2812 routines and avoid duplicated event/request/response buffers. Define a maximum decoded packet length of **32 bytes** and allocate bounded COBS message buffers; revise only with a documented command requirement. Use no heap.
 
 Treat SRAM headroom as a hardware-selection gate. If the measured worst-case stack and planned feature growth cannot fit safely, select a larger MCU before PCB fabrication rather than hiding the problem by moving stack objects to statics.
 

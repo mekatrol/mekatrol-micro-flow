@@ -138,13 +138,13 @@ impl Dispatcher {
             }
             0x11 if request.payload().is_empty() && !broadcast => {
                 // Return logical state rather than reading active-low pins;
-                // this keeps electrical polarity out of the wire protocol.
+                // this keeps electrical polarity independent of the protocol.
                 response_payload[0] = self.outputs.mask();
                 Ok(1)
             }
             0x20 if request.payload().is_empty() && !broadcast => {
-                // Serialize fields explicitly to freeze their byte order and
-                // avoid exposing Rust struct padding on the wire.
+                // Serialize fields explicitly to define their byte order and
+                // avoid including Rust struct padding in the transmitted packet.
                 response_payload[0] = self.config.slave_address;
                 response_payload[1] = self.config.startup_outputs;
                 response_payload[2..4].copy_from_slice(&self.config.comms_timeout_ms.to_le_bytes());

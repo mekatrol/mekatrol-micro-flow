@@ -1,6 +1,6 @@
 //! Bounded framing for the output-expander protocol.
 //!
-//! This module owns only wire representation. It deliberately does not execute
+//! This module owns only encoded frame representation. It deliberately does not execute
 //! commands, touch hardware, or allocate memory, which makes malformed-frame
 //! handling deterministic and allows the exact same vectors to run on a host.
 //!
@@ -16,21 +16,28 @@
 
 /// Protocol version carried in every decoded packet.
 pub const VERSION: u8 = 1;
+
 /// Bytes occupied by version, address, sequence, type, command, and length.
 pub const HEADER_LEN: usize = 6;
+
 /// CRC-16 is transmitted as two little-endian bytes.
 pub const CRC_LEN: usize = 2;
-/// Payload limit from the version-one wire specification.
+
+/// Payload limit from the version-one framing specification.
 pub const MAX_PAYLOAD: usize = 24;
+
 /// Largest packet after COBS decoding, including header and CRC.
-pub const MAX_DECODED: usize = HEADER_LEN + MAX_PAYLOAD + CRC_LEN;
+pub const MAX_DECODED_PACKET_LEN: usize = HEADER_LEN + MAX_PAYLOAD + CRC_LEN;
+
 /// Largest COBS representation plus its trailing zero delimiter.
-pub const MAX_WIRE: usize = MAX_DECODED + 2;
+pub const MAX_ENCODED_FRAME_LEN: usize = MAX_DECODED_PACKET_LEN + 2;
 
 /// A command sent by the bus master.
 pub const TYPE_REQUEST: u8 = 0;
+
 /// A successful device reply.
 pub const TYPE_RESPONSE: u8 = 1;
+
 /// A device reply whose payload contains a protocol error code.
 pub const TYPE_ERROR: u8 = 2;
 
@@ -96,8 +103,7 @@ impl Packet {
     }
 
     pub fn payload(&self) -> &[u8] {
-        // Hide unused capacity so command handlers cannot mistake zero-filled
-        // spare bytes for payload received from the wire.
+        // Return only valid payload bytes, excluding unused buffer capacity.
         &self.payload[..self.payload_len as usize]
     }
 }
@@ -123,13 +129,13 @@ pub fn crc16(bytes: &[u8]) -> u16 {
 }
 
 /// Encode one packet into COBS bytes followed by the `0x00` frame delimiter.
-pub fn encode(packet: &Packet, out: &mut [u8; MAX_WIRE]) -> usize {
+pub fn encode(packet: &Packet, out: &mut [u8; MAX_ENCODED_FRAME_LEN]) -> usize {
     let payload = packet.payload();
     let decoded_len = HEADER_LEN + payload.len() + CRC_LEN;
 
     // Assemble the checksum domain in a bounded scratch buffer. Keeping this
     // representation explicit makes the documented byte offsets auditable.
-    let mut decoded = [0; MAX_DECODED];
+    let mut decoded = [0; MAX_DECODED_PACKET_LEN];
     decoded[0] = VERSION;
     decoded[1] = packet.destination;
     decoded[2] = packet.sequence;
@@ -138,7 +144,7 @@ pub fn encode(packet: &Packet, out: &mut [u8; MAX_WIRE]) -> usize {
     decoded[5] = payload.len() as u8;
     decoded[6..6 + payload.len()].copy_from_slice(payload);
 
-    // The wire format stores the CCITT value low byte first even though the
+    // The transmitted frame format stores the CCITT value low byte first even though the
     // checksum algorithm itself processes bits most-significant first.
     let crc = crc16(&decoded[..decoded_len - CRC_LEN]).to_le_bytes();
     decoded[decoded_len - 2..decoded_len].copy_from_slice(&crc);
@@ -154,9 +160,9 @@ pub fn encode(packet: &Packet, out: &mut [u8; MAX_WIRE]) -> usize {
 pub fn decode(encoded: &[u8]) -> Result<Packet, DecodeError> {
     // Decode into fixed storage first. No field is trusted or acted upon until
     // structural checks and the checksum have all succeeded.
-    let mut decoded = [0; MAX_DECODED];
+    let mut decoded = [0; MAX_DECODED_PACKET_LEN];
     let len = cobs_decode(encoded, &mut decoded)?;
-    if !(HEADER_LEN + CRC_LEN..=MAX_DECODED).contains(&len) {
+    if !(HEADER_LEN + CRC_LEN..=MAX_DECODED_PACKET_LEN).contains(&len) {
         return Err(DecodeError::Length);
     }
 
@@ -273,7 +279,7 @@ pub enum ReceiveResult {
 /// Fixed-capacity collector for one COBS frame at a time.
 pub struct FrameReceiver {
     // The delimiter is consumed rather than stored, hence `MAX_WIRE - 1`.
-    encoded: [u8; MAX_WIRE - 1],
+    encoded: [u8; MAX_ENCODED_FRAME_LEN - 1],
     len: usize,
     // Once corruption is known, ignore bytes until the next delimiter. This
     // provides deterministic resynchronisation without interpreting a suffix.
@@ -283,7 +289,7 @@ pub struct FrameReceiver {
 impl FrameReceiver {
     pub const fn new() -> Self {
         Self {
-            encoded: [0; MAX_WIRE - 1],
+            encoded: [0; MAX_ENCODED_FRAME_LEN - 1],
             len: 0,
             discard: false,
         }
@@ -343,27 +349,29 @@ mod tests {
     fn ccitt_reference_vector() {
         assert_eq!(crc16(b"123456789"), 0x29b1);
     }
+
     #[test]
     fn round_trip_payload_with_zeroes() {
         let p = Packet::new(7, 9, TYPE_REQUEST, 0x21, &[0, 1, 0, 2]).unwrap();
-        let mut wire = [0; MAX_WIRE];
-        let n = encode(&p, &mut wire);
-        assert_eq!(wire[n - 1], 0);
-        assert!(!wire[..n - 1].contains(&0));
-        assert_eq!(decode(&wire[..n - 1]), Ok(p));
+        let mut response = [0; MAX_ENCODED_FRAME_LEN];
+        let n = encode(&p, &mut response);
+        assert_eq!(response[n - 1], 0);
+        assert!(!response[..n - 1].contains(&0));
+        assert_eq!(decode(&response[..n - 1]), Ok(p));
     }
+
     #[test]
     fn receiver_recovers_after_oversize_frame() {
         let mut r = FrameReceiver::new();
-        for _ in 0..MAX_WIRE + 2 {
+        for _ in 0..MAX_ENCODED_FRAME_LEN + 2 {
             assert_eq!(r.push(1), ReceiveResult::None);
         }
         assert_eq!(r.push(0), ReceiveResult::Rejected);
         let p = Packet::new(1, 1, TYPE_REQUEST, 1, &[]).unwrap();
-        let mut wire = [0; MAX_WIRE];
-        let n = encode(&p, &mut wire);
+        let mut response = [0; MAX_ENCODED_FRAME_LEN];
+        let n = encode(&p, &mut response);
         let mut got = ReceiveResult::None;
-        for &b in &wire[..n] {
+        for &b in &response[..n] {
             got = r.push(b);
         }
         assert_eq!(got, ReceiveResult::Frame(p));
