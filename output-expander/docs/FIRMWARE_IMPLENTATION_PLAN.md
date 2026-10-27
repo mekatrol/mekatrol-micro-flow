@@ -8,7 +8,7 @@ This document describes the **current repository baseline** and **work required 
 
 ## 2. Current repository baseline
 
-The supplied firmware currently provides eight GPIO outputs, an active-low push button, a WS2812 status LED, a half-duplex USART1/RS-485 driver, SysTick timing, an independent watchdog, and interrupt-driven UART reception with blocking transmission. Its request processing is Modbus-specific, including RTU silence timing, register-bank handling, Modbus CRC, and commissioning. The supplied `main.rs` references internal-Flash configuration storage and contains a diagnostic reference to Flash erase/write functions. The target architecture below is **not yet implemented**.
+The supplied firmware currently provides eight GPIO outputs, an active-low push button, a WS2812 status LED, a half-duplex USART1/RS-485 driver, SysTick timing, an independent watchdog, and interrupt-driven UART reception with blocking transmission. Its request processing is Modbus-specific, including RTU silence timing, register-bank handling, Modbus CRC, and commissioning. The current build enables the `qingke-rt` `highcode` feature and places the software-driven WS2812 routine, interrupt vectors, traps and interrupt handlers in SRAM. The supplied `main.rs` references internal-Flash configuration storage and contains a diagnostic reference to Flash erase/write functions. The target architecture below is **not yet implemented**.
 
 ### Current pins in supplied source
 
@@ -85,10 +85,10 @@ Commissioning uses the MCU's full 96-bit UID to target one device. Uncommissione
 ## 6. Device behavior
 
 - **Outputs:** Eight channels; mask bit 0 controls output 1; logical 1 = ON; physical GPIO LOW = ON. Set every GPIO HIGH/OFF before applying any configured startup mask. Confirm external pull states and load safety during reset/boot.
-- **Status LED:** WS2812 on proposed PA1. Green normal heartbeat, brief activity indication, red fault indication, and deliberate-reset indication; implement priority and brightness from configuration. Verify timing at 48 MHz.
+- **Status LED:** WS2812 on proposed PA1. Green normal heartbeat, brief activity indication, red fault indication, and deliberate-reset indication; implement priority and brightness from configuration. Service LED updates from the foreground main loop as a low-priority operation, never from an interrupt. Execute the driver from Flash without `#[highcode]`; verify its waveform timing at 48 MHz and replace or redesign the driver if reliable timing would otherwise require code execution from SRAM.
 - **Button:** Active-low commissioning/service input on PC7. Define short/long-press behavior and debounce before release; do not allow accidental address changes.
 - **Communication timeout:** Track valid addressed control/heartbeat traffic using SysTick. On timeout, apply configured fallback output mask and report a latched or current fault according to the protocol. Zero timeout disables this feature.
-- **Watchdog:** Feed only after the foreground loop makes meaningful progress. Define behavior when I²C is stuck, UART is noisy, or TX stalls; every blocking wait must be bounded. Deliberate reset is acknowledged before the watchdog is allowed to expire or an explicit reset is requested.
+- **Watchdog:** Feed only from the lowest-priority point of the foreground main loop, alongside low-priority status-LED service, and only after the loop has made meaningful progress. No interrupt handler, timer callback or higher-priority execution path may feed the watchdog. If foreground processing stalls or is starved by interrupts, the watchdog must expire and reset the device. Define behavior when I²C is stuck, UART is noisy, or TX stalls; every blocking wait must be bounded. Deliberate reset is acknowledged before the watchdog is allowed to expire or an explicit reset is requested.
 - **Storage faults:** A failed EEPROM read or commit must be observable in status. Define whether an attempted address change takes effect immediately or only after successful commit; prefer **commit first, activate second**.
 
 ## 7. Firmware module structure
@@ -96,7 +96,7 @@ Commissioning uses the MCU's full 96-bit UID to target one device. Uncommissione
 | Module | Target responsibility |
 |---|---|
 | `board.rs` | Validated pin map, output polarity, baud and fixed capacities |
-| `main.rs` | HAL setup, safe GPIO startup, EEPROM load, protocol loop, watchdog |
+| `main.rs` | HAL setup, safe GPIO startup, EEPROM load, protocol loop, lowest-priority LED service and watchdog feed |
 | `output_gpio.rs`, `outputs.rs` | Eight-channel logical/physical output control |
 | `serial.rs`, `rs485.rs` | USART1 and half-duplex transceiver direction |
 | `irq_rx.rs` | Minimal interrupt-safe receive transport and UART error reporting |
@@ -114,7 +114,9 @@ Remove Modbus-specific modules, register abstractions, RTU timing and tooling **
 
 ## 8. Resource requirements
 
-The target has only 2 KiB SRAM. Measure `.highcode`, `.data`, `.bss`, the `main` stack frame, nested calls and interrupt stack usage on every release build. A successful link is not proof of stack safety. Aim to eliminate the RAM-resident internal-Flash writer and reduce duplicated RTU/event/request/response buffers. Define a maximum decoded packet length of **32 bytes** and allocate bounded COBS wire buffers; revise only with a documented command requirement. Use no heap.
+The target has only 2 KiB SRAM. Do not enable the `qingke-rt` `highcode` feature or use `#[highcode]`; interrupt vectors, traps, handlers, the WS2812 driver and application code must execute from Flash. The release ELF must contain no allocated `.highcode` section in SRAM. Remove the current `highcode` feature and annotation, then validate interrupt operation and the WS2812 waveform on hardware. If any timing-sensitive feature cannot operate reliably from Flash, redesign that feature rather than consuming SRAM with executable code.
+
+Measure `.data`, `.bss`, the `main` stack frame, nested calls and interrupt stack usage on every release build. A successful link is not proof of stack safety. Eliminate the RAM-resident internal-Flash writer and reduce duplicated RTU/event/request/response buffers. Define a maximum decoded packet length of **32 bytes** and allocate bounded COBS wire buffers; revise only with a documented command requirement. Use no heap.
 
 Treat SRAM headroom as a hardware-selection gate. If the measured worst-case stack and planned feature growth cannot fit safely, select a larger MCU before PCB fabrication rather than hiding the problem by moving stack objects to statics.
 
@@ -123,9 +125,10 @@ Treat SRAM headroom as a hardware-selection gate. If the measured worst-case sta
 ### P0 — Confirm hardware and clean baseline
 
 1. Verify the exact SOT-23-5 EEPROM datasheet and pinout, MCU package pinout, I²C alternate-function mapping and PA1 WS2812 availability.
-2. Revert internal-Flash persistence experiments. Confirm whether custom `build.rs`/`memory.x` are required for unrelated build reasons; otherwise use the standard HAL memory layout.
-3. Record a clean host-test and release-build baseline, Flash/SRAM section sizes and stack analysis.
-4. Confirm outputs default OFF at reset and during programming/debug access.
+2. Remove the `qingke-rt` `highcode` feature and all `#[highcode]` annotations. Confirm the release ELF executes vectors, traps, interrupt handlers and the WS2812 driver from Flash and allocates no `.highcode` section in SRAM.
+3. Revert internal-Flash persistence experiments. Confirm whether custom `build.rs`/`memory.x` are required for unrelated build reasons; otherwise use the standard HAL memory layout.
+4. Record a clean host-test and release-build baseline, Flash/SRAM section sizes and stack analysis.
+5. Confirm outputs default OFF at reset and during programming/debug access.
 
 ### P1 — Implement EEPROM configuration
 
@@ -146,13 +149,14 @@ Treat SRAM headroom as a hardware-selection gate. If the measured worst-case sta
 
 1. Implement communications timeout/fallback outputs and recovery rules.
 2. Verify RS-485 DE/TC timing, multidrop traffic, noise, UART overrun and watchdog behavior.
-3. Verify LED timing and priorities on the final pin and electrical design.
-4. Test power-up, brownout, watchdog reset, EEPROM bus faults and output fail-safe behavior.
+3. Verify the Flash-resident LED driver's timing and priorities on the final pin and electrical design. Confirm LED service occurs only in the foreground loop and cannot delay watchdog feeding beyond its allowed budget.
+4. Verify that only the lowest-priority foreground path feeds the watchdog. Deliberately stall the foreground loop and create sustained interrupt load; in both cases the watchdog must expire rather than being kept alive by an interrupt or callback.
+5. Test power-up, brownout, watchdog reset, EEPROM bus faults and output fail-safe behavior.
 
 ### P4 — PCB and release gates
 
 1. Freeze pin map, power supply, EEPROM footprint, pull-ups, RS-485 termination/biasing, programming header and safe output circuitry.
-2. Verify release ELF fits Flash and SRAM with measured worst-case stack margin and planned feature reserve.
+2. Verify the release ELF has no SRAM-allocated `.highcode`, fits Flash and SRAM with measured worst-case stack margin and planned feature reserve.
 3. Complete Python interoperability, multi-device soak, electrical-noise and power-cycle tests.
 4. Publish the protocol, board schematic, firmware build instructions, EEPROM format and commissioning/recovery procedure under the project's open-source license.
 
@@ -168,4 +172,4 @@ OBJDUMP="$(rustc +nightly --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/
 "$OBJDUMP" -h target/riscv32ec-unknown-none-elf/release/output-expander
 ```
 
-Do not flash unvalidated EEPROM pin assignments or enable persistent writes until the exact part datasheet and hardware have been checked. Maintain a release checklist covering GPIO safety, RAM/stack margin, CRC rejection, EEPROM recovery, multidrop operation and watchdog recovery.
+Do not flash unvalidated EEPROM pin assignments or enable persistent writes until the exact part datasheet and hardware have been checked. Maintain a release checklist covering GPIO safety, absence of SRAM-resident executable code, RAM/stack margin, CRC rejection, EEPROM recovery, multidrop operation, Flash-resident WS2812 timing, foreground-only watchdog feeding and watchdog recovery.
