@@ -50,7 +50,8 @@ use panic_halt as _;
 use output_expander::irq_rx::{self, RxEvent};
 use output_expander::monotonic::current_ticks;
 use output_expander::registers::{STATUS_COMMS_TIMEOUT, STATUS_CONFIG_FAULT, STATUS_UART_ERROR};
-use output_expander::status_led::{OFF, pattern_color};
+use output_expander::status_led::{OFF, Rgb, pattern_color};
+use output_expander::watchdog::IndependentWatchdog;
 use output_expander::ws2812::Ws2812;
 
 const STATUS_LED_BRIGHTNESS: u8 = 32;
@@ -264,6 +265,12 @@ fn main() -> ! {
         enable_usart1_rx_interrupts();
     }
 
+    // Start only after outputs, UART reception, and all foreground state are
+    // ready. Feeding is intentionally performed at the lowest-priority point
+    // in the main loop.
+    let mut watchdog = IndependentWatchdog::start();
+    let mut watchdog_feed_enabled = true;
+
     // ---------------------------------------------------------
     // Main application loop
     // ---------------------------------------------------------
@@ -276,12 +283,18 @@ fn main() -> ! {
             command_flash_started = None;
         }
 
-        let desired_color = pattern_color(
-            now_ticks / timer.ticks_per_us() / 1_000,
-            STATUS_LED_BRIGHTNESS,
-            error_present,
-            command_elapsed_ms,
-        );
+        let desired_color = if watchdog_feed_enabled {
+            pattern_color(
+                now_ticks / timer.ticks_per_us() / 1_000,
+                STATUS_LED_BRIGHTNESS,
+                error_present,
+                command_elapsed_ms,
+            )
+        } else {
+            // Once reset has been requested, hold solid red until the IWDG
+            // expires instead of returning to the normal status pattern.
+            Rgb(STATUS_LED_BRIGHTNESS, 0, 0)
+        };
         if desired_color != displayed_color {
             status_led.set_rgb(desired_color);
             displayed_color = desired_color;
@@ -311,72 +324,85 @@ fn main() -> ! {
         //
         // A None result means no request is currently available,
         // or another queued event needs processing.
-        let Some(request_len) = irq_consumer::take_global_ready_frame(&mut receiver, &mut request)
-        else {
-            continue;
-        };
+        let request_len = irq_consumer::take_global_ready_frame(&mut receiver, &mut request);
 
-        // ---------------------------------------------------------
-        // Execute the Modbus request
-        // ---------------------------------------------------------
-        //
-        // The request now belongs to the foreground application.
-        // No receive-buffer borrow or critical section is held
-        // while the server interprets it.
-        let outcome = server.handle(&request[..request_len], &mut response);
+        if let Some(request_len) = request_len {
+            // ---------------------------------------------------------
+            // Execute the Modbus request
+            // ---------------------------------------------------------
+            //
+            // The request now belongs to the foreground application.
+            // No receive-buffer borrow or critical section is held
+            // while the server interprets it.
+            let outcome = server.handle(&request[..request_len], &mut response);
 
-        let modbus_error = !output_expander::modbus::valid_crc(&request[..request_len])
-            || (outcome.response_len >= 2 && response[1] & 0x80 != 0);
-        let message_handled =
-            outcome.response_len != 0 || outcome.outputs_changed || outcome.config_changed;
-        if modbus_error {
-            error_present = true;
-        } else if message_handled {
-            // A valid, successfully handled request acknowledges transient
-            // communication faults. Configuration faults remain latched until
-            // their underlying storage problem is resolved.
-            server.bank.status &= !(STATUS_COMMS_TIMEOUT | STATUS_UART_ERROR);
-            error_present = server.bank.status & STATUS_CONFIG_FAULT != 0;
+            let modbus_error = !output_expander::modbus::valid_crc(&request[..request_len])
+                || (outcome.response_len >= 2 && response[1] & 0x80 != 0);
+            let message_handled =
+                outcome.response_len != 0 || outcome.outputs_changed || outcome.config_changed;
+            if modbus_error {
+                error_present = true;
+            } else if message_handled {
+                // A valid, successfully handled request acknowledges transient
+                // communication faults. Configuration faults remain latched until
+                // their underlying storage problem is resolved.
+                server.bank.status &= !(STATUS_COMMS_TIMEOUT | STATUS_UART_ERROR);
+                error_present = server.bank.status & STATUS_CONFIG_FAULT != 0;
+            }
+
+            // A reset request gets immediate, persistent red feedback. Other
+            // handled commands retain the normal short blue activity pulse.
+            if outcome.stop_watchdog_feed {
+                displayed_color = Rgb(STATUS_LED_BRIGHTNESS, 0, 0);
+                status_led.set_rgb(displayed_color);
+                command_flash_started = None;
+            } else if message_handled {
+                displayed_color = pattern_color(0, STATUS_LED_BRIGHTNESS, error_present, Some(0));
+                status_led.set_rgb(displayed_color);
+                command_flash_started = Some(timer.now_ticks());
+            }
+
+            // Apply all eight logical output states as one bitmask update.
+            if outcome.outputs_changed {
+                outputs.apply_mask(server.bank.outputs.mask());
+            }
+
+            if outcome.config_changed {
+                // TODO:
+                // Persist server.bank.config to reserved flash.
+            }
+
+            // ---------------------------------------------------------
+            // Transmit the Modbus response
+            // ---------------------------------------------------------
+            //
+            // Broadcast requests and some commissioning operations
+            // intentionally produce no response.
+            if outcome.response_len != 0 {
+                // The existing Serial driver controls RS-485 direction,
+                // writes the response, waits for the final stop bit,
+                // and returns the transceiver to receive mode.
+                if serial
+                    .write_response(&response[..outcome.response_len], &timer)
+                    .is_err()
+                {
+                    server.bank.status |= STATUS_UART_ERROR;
+                    error_present = true;
+                }
+            }
+
+            // Arm the reset only after the acknowledgement has completely
+            // left the UART and the transceiver is back in receive mode.
+            if outcome.stop_watchdog_feed {
+                watchdog_feed_enabled = false;
+            }
         }
 
-        // Give immediate visual feedback only when this device handled the
-        // request. The blue activity pulse also takes visual priority over a
-        // persistent configuration fault.
-        if message_handled {
-            displayed_color = pattern_color(0, STATUS_LED_BRIGHTNESS, error_present, Some(0));
-            status_led.set_rgb(displayed_color);
-            command_flash_started = Some(timer.now_ticks());
-        }
-
-        // Apply all eight logical output states as one bitmask update.
-        if outcome.outputs_changed {
-            outputs.apply_mask(server.bank.outputs.mask());
-        }
-
-        if outcome.config_changed {
-            // TODO:
-            // Persist server.bank.config to reserved flash.
-        }
-
-        // ---------------------------------------------------------
-        // Transmit the Modbus response
-        // ---------------------------------------------------------
-        //
-        // Broadcast requests and some commissioning operations
-        // intentionally produce no response.
-        if outcome.response_len == 0 {
-            continue;
-        }
-
-        // The existing Serial driver controls RS-485 direction,
-        // writes the response, waits for the final stop bit,
-        // and returns the transceiver to receive mode.
-        if serial
-            .write_response(&response[..outcome.response_len], &timer)
-            .is_err()
-        {
-            server.bank.status |= STATUS_UART_ERROR;
-            error_present = true;
+        // This is deliberately the final, lowest-priority operation. If the
+        // foreground loop stalls anywhere above, or function 0x42 disables
+        // feeding, the independent watchdog resets the device.
+        if watchdog_feed_enabled {
+            watchdog.feed();
         }
     }
 }

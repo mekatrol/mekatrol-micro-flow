@@ -19,6 +19,17 @@ Modbus RTU uses 19,200 bit/s, 8E1. Multi-byte Modbus fields are big-endian; CRC1
 
 Supported standard functions are 01, 03, 04, 05 and 0F. Function 06 remains disabled until persistent commit semantics are hardware-validated. Responses use exceptions 01–04 as applicable. The implementation caps ADUs at 128 bytes and rejects larger frames.
 
+## Watchdog reset function 42
+
+An addressed vendor-specific request containing only `SLAVE | 42 | CRC` asks
+the board to stop feeding its independent watchdog. The board acknowledges with
+`SLAVE | 42 | CRC`, then resets after the nominal 2-second watchdog period.
+As soon as the valid request is received, the status LED turns solid red and
+remains red until the reset occurs.
+Broadcast requests are ignored. This is intended for controlled reset and
+watchdog fault-injection; it is not authenticated and must only be exposed on a
+trusted Modbus bus.
+
 ## Commissioning function 41
 
 The safe first release supports isolated-device assignment only. A controller must ensure exactly one unconfigured device is attached.

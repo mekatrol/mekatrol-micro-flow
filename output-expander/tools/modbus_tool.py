@@ -231,6 +231,10 @@ class OutputExpander:
         time.sleep(0.05)
         return bytes(request)
 
+    def reset_via_watchdog(self, address: int) -> None:
+        """Acknowledge a request to stop feeding the board watchdog."""
+        self._request(address, 0x42, b"", 4)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -258,6 +262,11 @@ def build_parser() -> argparse.ArgumentParser:
         "simulate-error", help="send a bad-CRC request to trigger the error LED"
     )
     simulate_error.add_argument("--address", required=True, type=slave_address)
+
+    reset = subparsers.add_parser(
+        "reset", help="stop watchdog feeds and reset the addressed board"
+    )
+    reset.add_argument("--address", required=True, type=slave_address)
     return parser
 
 
@@ -308,6 +317,12 @@ def run(args: argparse.Namespace) -> None:
             request = device.simulate_crc_error(args.address)
             print(f"sent bad-CRC request: {request.hex(' ')}")
             print("the LED should now flash red; reset the board to clear the error")
+        elif args.command == "reset":
+            device.reset_via_watchdog(args.address)
+            print(
+                f"board {args.address} acknowledged reset; "
+                "watchdog reset is expected in about 2 seconds"
+            )
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

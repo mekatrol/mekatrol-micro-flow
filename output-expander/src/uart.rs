@@ -158,6 +158,9 @@ pub fn request_length(bytes: &[u8]) -> Option<usize> {
     }
 
     match bytes[1] {
+        // Vendor watchdog-reset request has no payload.
+        0x42 => Some(4),
+
         // These functions have fixed eight-byte RTU requests:
         //
         // 0x01 - Read Coils
@@ -514,6 +517,8 @@ mod framing_tests {
         for function in [0x01, 0x03, 0x04, 0x05] {
             assert_eq!(request_length(&[247, function]), Some(8));
         }
+
+        assert_eq!(request_length(&[247, 0x42]), Some(4));
     }
 
     /// Verify variable-length multiple-coil requests.

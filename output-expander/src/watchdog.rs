@@ -1,3 +1,63 @@
+/// Vendor-specific Modbus function used to deliberately stop watchdog feeds.
+pub const STOP_FEED_FUNCTION: u8 = 0x42;
+
+/// Nominal independent-watchdog period.
+pub const TIMEOUT_MS: u32 = 2_000;
+
+/// Return whether an RTU frame is the complete stop-feeding command.
+///
+/// Address and CRC validation are performed by the Modbus server before this
+/// helper is called. The command deliberately has no data bytes.
+pub const fn is_stop_feed_command(frame: &[u8]) -> bool {
+    frame.len() == 4 && frame[1] == STOP_FEED_FUNCTION
+}
+
+#[cfg(all(target_arch = "riscv32", target_os = "none"))]
+/// CH32V003 independent watchdog, configured for a nominal two-second period.
+pub struct IndependentWatchdog;
+
+#[cfg(all(target_arch = "riscv32", target_os = "none"))]
+impl IndependentWatchdog {
+    /// Configure and start the watchdog. Once started it can only be stopped by
+    /// a device reset.
+    pub fn start() -> Self {
+        // The CH32V003 IWDG runs from the nominal 128 kHz LSI. A /64
+        // prescaler and reload value 3999 produce a nominal 2.0 s period.
+        // The pinned PAC omits this peripheral for the CH32V003, so keep the
+        // four documented IWDG register accesses contained in this wrapper.
+        unsafe {
+            write_register(CTLR, 0x5555);
+            write_register(PSCR, 4);
+            write_register(RLDR, 3_999);
+            // WCH explicitly permits continuing without polling PVU/RVU. In
+            // particular, polling here before starting the IWDG can stall
+            // startup because the LSI clock is not running yet.
+            write_register(CTLR, 0xAAAA);
+            write_register(CTLR, 0xCCCC);
+        }
+
+        Self
+    }
+
+    /// Reload the watchdog counter from the foreground main loop.
+    pub fn feed(&mut self) {
+        unsafe { write_register(CTLR, 0xAAAA) };
+    }
+}
+
+#[cfg(all(target_arch = "riscv32", target_os = "none"))]
+const IWDG_BASE: usize = 0x4000_3000;
+#[cfg(all(target_arch = "riscv32", target_os = "none"))]
+const CTLR: usize = IWDG_BASE;
+#[cfg(all(target_arch = "riscv32", target_os = "none"))]
+const PSCR: usize = IWDG_BASE + 0x04;
+#[cfg(all(target_arch = "riscv32", target_os = "none"))]
+const RLDR: usize = IWDG_BASE + 0x08;
+#[cfg(all(target_arch = "riscv32", target_os = "none"))]
+unsafe fn write_register(address: usize, value: u32) {
+    unsafe { core::ptr::write_volatile(address as *mut u32, value) };
+}
+
 // The health gate is a small copyable snapshot useful in diagnostics.
 #[derive(Clone, Copy, Debug)]
 /// Tracks progress in both normal code and interrupt-driven work.
@@ -54,5 +114,17 @@ impl Default for HealthGate {
 
         // Delegate so future initialisation changes live in one place.
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stop_command_has_no_payload() {
+        assert!(is_stop_feed_command(&[17, STOP_FEED_FUNCTION, 0, 0]));
+        assert!(!is_stop_feed_command(&[17, STOP_FEED_FUNCTION, 1, 0, 0]));
+        assert!(!is_stop_feed_command(&[17, 0x41, 0, 0]));
     }
 }

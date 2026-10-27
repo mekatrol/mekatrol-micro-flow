@@ -12,6 +12,7 @@ use crate::outputs::Outputs;
 use crate::registers::RegisterBank;
 use crate::registers::STATUS_CONFIGURED;
 use crate::uid::UID_BYTES;
+use crate::watchdog;
 
 /// A processed request and any resulting configuration change.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,6 +24,8 @@ pub struct Outcome {
     pub config_changed: bool,
     /// The caller must apply `bank.outputs.mask()` to GPIO if this is true.
     pub outputs_changed: bool,
+    /// Stop feeding the hardware watchdog after transmitting this response.
+    pub stop_watchdog_feed: bool,
 }
 
 impl Outcome {
@@ -32,6 +35,7 @@ impl Outcome {
             response_len: 0,
             config_changed: false,
             outputs_changed: false,
+            stop_watchdog_feed: false,
         }
     }
 }
@@ -106,6 +110,7 @@ impl Server {
                         response_len: 0,
                         config_changed: true,
                         outputs_changed: false,
+                        stop_watchdog_feed: false,
                     };
                 }
             }
@@ -116,6 +121,24 @@ impl Server {
         if address != self.bank.config.slave_address || !(1..=247).contains(&address) {
 
             return Outcome::silent();
+        }
+
+        // Function 0x42 is an addressed, vendor-specific fault-injection
+        // command. Acknowledge it with an echo response; the runtime stops
+        // feeding only after that response has had a chance to leave the UART.
+        if function == watchdog::STOP_FEED_FUNCTION {
+            if !watchdog::is_stop_feed_command(frame) {
+                return self.exception(address, function, Exception::IllegalDataValue, response);
+            }
+
+            response[0] = address;
+            response[1] = function;
+            return Outcome {
+                response_len: modbus::append_crc(response, 2).unwrap_or(0),
+                config_changed: false,
+                outputs_changed: false,
+                stop_watchdog_feed: true,
+            };
         }
 
         let request = match modbus::parse(frame) {
@@ -262,6 +285,7 @@ impl Server {
             response_len,
             config_changed: false,
             outputs_changed,
+            stop_watchdog_feed: false,
         }
     }
 
@@ -283,6 +307,7 @@ impl Server {
             response_len: modbus::append_crc(response, 3).unwrap_or(0),
             config_changed: false,
             outputs_changed: false,
+            stop_watchdog_feed: false,
         }
     }
 }
@@ -416,5 +441,35 @@ mod tests {
         assert_eq!(outcome.response_len, 6);
 
         assert_eq!(reply[3], 4);
+    }
+
+    #[test]
+    fn stop_watchdog_command_is_acknowledged_and_reported() {
+        let mut server = server();
+        let (req, len) = request(&[247, watchdog::STOP_FEED_FUNCTION]);
+        let mut reply = [0; MAX_RESPONSE];
+
+        let outcome = server.handle(&req[..len], &mut reply);
+
+        assert_eq!(outcome.response_len, 4);
+        assert!(outcome.stop_watchdog_feed);
+        assert_eq!(&reply[..2], &[247, watchdog::STOP_FEED_FUNCTION]);
+        assert!(modbus::valid_crc(&reply[..outcome.response_len]));
+    }
+
+    #[test]
+    fn malformed_or_broadcast_stop_watchdog_commands_do_not_trigger() {
+        let mut server = server();
+        let mut reply = [0; MAX_RESPONSE];
+
+        let (req, len) = request(&[247, watchdog::STOP_FEED_FUNCTION, 1]);
+        let outcome = server.handle(&req[..len], &mut reply);
+        assert!(!outcome.stop_watchdog_feed);
+        assert_eq!(reply[1], watchdog::STOP_FEED_FUNCTION | 0x80);
+
+        let (req, len) = request(&[0, watchdog::STOP_FEED_FUNCTION]);
+        let outcome = server.handle(&req[..len], &mut reply);
+        assert_eq!(outcome.response_len, 0);
+        assert!(!outcome.stop_watchdog_feed);
     }
 }

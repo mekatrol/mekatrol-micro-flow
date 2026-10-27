@@ -152,6 +152,9 @@ python tools/modbus_tool.py --port /dev/ttyACM1 outputs --address 1 --set 0x55
 
 # Read device ID
 python tools/modbus_tool.py --port /dev/ttyACM1 info --address 247
+
+# Reset the addressed board through its watchdog
+python tools/modbus_tool.py --port /dev/ttyACM1 reset --address 247
 ```
 
 ### Test the error LED
