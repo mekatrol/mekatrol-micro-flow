@@ -1,41 +1,116 @@
-# Output expander protocol
+# Output Expander RS-485 Protocol — Version 1
 
-Modbus RTU uses 19,200 bit/s, 8E1. Multi-byte Modbus fields are big-endian; CRC16 is low byte first. At exactly 19,200 bit/s, t1.5 is 860 us and t3.5 is 2006 us. Broadcast address 0 may write outputs but never receives a response.
+## 1. Purpose
 
-## Data model
+A small, open, binary master/device protocol for CH32V003-based output expanders and related automation peripherals. The bus is controlled by the project's own controller or a gateway exposing a Python API to software such as Home Assistant. This document is a **proposed specification**; firmware and host tooling must implement and validate it before declaring interoperability.
 
-- Coils 0–7: output channels 1–8, LSB first, `1=ON`.
-- Discrete input 0: PC7 push button, `1=pressed`. PC7 has an internal pull-up;
-  connect a normally-open button between PC7 and GND.
-- Holding 0: slave ID (`1..247`, or internal `0xFF` unconfigured); normal writes forbidden.
-- Holding 1: startup output mask.
-- Holding 2: communications timeout milliseconds; zero disables it.
-- Holding 3: timeout output mask.
-- Holding 4: LED brightness, 0–255.
-- Input 0: firmware major in the high byte, minor in the low byte.
-- Input 1: current output mask.
-- Input 2: status flags: bit 0 configured, bit 1 communications timeout,
-  bit 2 UART receive error, bit 3 persistent-configuration fault. Unallocated
-  bits are zero and must be ignored by a controller.
-- Input 3–8: the full 96-bit UID as six big-endian 16-bit words in HAL byte order.
+## 2. Physical layer and bus ownership
 
-Supported standard functions are 01, 02, 03, 04, 05 and 0F. Function 06 remains disabled until persistent commit semantics are hardware-validated. Responses use exceptions 01–04 as applicable. The implementation caps ADUs at 128 bytes and rejects larger frames.
+- Two-wire half-duplex RS-485, initially **19,200 baud, 8 data bits, no parity, 1 stop bit (8N1)**.
+- A single master initiates all traffic. Devices transmit only in response to a valid unicast request addressed to them.
+- Broadcast requests receive **no response**. No unsolicited telemetry or discovery replies are permitted in v1.
+- The master must wait for a response or timeout before sending the next request. A device must release DE only after USART transmission-complete (TC), not merely when the transmit register is empty.
+- Bus termination, biasing, grounding and surge/ESD protection are hardware responsibilities. CRC does not substitute for proper wiring.
 
-## Watchdog reset function 42
+## 3. Framing
 
-An addressed vendor-specific request containing only `SLAVE | 42 | CRC` asks
-the board to stop feeding its independent watchdog. The board acknowledges with
-`SLAVE | 42 | CRC`, then resets after the nominal 2-second watchdog period.
-As soon as the valid request is received, the status LED turns solid red and
-remains red until the reset occurs.
-Broadcast requests are ignored. This is intended for controlled reset and
-watchdog fault-injection; it is not authenticated and must only be exposed on a
-trusted Modbus bus.
+Each decoded frame contains the following fields, in order:
 
-## Commissioning function 41
+| Offset | Size | Field | Description |
+|---|---:|---|---|
+| 0 | 1 | `VERSION` | `0x01` |
+| 1 | 1 | `DEST` | Device address; `0x00` = broadcast |
+| 2 | 1 | `SEQ` | Master-assigned transaction sequence, modulo 256 |
+| 3 | 1 | `TYPE` | `0x00` request, `0x01` response, `0x02` error |
+| 4 | 1 | `CMD` | Command identifier |
+| 5 | 1 | `LEN` | Payload length, 0–24 bytes |
+| 6 | `LEN` | `PAYLOAD` | Command-specific bytes |
+| 6+LEN | 2 | `CRC16` | Little-endian: low byte then high byte |
 
-The safe first release supports isolated-device assignment only. A controller must ensure exactly one unconfigured device is attached.
+**Maximum decoded frame: 32 bytes** (6-byte header + 24-byte payload + 2-byte CRC). The entire decoded frame is COBS-encoded and terminated by a single `0x00` byte. COBS removes zero bytes from the encoded frame; `0x00` unambiguously marks its end. A receiver must reject frames with invalid COBS encoding, unexpected length, unsupported version, invalid type, excessive payload, or incorrect CRC. No outputs or persistent settings may change for a rejected frame.
 
-`ASSIGN_UID` is a broadcast request with payload `03 | UID[12] | NEW_ID`, covered by the normal RTU CRC. A configured or unconfigured device whose entire 96-bit UID matches may commit an ID from 1 through 247. This allows the board owner to recover or reorganise bus addresses without erasing the device. It sends no broadcast response. The controller then addresses `NEW_ID`, reads input registers 3–8, and requires an exact UID match.
+The CRC is **CRC-16/CCITT-FALSE**: polynomial `0x1021`, initial value `0xFFFF`, no reflection, final XOR `0x0000`, calculated over bytes `VERSION` through the final payload byte. The standard test vector `123456789` yields `0x29B1`. CRC is for accidental corruption detection, **not authentication**.
 
-Prefix discovery and unsolicited slot responses are not enabled: collision detection cannot be guaranteed without a separately specified and tested master timing protocol. Address assignment and readdressing require the complete UID, limiting the command to the intended board. CRC detects transmission errors but does not authenticate a commissioning command.
+Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted as its 12 raw MCU UID bytes in a fixed order documented by the device's UID module; both host and firmware must use exactly the same order.
+
+## 4. Addressing and transaction rules
+
+- `0x00`: broadcast. Only commands explicitly marked broadcast-capable may use it; no replies.
+- `0x01..0xFE`: commissioned device addresses.
+- `0xFF`: uncommissioned/internal address, never used as a unicast destination.
+- The response copies `DEST`, `SEQ` and `CMD` from the request. An error frame uses `TYPE=0x02` and a one-byte error-code payload.
+- The master accepts a response only if address, sequence, command, CRC and response type are valid for its outstanding request. At most one request may be outstanding on the bus.
+- A device processes a valid unicast request and sends at most one response. To avoid repeating side effects after a lost reply, the master should retry with the same `SEQ`; the device should cache the most recent transaction result for its own address when feasible. **Persistence commands must be idempotent**, regardless of whether a reply cache is implemented.
+- Initial master response timeout: **100 ms**, configurable in the host. Initial retry count: **2**. These are host defaults, not guaranteed device timing limits; validate against EEPROM write latency and RS-485 turnaround.
+
+## 5. Commands
+
+| CMD | Name | Request payload | Success response payload | Broadcast? |
+|---|---|---|---|---|
+| `0x01` | `PING` | None | `UID[12]`, firmware major `u8`, minor `u8` | No |
+| `0x02` | `GET_STATUS` | None | outputs `u8`, inputs `u8`, status `u16 LE` | No |
+| `0x10` | `SET_OUTPUTS` | output mask `u8` | applied mask `u8` | No |
+| `0x11` | `GET_OUTPUTS` | None | current mask `u8` | No |
+| `0x20` | `GET_CONFIG` | None | address `u8`, startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | No |
+| `0x21` | `SET_CONFIG` | startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | same 5 bytes on successful EEPROM commit | No |
+| `0x30` | `ASSIGN_UID` | UID `[12]`, new address `u8` | None | Yes |
+| `0x40` | `RESET` | None | None; see reset rule | No |
+
+### Command details
+
+**SET_OUTPUTS:** Bit 0 controls channel 1 and bit 7 controls channel 8. `1` = logical ON. Physical outputs are active LOW. This changes volatile output state only and **must not write EEPROM**.
+
+**SET_CONFIG:** Validate every field before writing. Commit the new record to the inactive EEPROM slot, verify by readback, then activate it in RAM. Respond only after success. A failure leaves the last valid record active and returns `STORAGE_ERROR` if communication is still operational.
+
+**ASSIGN_UID:** Intended for isolated-device commissioning. Every device compares all 12 UID bytes; only the matching device accepts the new address, which must be `0x01..0xFE`. The matched device commits the address to EEPROM and activates it only after verified persistence. Because the command is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned full UID. Multiple factory devices can share the bus electrically but their UIDs must be known before targeted assignment; v1 does not provide collision-free UID discovery. Readdressing an already commissioned unit is permitted on a trusted bus.
+
+**RESET:** The device must finish transmitting a valid response before triggering reset or intentionally allowing the watchdog to expire. The successful response has an empty payload. This is an unauthenticated maintenance command and must only be exposed on a trusted bus.
+
+## 6. Status bits
+
+`GET_STATUS` returns a little-endian 16-bit mask:
+
+| Bit | Meaning |
+|---:|---|
+| 0 | Commissioned address stored and validated |
+| 1 | Communications timeout active |
+| 2 | UART/framing/CRC fault observed |
+| 3 | EEPROM configuration fault |
+| 4 | Watchdog/reset-related diagnostic (if supported) |
+| 5–15 | Reserved; send zero and ignore on receipt |
+
+The `inputs` byte uses bit 0 for the active-low PC7 button (`1` = pressed). Other bits are reserved and zero.
+
+## 7. Error codes
+
+| Code | Name | Meaning |
+|---|---|---|
+| `0x01` | `UNKNOWN_COMMAND` | Command not implemented |
+| `0x02` | `BAD_LENGTH` | Payload length invalid for command |
+| `0x03` | `BAD_VALUE` | Field out of range |
+| `0x04` | `STORAGE_ERROR` | EEPROM commit or verification failed |
+| `0x05` | `BUSY` | Device temporarily cannot execute command |
+| `0x06` | `UNSUPPORTED` | Command valid but unavailable on this device |
+
+Bad CRC, malformed COBS, wrong address and unsupported frame version are **silently discarded**, to avoid replies to noise. Error replies are only for well-formed, valid-CRC unicast requests.
+
+## 8. Communications timeout and fail-safe behavior
+
+A valid addressed `SET_OUTPUTS` request or a defined controller heartbeat refreshes the communications timeout. In v1, `PING` is also a heartbeat. Broadcast commissioning does not refresh it. A timeout of zero disables monitoring; otherwise, after the configured number of milliseconds without qualifying traffic, apply the configured fallback output mask. `GET_STATUS` reports the timeout condition. A subsequent valid control request clears the timeout condition and resumes normal control. Define startup grace behavior in firmware and tests so a newly powered device does not unexpectedly energize loads.
+
+## 9. EEPROM configuration storage
+
+The device uses a local SOT-23-5 24C02-class I²C EEPROM (nominal 256 bytes). Two independent 64-byte versioned configuration records occupy `0x00..0x3F` and `0x40..0x7F`; each contains a sequence number and CRC-32. The remaining 128 bytes are reserved. Writes are limited to explicit configuration changes, use EEPROM page boundaries, and require ACK polling plus full readback verification. The previous valid slot is retained until the replacement is verified. A blank or invalid EEPROM results in safe defaults and an uncommissioned address. **The exact chip's datasheet controls electrical pins, address and page size.**
+
+## 10. Reference examples and testing
+
+The Python reference implementation must expose COBS encoding/decoding, CRC-16, frame parsing, timeouts, UID commissioning, configuration and output commands. Required interoperability tests include:
+
+- CRC vector `123456789` → `0x29B1`; payloads containing zero bytes; maximum 32-byte decoded frames.
+- Invalid COBS, truncated frames, incorrect CRC, excessive length, unsupported version and wrong destination.
+- Noise, dropped bytes, UART overrun, repeated sequence numbers, late replies and bus contention.
+- Eight output-bit transitions, uncommissioned device behavior, UID mismatch, duplicate addresses and reset acknowledgment.
+- EEPROM blank/corrupt slots, interrupted writes, failed readback, sequence wraparound and repeated commits.
+- RS-485 DE/TC timing and power-up output safety.
+
+The v1 wire format should be frozen only after a host-side reference encoder/decoder and embedded parser pass the same test vectors.
