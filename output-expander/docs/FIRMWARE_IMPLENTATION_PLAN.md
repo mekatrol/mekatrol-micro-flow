@@ -1,280 +1,227 @@
-# CH32V003F4P6 RS485 Output Expander — Implementation Plan
+# CH32V003 Output Expander — Firmware Implementation Status and Completion Plan
 
-Status: active implementation plan. Software progress was reviewed 2026-10-27: Stage 1 is implemented using the provisional eight-pin mapping and active-low board behavior; Stage 2 RX, Stage 3 protocol logic, and Stage 4 read-only register/UID logic are implemented. Hardware acceptance for Stage 1 and all later stages remains outstanding. **Do not treat unverified HAL APIs, pin mappings, or silicon details as established facts; validate them against the pinned sources before coding.**
+**Repository snapshot reviewed:** 2026-10-27 (uploaded `output-expander` archive).  
+**Purpose:** source-aligned implementation reference, remaining work plan, and verification checklist.  
+**Status:** substantial firmware implemented; **not yet a hardware-validated or production-released build**.
 
-## 0. Project context and objective
+> This document describes the checked-in code, not the original proposed architecture. Where documentation and code disagree, the code is identified as the current implementation and the discrepancy is recorded. Source inspection is not equivalent to a successful compile or bench test. `cargo` was unavailable in the review environment; no build, host tests, flashing, or physical measurements were performed for this revision.
 
-Build production-oriented, `no_std`, heap-free Rust firmware for the WCH CH32V003F4P6 (TSSOP-20), driving eight ULN2803A inputs, communicating via half-duplex RS485 (SP485EEN-L/TR or compatible) at 19,200 bit/s, and indicating status through one WS2812 LED. Use interrupt-driven communications and timers; keep `main` primarily a low-priority status LED and watchdog service loop. Implement Modbus RTU (standard functions wherever possible), CRC-16, safe UID-assisted address commissioning, persistent configuration in a reserved final 64-byte Flash page, and an independent watchdog.
+## 1. Hardware, toolchain and constraints
 
-Existing known-good project:
+- **MCU:** WCH CH32V003F4P6, RV32EC, 16 KiB Flash, 2 KiB SRAM; firmware is Rust 2024, `#![no_std]`, fixed-capacity buffers and no heap.
+- **Package:** `output-expander` v0.1.0; binary entry `src/main.rs`, reusable/testable library `src/lib.rs`.
+- **Target:** `riscv32ec-unknown-none-elf.json`; `rust-toolchain.toml` pins the Rust toolchain (consult the file for the exact version).
+- **Build:** `cargo firmware` expands to `cargo build --release -Z build-std=core`; `cargo flash` runs release firmware through `wlink -v flash`. `.cargo/config.toml` selects `-Tlink.x` and the custom target.
+- **Dependencies:** target-specific `ch32-hal` (features `ch32v003f4p6`, `memory-x`, `rt`), `qingke-rt` 0.8.2, `qingke` 0.8.2, `panic-halt` 1.0; `critical-section` 1.2 for shared interrupt state. `Cargo.lock` pins the HAL commit `bbcabaac96f482b1cfaea111d2fc938095b9a2fd` (per `docs/hardware-validation.md`).
+- **Clock:** `main.rs` selects 48 MHz HSI; WS2812 bit timing depends on this configuration.
+- **Serial:** USART1, PD5 TX / PD6 RX, 19,200 bit/s, 8E1 as documented by the current protocol/board configuration. Confirm exact hardware register configuration and baud accuracy on the board.
+- **Resource limits:** actual release ELF, `.text/.rodata/.data/.bss`, stack high-water and Flash/SRAM margin **have not been measured in this review**.
 
-- Package: `output-expander`, Rust edition 2024.
-- Target: `riscv32ec-unknown-none-elf.json`.
-- `.cargo/config.toml`: `firmware = "build --release -Z build-std=core"`; `flash = "run --release -Z build-std=core"`; runner `wlink -v flash`; linker `-Tlink.x`; `json-target-spec = true`.
-- `ch32-hal` Git `https://github.com/ch32-rs/ch32-hal` with features `ch32v003f4p6`, `memory-x`, `rt`; observed checkout revision `bbcabaa` (confirm in `Cargo.lock`).
-- `qingke-rt = 0.8.2` with `highcode`; `panic-halt = 1.0`.
-- Previously compiled and ran: `hal::init`, `Output::new`, TIM2 low-level timer with `set_frequency(Hertz(...))`, `clear_update_interrupt`, `enable_update_interrupt(true)`, `start`, `#[qingke_rt::interrupt] fn TIM2()`, `hal::interrupt::InterruptExt`, `hal::interrupt::TIM2.enable()`, `pac::TIM2.intfr().modify(|r| r.set_uif(false))`.
-- **Important architecture constraint:** target does not support atomic read-modify-write operations (`AtomicU32::fetch_add`, `AtomicBool::swap`). `AtomicBool::load/store` work but are not an atomic read-and-clear pair. Prefer interrupt-masked critical sections or single-writer data structures.
+## 2. Actual repository layout
 
-### Definition of done
+```text
+output-expander/
+├── .cargo/
+│   └── config.toml              Cargo aliases, custom target, linker, wlink runner
+├── Cargo.toml                   package, dependencies, release settings
+├── Cargo.lock                   resolved/pinned dependencies
+├── rust-toolchain.toml          Rust toolchain selection
+├── rustfmt.toml                 formatting configuration
+├── riscv32ec-unknown-none-elf.json  custom CH32V003 compilation target
+├── README.md                    project overview / older bring-up notes
+├── docs/
+│   ├── FIRMWARE_IMPLENTATION_PLAN.md  this implementation reference
+│   ├── BUILD.md                 build/flash instructions; behavior section outdated
+│   ├── PROJECT_SETUP.md         tools, WCH-LinkE, wiring and Modbus utility
+│   ├── hardware-validation.md   verified source facts and unresolved hardware gates
+│   ├── protocol.md              current public Modbus protocol description
+│   ├── release-checklist.md     release gate checklist (needs synchronization)
+│   ├── CH32V003DS0.pdf          MCU datasheet
+│   ├── CH32V003RM.pdf           MCU reference manual
+│   ├── b18a_41036460-schematic.pdf  supplied board schematic
+│   └── 6ba4_41036460-tds.pdf   supplied component documentation
+├── src/
+│   ├── lib.rs                   module exports / target-gated hardware modules
+│   ├── main.rs                  hardware initialization, USART ISR, foreground loop
+│   ├── board.rs                 constants, provisional pin list, active-low conversion
+│   ├── output_gpio.rs           eight physical GPIO outputs (firmware target)
+│   ├── outputs.rs               logical eight-bit output state
+│   ├── rs485.rs                 DE direction GPIO controller (firmware target)
+│   ├── serial.rs                USART configuration and blocking RS485 responses
+│   ├── irq_rx.rs                interrupt-safe timestamped RX/error event queue
+│   ├── irq_consumer.rs          foreground transfer of IRQ events and ready frames
+│   ├── rtu_receiver.rs          bounded RTU framing and silence-gap detection
+│   ├── uart.rs                  UART receive/half-duplex state utilities
+│   ├── timer.rs                 hardware-independent RTU timing calculations
+│   ├── monotonic.rs             free-running SysTick clock (firmware target)
+│   ├── modbus.rs                Modbus framing, CRC and protocol helpers
+│   ├── server.rs                complete-frame request dispatch and responses
+│   ├── registers.rs             coil/input/holding data model and status flags
+│   ├── commissioning.rs         UID-selected broadcast address assignment
+│   ├── config.rs                versioned 64-byte Flash record codec / CRC32
+│   ├── uid.rs                   96-bit silicon ID and Modbus word conversion
+│   ├── watchdog.rs              IWDG access and health-gate logic
+│   ├── status_led.rs            status patterns / RGB color selection
+│   └── ws2812.rs                PC1 single-pixel GPIO waveform driver
+└── tools/
+    └── modbus_tool.py          host Modbus inspection/control utility
+```
 
-1. Reliable Modbus RTU slave at 19,200 bit/s, 8E1 by default, CRC verified, documented register map, robust framing, correct RS485 DE switching.
-2. Eight outputs controllable independently or as a bitmask, known safe startup and watchdog/reset state.
-3. Device UID readable, unconfigured devices commissioned without multiple devices responding simultaneously; standard Modbus slave IDs 1–247, ID 0 broadcast only.
-4. Configuration survives power cycling; firmware linker excludes the final 64 bytes; writes verified; power-failure behavior documented and tested.
-5. WS2812 status updates are low priority and cannot corrupt or starve RS485 traffic.
-6. Independent watchdog serviced only when system health conditions are satisfied; deliberately hung main loop resets device safely.
-7. `cargo firmware` and `cargo flash` work with the existing toolchain; all features fit within 16 KB Flash and 2 KB SRAM with recorded size headroom.
+**Important:** the former draft's proposed `timer.rs` TIM2 interrupt architecture is **not** the active runtime. The firmware uses a free-running **SysTick** monotonic counter and timestamps bytes in the USART1 interrupt. The existing `uart.rs` helpers should not be confused with the actual hardware driver `serial.rs`.
 
-## 1. Mandatory discovery and validation (Stage 0)
+## 3. Current physical interface (code-derived; PCB verification pending)
 
-Before editing implementation, inspect the repository and locked dependencies:
-
-- `Cargo.toml`, `Cargo.lock`, `.cargo/config.toml`, `riscv32ec-unknown-none-elf.json`, `src/main.rs`, generated linker scripts and build output.
-- HAL source at the locked revision: UART/USART driver, interrupt extension, timer, Flash controller, watchdog, GPIO, DMA, clocks, critical-section facilities, chip PAC, UID and reset-cause registers.
-- Manufacturer CH32V003F4P6 datasheet and CH32V003 reference manual, plus SP485EEN and ULN2803A datasheets. Record citations/section names in project notes. Verify peripheral routing, alternate functions, remapping, electrical limits, UID register addresses/length, erase/write granularity and Flash endurance, and whether TIM2 and USART1 can run concurrently with chosen pin mapping.
-- Confirm physical pin numbers against the **manufacturer TSSOP-20 pinout** before wiring. The provisional pin mapping below is not PCB-authoritative; previous discussion contained unverified pin diagrams.
-- Check `ch32-hal` ownership model, whether USART interrupt and DMA APIs are available and whether Flash operations require RAM-resident code or special unlock/erase sequences.
-- Verify exact mechanism for overriding HAL-generated `memory.x` when the `memory-x` feature is active. Inspect actual linker map; **do not assume that placing a local `memory.x` overrides generated memory layout**.
-- Inspect Flash tool (`wlink`) erase behavior. Full-chip erase may destroy saved configuration even if linker excludes it.
-- Check clock tree, UART baud error, TIM2 timer input clock, and IWDG low-speed oscillator tolerance.
-
-**Stage 0 exit:** commit a `docs/hardware-validation.md` listing verified pins, HAL methods, memory map, UID details, reset/watchdog features, electrical assumptions and unresolved issues. Stop and ask for hardware confirmation if pinout or output polarity is ambiguous.
-
-## 2. Proposed electrical interfaces and pin plan
-
-Tentative GPIO names from earlier discussion (verify exact physical pins and USART mapping in Stage 0):
-
-| Function | Proposed MCU signal | Notes |
+| Function | Current code mapping | Behavior / qualification |
 |---|---|---|
-| ULN2803A IN1..IN8 | PC0, PC3, PC4, PC5, PD0, PD2, PD3, PD4 | Eight separate GPIO; mapping can change before PCB finalization |
-| USART1 TX / RX | PD5 / PD6 | Confirm default/remapped function in selected HAL configuration |
-| RS485 DE and /RE | PC6 | Tie DE and active-low /RE together: LOW = receive, HIGH = transmit |
-| Push button input | PC7 | Internal pull-up; button to GND; discrete input 0, 1=pressed |
-| WS2812 DIN | PC1 | One LED, existing status LED pin; verify voltage compatibility and waveform generation |
-| SWIO | PD1 | Reserve for programming/debugging |
-| NRST | PD7 | Prefer retaining reset functionality |
+| Outputs 1–8 | PC0, PC3, PC4, PC5, PD0, PD2, PD3, PD4 | Logical mask bits 0–7 in that order; **active LOW** in current triac/FET bring-up, GPIO HIGH = OFF. All pins initialize HIGH before any mask is applied. |
+| USART1 TX/RX | PD5 / PD6 | Half-duplex Modbus RTU at 19,200 8E1. |
+| RS485 DE and `/RE` | PC6 | `main.rs` instantiates a **single** PC6 direction GPIO; comments and `rs485.rs` assume DE and `/RE` electrically tied. `hardware-validation.md` says the supplied schematic has **separate** PC6 DE and PC7 `/RE`; resolve the actual board revision. |
+| Push button | PC7 | Configured as input with pull-up, active LOW; exposed as discrete input 0. **Conflicts with any board that uses PC7 for `/RE`.** |
+| WS2812 DIN | PC1 | Single status LED, waveform generated by `ws2812.rs`, 48 MHz clock assumption. |
+| SWIO / reset | PD1 / PD7 | Preserve programming access and verify reset configuration. |
 
-SP485EEN: MCU TX→DI, RO→MCU RX, PC6→DE and /RE, A/B to bus. DE and /RE tied is valid for mutually exclusive transmit/receive. Default PC6 LOW at boot, preferably with external pull-down to avoid enabling driver during reset. Add RS485 termination only at physical bus ends, bus biasing as required by topology, appropriate common reference, and protection as dictated by environment. Check 3.3 V transceiver compatibility, input thresholds and loading. Never drive DE HIGH before UART and GPIO are configured. On transmit, assert DE before first start bit, wait for **USART transmission complete (TC), not merely TX buffer empty**, then deassert DE and return to receive. Account for DE setup/hold timing and possible RX echo.
+The old ULN2803A/high-active assumptions are **not valid descriptions of the current output driver**. The README mentions triac and FET board variants; do not generalize output electrical ratings or safety behavior until the exact populated board and schematic are approved. Logical `1` means output ON, but physical GPIO LOW activates a channel in the current implementation. Verify safe power-up behavior on real loads, including the interval before firmware takes control.
 
-ULN2803A: MCU HIGH energizes the corresponding Darlington sink channel; MCU LOW turns it off. This is an open-collector low-side output, not a push-pull voltage source. Connect external load between positive supply and ULN output. For inductive loads connect COM to the positive load supply to use clamp diodes; verify current, power dissipation, grounding and supply design. Outputs should default OFF (GPIO LOW) at reset/startup and remain OFF until initialized. Document whether loads are safety-critical; do not assume this firmware alone provides functional safety.
+## 4. Runtime architecture actually implemented
 
-WS2812: verify LED supply voltage and whether 3.3 V data meets VIH at that supply. Use a level shifter if needed. Budget ~24 bits × 1.25 µs ≈ 30 µs for a single RGB LED, plus reset/latch interval (the earlier 720 µs estimate was incorrect). Do not disable interrupts long enough to lose UART bytes. Validate timing on a scope/logic analyzer.
+1. `main.rs` initializes HAL at 48 MHz, WS2812 PC1, eight output pins HIGH/OFF, SysTick monotonic clock, PC6 RS485 direction LOW/receive, PC7 button, USART1, UID and the Modbus `Server`.
+2. Firmware constructs a **default** `Config`, explicitly sets slave address **247** and startup mask **0**. It does **not** read a persisted record from Flash. `Server` receives the silicon UID via `uid::read()`.
+3. `RtuReceiver` owns fixed-size receive buffers; `irq_rx` queues hardware-timestamped bytes and UART errors from the `USART1` ISR. `irq_consumer` drains events in the foreground, applies RTU timing, and publishes complete frames. Critical sections coordinate interrupt/foreground ownership.
+4. Foreground processing samples PC7, passes a completed ADU to `Server::handle`, updates status and physical output mask when requested, and transmits any response through `Serial::write_response`.
+5. **RX is interrupt-driven, but TX remains blocking** in `serial.rs`; the direction driver asserts DE, sends the response, waits for completion of the final transmitted character, and returns to receive mode. Do not describe this as a fully interrupt-driven TXE/TC state machine.
+6. The foreground loop updates the single WS2812 when the desired color changes, drains receive events, handles frames, and feeds the independent watchdog last. A vendor reset command deliberately disables further feeds after its acknowledgement.
+7. `Outcome.config_changed` is recognized, but its handler in `main.rs` is explicitly `TODO` and performs **no Flash write**. Any address assignment exists only in RAM until reset.
 
-## 3. Software architecture and ownership
+**Timing:** `docs/protocol.md` specifies t1.5 = 860 µs and t3.5 = 2006 µs at 19,200 8E1. The receiver uses timestamped input to enforce frame separation. Verify these thresholds, handling of long scheduling delays, queue saturation, and the actual RS485 turnaround waveform under load. Blocking TX and bit-banged LED activity require explicit stress testing.
 
-Suggested modules (adapt to actual HAL APIs and code-size budget):
+## 5. Protocol and data model
 
+**Framing:** Modbus RTU, 19,200 8E1, CRC-16/MODBUS (low CRC byte first), multi-byte register fields big-endian. Broadcast address `0` never receives a response. Maximum RTU ADU **128 bytes** (see `docs/protocol.md` and fixed buffers). Factory/default slave ID is **247**, not the earlier plan's `0xFF` unconfigured ID. `Config` uses `0xFF` as an internal unconfigured marker, but `main.rs` explicitly forces 247.
+
+| Space | Zero-based addresses | Meaning |
+|---|---|---|
+| Coils | 0–7 | Output channels 1–8, bit 0 first; `1` = logical ON |
+| Discrete inputs | 0 | PC7 push button, `1` = pressed |
+| Holding registers | 0 | Slave address; normal write disabled |
+| Holding registers | 1 | Startup output mask |
+| Holding registers | 2 | Communications timeout in ms; zero disables |
+| Holding registers | 3 | Timeout output mask |
+| Holding registers | 4 | LED brightness 0–255 |
+| Input registers | 0 | Firmware version, major high byte/minor low byte (`0x0001` in code) |
+| Input registers | 1 | Current logical output mask |
+| Input registers | 2 | Status bits: 0 configured, 1 comms timeout, 2 UART RX error, 3 configuration fault |
+| Input registers | 3–8 | Full 96-bit UID, six big-endian 16-bit words in HAL UID byte order |
+
+**Standard functions implemented in `server.rs`:** `0x01` read coils, `0x02` read discrete inputs, `0x03` read holding registers, `0x04` read input registers, `0x05` write single coil, `0x0F` write multiple coils. Unsupported or invalid requests use appropriate Modbus exceptions or silence for invalid CRC/address/broadcast, as applicable. **`0x06` write single register is not enabled** pending validated persistent commit semantics.
+
+**Vendor functions:**
+
+- `0x41` commissioning: broadcast ADU with payload `03 | UID[12] | NEW_ID` (subcommand `0x03`), followed by Modbus CRC. Only a board whose complete UID matches accepts the assignment; it does not reply to the broadcast. Assignment can target an already configured board. **Persistence is not implemented in the runtime**, despite the `config_changed` flag. Read UID back from the proposed new address and confirm after reboot once Flash persistence exists. No multi-board discovery or unsolicited replies.
+- `0x42` watchdog reset: addressed ADU `SLAVE | 42 | CRC`, no payload. Acknowledge, then stop feeding the IWDG; LED stays solid red until reset. This command is **unauthenticated**; use only on trusted buses. Broadcast reset requests are ignored.
+
+The authoritative wire-format summary is `docs/protocol.md`; keep it synchronized with `server.rs`, `registers.rs`, and `commissioning.rs`.
+
+## 6. Persistent configuration: implemented codec, missing runtime storage
+
+`src/config.rs` defines a **64-byte** version-1 record with `MEK1` magic (`0x4D454B31`), fixed fields, erased-value reserved bytes and CRC32 over the record excluding its final four CRC bytes. Settings include slave address, startup mask, communications timeout, timeout mask and LED brightness. The record codec supports validation and corruption rejection and has host-side tests.
+
+**Not implemented/verified:** reserved final Flash page in the linker memory map; target-specific Flash erase/program/read/verify integration; loading the record at startup; committing `config_changed`; preserving the page through `wlink` flashing; atomicity/recovery on interrupted writes; endurance limits. `docs/hardware-validation.md` explicitly states HAL-generated `memory.x` still covers all 16 KiB. **Do not program configuration Flash until linker exclusion and erase behavior are demonstrated.**
+
+A single 64-byte page is not inherently power-loss atomic. Decide whether losing the prior configuration on an interrupted erase is acceptable, or whether a redundant journal/two-page scheme and associated linker reservation are required. Do not advertise persistent commissioning until power-cycle tests pass.
+
+## 7. Watchdog, status LED and operational safety
+
+- **IWDG:** `watchdog.rs` uses CH32V003 IWDG registers directly; nominal timeout 2,000 ms (LSI oscillator tolerance applies). `main.rs` starts it after initialization and feeds in the foreground loop. A valid `0x42` request prevents further feeding after response transmission. The `HealthGate` helper exists, but **the main loop currently feeds based on `watchdog_feed_enabled`, not a comprehensive RX/TX/foreground health-gate assessment**. Reset-cause reporting is not integrated.
+- **LED:** `status_led.rs` provides color/pattern logic; `ws2812.rs` drives PC1. Runtime displays a short blue command pulse, green normal heartbeat, red error indication, and solid red while awaiting watchdog reset. `STATUS_LED_BRIGHTNESS` is hardcoded to **32** in `main.rs`; the persisted/configured brightness field is **not applied** to the runtime LED. Confirm timing and voltage margin with a scope.
+- **Output timeout:** config and status flags define communications timeout concepts, but the shown `main.rs` loop does **not** evaluate elapsed time since valid communications or apply `timeout_outputs`. Treat fail-safe communications timeout as **pending runtime integration**.
+- **Startup:** current firmware forces startup mask zero and sets all eight GPIOs inactive before applying the logical mask. The configuration's startup mask is not loaded from Flash. Check hardware-level off state before GPIO initialization and after brownout/watchdog reset.
+- **Fault behavior:** distinguish UART receive errors, invalid Modbus CRC, application exceptions, config storage faults, and true communications timeout; confirm that clearing status flags on a later valid request matches the desired diagnostics policy.
+
+## 8. Implementation status by subsystem
+
+| Area | Code status | Remaining acceptance |
+|---|---|---|
+| Project/toolchain and HAL | Configured in repository | Fresh release build, size/map, programmer and PCB validation |
+| GPIO output mask and polarity | Implemented | Verify all eight pins, physical channels, glitch-free reset |
+| USART1 receive ISR and event queue | Implemented | RX stress, overflow/error recovery, interrupt latency |
+| RTU timing, CRC, parser and server | Implemented | Interoperability, malformed traffic, timing and soak |
+| RS485 transmission and DE control | Blocking TX implemented | Confirm DE wiring, TC timing, contention and turnaround |
+| Coils/discrete/holding/input read map | Implemented | Verify all address boundaries and device-side behavior |
+| UID exposure | Implemented | Check UID stability/uniqueness on sample boards |
+| UID-selected commissioning | RAM assignment implemented | Flash commit, reboot verification, isolated-device test |
+| Flash record codec | Implemented and unit-tested in source | Linker reservation, erase/write/verify, power-fail tests |
+| Runtime config persistence | **Not implemented** | Load/save integration and fault policy |
+| Comms timeout and fallback mask | **Not wired into main loop** | Timeout application and recovery tests |
+| IWDG and deliberate reset command | Implemented in source | Hardware fault injection, health gating, reset cause |
+| WS2812 status | Implemented in source | LED timing/load tests, configurable brightness |
+| Fully interrupt-driven TX | **Not implemented** | Optional design improvement if blocking TX fails load testing |
+| Production release | **Not accepted** | Bench, soak, power cycling, resource and release evidence |
+
+## 9. Remaining work in recommended order
+
+### P0 — Resolve hardware truth and obtain a reproducible baseline
+
+1. Confirm the exact PCB revision against the supplied schematic, especially **PC7 button versus `/RE`**, PC6 direction wiring, eight output routing, active-low output stage, WS2812 supply/logic level, and reset/power-on pull states.
+2. Run `cargo test` on host and `cargo firmware` with the pinned toolchain. Capture warnings, failing tests, release ELF size, section sizes, linker map and stack budget. Do not claim these checks passed based on source inspection.
+3. Bench-test all eight channels, USART 8E1, RX IRQ recovery, DE/TC transitions, and LED waveform; record instruments and measurements in `docs/hardware-validation.md`.
+
+### P1 — Finish safe runtime configuration and Flash persistence
+
+1. Prove how to override or replace the HAL-generated Flash memory layout so the reserved page(s) cannot be linked into firmware. Check `wlink` erase strategy.
+2. Implement Flash load on boot, blank/corrupt record fallback and explicit fault indication. Decide whether factory address 247 is intended and document collisions with multiple factory devices.
+3. Implement bounded erase/program/verify on a real board; commit only after validating the requested change. Define error response/rollback semantics, power-loss behavior and wear limits.
+4. Apply stored startup mask and LED brightness only under an approved safety policy; preserve the initial OFF GPIO setup.
+5. Reboot and power-cycle after `0x41` assignment to prove the address persists. Only then consider enabling standard holding-register writes (`0x06`) with specified commit behavior.
+
+### P2 — Complete runtime safety and diagnostic behavior
+
+1. Track the last valid command/heartbeat using SysTick and enforce configured `comms_timeout_ms` and `timeout_outputs`; define which requests refresh the timeout and when normal operation resumes.
+2. Integrate meaningful `HealthGate` conditions if needed so an ISR/queue deadlock or stalled protocol worker cannot be hidden by a healthy foreground feed loop.
+3. Capture reset cause if supported and document what survives reset. Fault-inject stalled foreground, continuous noisy UART, and watchdog-triggered reset.
+4. Review LED status priority and whether the configuration brightness field should drive the physical LED.
+
+### P3 — Protocol and electrical robustness
+
+1. Verify 0x01/02/03/04/05/0F and 0x41/42 with an independent Modbus master; exercise wrong address, CRC errors, partial frames, t1.5/t3.5 boundaries, oversized ADUs, queue overflow, broadcasts, malformed counts and output-mask transitions.
+2. Scope RS485 DE against the final stop bit; confirm receiver re-enable and absence of bus contention on a multidrop network.
+3. Test continuous traffic while WS2812 updates and blocking responses run. Convert TX to an interrupt-driven state machine **only if required by measured latency/throughput**; do not claim this work already exists.
+4. Define isolated-device commissioning instructions and duplicate-address recovery. Multi-device discovery remains out of scope unless a collision-safe master/device protocol is separately specified and tested.
+
+### P4 — Documentation and release
+
+1. Correct stale **`docs/BUILD.md`**: it still describes a newline-terminated 8N1 RS485 echo firmware, not the current 8E1 Modbus runtime. Reconcile any similar bring-up wording in `README.md` and `docs/PROJECT_SETUP.md`.
+2. Update `docs/hardware-validation.md` (it currently says IWDG and WS2812 bindings are not enabled, while `main.rs` starts/drives both), `docs/release-checklist.md` (its interrupt/TIM2 item no longer matches architecture), and `docs/protocol.md` whenever behavior changes.
+3. Record full-chip erase/config-preservation procedure, pinout by PCB revision, UID and commissioning workflow, safe output behavior, error handling, resource headroom and known limitations.
+4. Complete power-cycle, Flash-interruption, multidrop soak, load-switching, reset, thermal and electrical tests before production approval.
+
+## 10. Verification commands and evidence template
+
+From the project root:
+
+```sh
+cargo test
+cargo firmware
+# Inspect the release ELF, section sizes, and linker map using your installed
+# RISC-V/LLVM binutils; record the exact commands and measured byte counts.
+# Only with a connected, approved test board and an understood erase policy:
+cargo flash
+python3 tools/modbus_tool.py --help
 ```
-src/
-  main.rs          // initialization, low-priority LED/watchdog loop
-  board.rs         // pin mapping, GPIO initialization and safe outputs
-  uart.rs          // USART RX/TX ISR, bounded buffers, TC and DE state machine
-  modbus.rs        // RTU parser, CRC16, functions, exceptions
-  registers.rs     // coils and register map, validation
-  timer.rs         // TIM2 monotonic tick and RTU inter-frame timing
-  commissioning.rs // UID selection/discovery and address assignment
-  config.rs        // persistent config format, validation, flash I/O
-  uid.rs           // silicon unique identifier access
-  watchdog.rs      // IWDG setup, feed, health gating
-  status_led.rs    // nonblocking WS2812 status rendering
-```
 
-Keep ISR execution short and bounded. USART RX ISR reads received byte, handles UART error flags, and enqueues byte with timestamp/frame boundary information. TX ISR feeds bytes, transitions to waiting-for-TC, then releases DE. Timer ISR updates bounded time counters and flags. Parsing and application state transitions should run in a high-priority cooperative worker or carefully bounded interrupt-deferred work; **a main loop devoted only to status LED is incompatible with deferred parsing unless another worker exists**. Prefer a short main-loop service call `service_comms()` ahead of LED work, then LED/watchdog as low priority, or implement a safe ISR-driven parser if measured ISR cost is acceptable. Explicitly document chosen scheduling model.
+For each accepted milestone record: **commit hash; PCB revision; toolchain/HAL versions; commands run; pass/fail output; Flash and SRAM bytes; instrument captures; power-cycle results; unresolved issues; and reviewer sign-off.** Hardware tests must be labeled *not run* until actually performed.
 
-Avoid `static mut` shared unsafely. Use critical sections and static buffers with single-producer/single-consumer ownership; no heap. On this target, do not use unavailable atomic RMW operations. Size buffers based on maximum supported Modbus frame (e.g., 64–128 bytes if restricting request lengths); reject oversize frames and document limits. Standard Modbus ADU can be up to 256 bytes, so if claiming full standard compliance, provide adequate buffer and verify SRAM use; otherwise explicitly document supported function-specific maximums.
+## 11. Immediate inconsistencies and decisions requiring resolution
 
-## 4. Communication and Modbus RTU contract
+1. **PC7 is both claimed as `/RE` in `hardware-validation.md` and used as a button in `main.rs`.** The actual schematic and PCB must decide which is correct; a software comment cannot resolve an electrical conflict.
+2. **Flash persistence is absent**, even though the config record, server change flag and UID commissioning parser exist. Readdressing is temporary today.
+3. **Comms timeout and timeout output mask are defined but not enforced** in the main loop.
+4. **Watchdog health-gate helper is not wired into the feed decision**; reset-cause reporting remains pending.
+5. **Configured LED brightness is not used**; runtime uses a fixed constant.
+6. **`docs/BUILD.md` describes obsolete echo/8N1 behavior**, and `docs/hardware-validation.md`/`release-checklist.md` contain stale implementation statements.
+7. **Original ULN2803A/active-HIGH assumptions conflict with current active-LOW triac/FET driver**; do not use the original electrical description as a wiring specification.
+8. **Factory address 247 is an active slave address**, not a collision-free unconfigured discovery mode. Isolate factory boards during initial commissioning.
+9. **Blocking TX is intentional current code**, not a completed TX interrupt state machine. SysTick, not TIM2, supplies the runtime timestamps.
 
-- Default: **19,200 baud, 8E1** (8 data bits, even parity, one stop bit); make framing configurable only if necessary. Document 8N2 alternative if master requires it. Ensure USART peripheral is set to deliver 8 actual data bits with parity (device register nomenclature may differ).
-- RTU frame: `[slave_id, function, payload..., CRC_LO, CRC_HI]`.
-- CRC16/Modbus: init `0xFFFF`, reflected polynomial `0xA001`, low byte transmitted first. Include unit tests with known standard vector `"123456789" -> 0x4B37` and full request/response fixtures.
-- 3.5-character silent interval separates frames; 1.5-character intra-frame gap invalidates a frame. At 19,200 8E1, character time = 11/19200 = 572.9167 µs, t1.5 ≈ 859.4 µs and t3.5 ≈ 2005.2 µs. **Modbus serial-line guidance commonly specifies fixed t1.5=750 µs and t3.5=1.750 ms for baud rates >19,200; at exactly 19,200 use character-based intervals.** Verify interpretation with master. TIM2 at 1 ms is too coarse; use finer timer resolution (e.g., 50–100 µs) or UART idle detection plus timer compare. Avoid long, high-rate ISRs if possible.
-- Process only addressed frames (1–247), plus defined broadcasts to 0. **Never respond to address 0.** Never treat 0 as an ordinary slave ID.
-- Standard exception codes: 0x01 illegal function, 0x02 illegal data address, 0x03 illegal data value, 0x04 slave device failure, as applicable; exceptions not returned to broadcasts.
-- Functions:
-  - `0x01` Read Coils, addresses 0–7 (LSB first in response byte).
-  - `0x02` Read Discrete Inputs, address 0 (PC7 push button, 1=pressed).
-  - `0x05` Write Single Coil (0xFF00 ON / 0x0000 OFF), validate address/value.
-  - `0x0F` Write Multiple Coils, contiguous within 0–7, validate quantity and byte count; update output bitmask coherently.
-  - `0x03` Read Holding Registers (config, bounded ranges).
-  - `0x04` Read Input Registers (UID, firmware and status).
-  - `0x06` Write Single Register only for explicitly writable non-dangerous configuration; **address changes should require commissioning/authorization and must not silently alter an active bus identity**.
-  - `0x41` vendor-specific UID commissioning, documented below. Because vendor-specific semantics are not interoperable with generic Modbus tools, isolate and document them.
-- Outputs only change after a valid addressed CRC-checked command. Define behavior for invalid frames, wrong addresses, broadcast writes, watchdog reset and comms timeout.
+## 12. References
 
-### Proposed zero-based register map (freeze and test before implementation)
-
-| Space | Address | Semantics |
-|---|---:|---|
-| Coils | 0–7 | ULN channels 1–8, 1=ON |
-| Holding | 0 | Configured Modbus slave address, 1–247; read-only via normal function 0x06 unless explicitly unlocked |
-| Holding | 1 | Startup output bitmask (default 0x00) |
-| Holding | 2 | Communication timeout in ms, 0=disabled; default e.g. 5000 ms |
-| Holding | 3 | Output bitmask on communication timeout (default 0x00) |
-| Holding | 4 | WS2812 brightness (0–255; cap for current) |
-| Input | 0 | Firmware major/minor packed version |
-| Input | 1 | Current physical output bitmask |
-| Input | 2 | Status flags (configured, timeout, errors, reset reason) |
-| Input | 3–6 | 64-bit device identifier as four 16-bit words, explicitly define endian/word order |
-
-UID representation: inspect actual silicon ID width and uniqueness before defining the final register contract; do **not** silently truncate if full UID is needed to distinguish devices. If the UID is 96 bits, expose six registers or define and justify a verified 64-bit identity. Record uniqueness assumptions and collision handling.
-
-### Commissioning protocol (0x41) — draft, finalize before shipping
-
-Avoid unslotted responses from multiple unconfigured devices. Proposed subcommands:
-
-1. `QUERY_SLOT(prefix_bits, prefix_value, slot/nonce)` broadcast: only unconfigured devices whose full verified UID matches selected prefix participate; deterministic time slots or binary UID-prefix tree search prevents simultaneous replies. Include retries and collision handling; a random delay alone does not guarantee uniqueness.
-2. `READ_UID` unicast to a selected device (or isolated-bus commissioning) returns full UID.
-3. `ASSIGN_UID(full_uid, new_slave_id)` broadcast: **only** matching unconfigured UID commits address 1–247; no broadcast response. Controller subsequently verifies at new address and checks returned UID. For readdressing configured units, require explicit maintenance mode or addressed, UID-matched authenticated/physical commissioning policy.
-4. `QUERY_STATUS` unicast returns configuration version and UID.
-
-**Protocol design decision:** A pure UID-prefix discovery mechanism needs a way to observe collisions/empty slots reliably on RS485; implement a binary-tree slot protocol with explicit frame timings, or require only one unconfigured device on the bus. If neither can be tested robustly, defer multi-device discovery and ship isolated commissioning first. Define exact byte layouts, field order, response timing, timeout, retry rules, CRC coverage and malformed-message behavior in `docs/protocol.md` before writing code. Protect against accidental mass readdressing and duplicate IDs. Security note: CRC is not authentication; hostile devices on a shared bus can spoof commands. Consider physical commissioning enable or authorization if bus access is untrusted.
-
-## 5. Configuration storage: last 64-byte Flash page
-
-- CH32V003F4P6 nominal Flash: 16 KiB, `0x0800_0000..=0x0800_3FFF`.
-- Reserve final 64 bytes at **`0x0800_3FC0..=0x0800_3FFF`** *only after confirming 64-byte erase granularity and flash programming mode in reference manual*.
-- Linkable firmware Flash length: `0x3FC0` = 16,320 bytes, with Flash origin `0x0800_0000`. Verify with `.map` and binary size, plus a build-time assertion/check that no firmware section overlaps reserved page. Ensure boot/vector table unaffected.
-- Suggested exact 64-byte v1 record:
-
-| Offset | Size | Field | Default |
-|---|---:|---|---|
-| 0 | 4 | Magic `0x4D454B31` (document on-flash little-endian) | magic |
-| 4 | 2 | Format version = 1 | 1 |
-| 6 | 1 | Slave address, `0xFF` means unconfigured | 0xFF |
-| 7 | 1 | Startup outputs mask | 0 |
-| 8 | 2 | Comms timeout ms, little-endian | 5000 |
-| 10 | 1 | Timeout outputs mask | 0 |
-| 11 | 1 | WS2812 brightness | 32 |
-| 12 | 48 | Reserved, all 0xFF | 0xFF |
-| 60 | 4 | CRC32 of bytes 0..59, little-endian | computed |
-
-- On blank/invalid record: use address state **247**, outputs OFF, safe defaults, and accept only documented commissioning commands; do not use address 0 as normal slave identity.
-- On startup: read and validate magic/version/address/ranges/CRC; do not write defaults automatically at every boot.
-- On config change: validate entire proposed config in RAM, prepare complete page image, wait for UART TX completion and idle bus, quiesce affected interrupts if required, unlock/erase/program/verify, restore interrupt state and respond/verify using defined protocol. Ensure watchdog timeout allows worst-case Flash operation; do not feed blindly from a stalled system.
-- **Power-loss warning:** single-page erase-and-rewrite is not power-fail atomic; interrupted erase can destroy old configuration. Implement detection and safe unconfigured recovery. If retaining the previous config after unexpected power loss is required, reserve **two** erase pages with generation numbers and commit markers, changing the linker plan accordingly.
-- Avoid wear: only save changed values; consider a command to commit multiple pending changes together; document endurance. Determine whether `wlink flash` performs mass erase and how to preserve config during firmware updates; do not promise preservation without test.
-
-## 6. Timer, interrupts, watchdog and scheduling
-
-- TIM2 supplies high-resolution time for RTU framing and optional 1 ms derived software ticks. Choose timer tick or compare strategy with measured interrupt load; do not use an inaccurate 1 ms-only frame detector.
-- USART RXNE and error interrupts: bounded work, overrun/framing/parity counters, discard invalid frames; RX enabled when DE LOW.
-- USART TXE and TC: interrupt-driven send and **wait for TC** before DE LOW. Add state machine: `Receiving -> Turnaround -> Transmitting -> WaitTC -> Receiving`.
-- Main loop service priority: (1) process completed RTU frames/config events promptly if deferred, (2) service timeouts and outputs, (3) update status LED when bus idle, (4) feed watchdog only when health checks pass, (5) optionally idle/WFI if safe.
-- IWDG: verify HAL/PAC setup and LSI clock tolerance. Choose initial nominal timeout e.g. 2 seconds, longer than worst-case allowed operations; record actual measured range. Enable only after GPIO safe state, interrupts, timer, UART and status structures are ready. Feed from low-priority loop **only if** ISR progress and main service progress are healthy (e.g. bounded heartbeat checks, allowing legitimate bus silence). Never require RX traffic to feed watchdog. If main loop hangs, watchdog should reset. Record reset cause at startup and expose in status.
-- Output timeout: configurable and independently enforced using monotonic tick. On timeout set safe mask (default all OFF). Decide whether only valid addressed commands refresh timeout; recommended yes, with explicit handling of broadcast writes.
-- WS2812: low-priority, event-driven status patterns; never block receive/turnaround. Preferred hardware-assisted timing if verified available without conflicting TIM2/USART; otherwise measure a bounded bit-bang implementation under UART stress. For one LED, ~30 µs data transfer plus reset time, but even ~30 µs of interrupt masking must be assessed against RX interrupt latency. Recommended patterns: unconfigured=amber slow pulse, configured/healthy=green heartbeat, valid command=brief blue flash, comms timeout=red blink, Flash fault=red fast blink. Cap brightness.
-
-## 7. Staged implementation with acceptance gates
-
-### Stage 0 — Hardware/HAL validation and baseline
-
-Deliver: hardware validation notes, pinned `Cargo.lock`, baseline binary size, pinout confirmed against datasheet, verified toolchain commands. Preserve existing working TIM2 demo in git history.
-
-Accept: `cargo firmware` succeeds; `cargo flash` works; pins and Flash page assumptions documented. No production Flash writes yet.
-
-### Stage 1 — GPIO and safe output driver
-
-**Software status (2026-10-27): implemented.** All eight proposed pins are initialized to the safe inactive level before the startup mask is applied. Modbus coil changes apply the complete output bitmask through `OutputGpios`; host tests cover channel ordering and active-low conversion. Hardware acceptance remains open because the production PCB routing and common output polarity have not been approved.
-
-Implement `board.rs`/`outputs.rs`: initialize all ULN inputs LOW before enabling outputs; bitmask write/read; reject channels outside 0..7; ensure no unwanted glitches at boot/reset; reserve SWIO/NRST. Add host-side unit tests for bitmask-to-pin mapping using a pure-Rust mapping function.
-
-Accept: logic analyzer verifies eight independently addressable channels, startup OFF, polarity correct; code-size report.
-
-### Stage 2 — USART1 + half-duplex RS485 physical transport
-
-Implement 19,200 8E1 USART, PC6 DE control, RX ISR, TX ISR, TC completion, bounded queue, parity/framing/overrun counters and test echo/turnaround. Start with UART loopback and one master, no Modbus parser. Ensure DE LOW when idle/reset.
-
-Accept: hundreds/thousands of stress transactions with no missing bytes; verify DE transitions relative to last stop bit on scope; no TX contention.
-
-### Stage 3 — RTU framing + CRC + Modbus core
-
-Implement CRC and parser, accurate t1.5/t3.5, address filtering, `0x01`, `0x05`, `0x0F`, exceptions and output control. Start with a fixed test slave ID (e.g. 1) until Flash config exists. Add tests for bad CRC, partial/oversized frames, noise, back-to-back requests, broadcasts, wrong addresses and invalid coil values.
-
-Accept: interoperates with independent Modbus RTU master; read/write all eight outputs; no response to broadcasts; measured timing and memory footprint.
-
-### Stage 4 — UID and read-only information registers
-
-**Software status (2026-10-27): implemented.** The pinned HAL's complete 96-bit
-UID is exposed as six big-endian input registers. Functions `0x03` and `0x04`
-serve bounded holding/input-register ranges, including firmware version, live
-output state, defined status bits, configuration values, and UID. Host tests
-cover UID byte order, Modbus response byte order, and map boundaries. Hardware
-acceptance remains open pending UID stability/uniqueness checks on sample boards.
-
-Verify actual UID layout and expose full ID through `0x04` input registers; add firmware/status registers and `0x03` read-only configuration view. Document byte/word order and prove ID stability across resets and uniqueness across available sample devices.
-
-Accept: master reads stable UID and status, read-only accesses do not mutate config.
-
-### Stage 5 — Flash reservation + configuration persistence
-
-Implement linker exclusion, 64-byte versioned config format, CRC32, read/validate, erase/program/verify, startup fallback, bounded writes. Integrate `0x06` only for whitelisted settings with defined commit semantics. Test power loss, blank Flash, corruption, repeated writes, firmware flashing preservation. If 64-byte page cannot be safely reserved with current HAL feature, change build configuration explicitly and revalidate.
-
-Accept: configuration survives reset and normal power cycle; binary cannot overlap config; corrupted config safely disables outputs; no writes on ordinary startup.
-
-### Stage 6 — UID-targeted address commissioning
-
-Finalize `docs/protocol.md` exact function `0x41` bytes, no-response broadcast assignment, UID matching and verification. Implement isolated-device commissioning first; then optional collision-safe multi-device discovery using binary UID prefix/slots and master retries. Validate duplicate-address detection/behavior and prevention of accidental mass assignment.
-
-Accept: brand-new device can be assigned ID 1–247, survives reset, responds only to assigned ID; multiple unconfigured devices never simultaneously send unsolicited responses.
-
-### Stage 7 — Timers, output timeout and independent watchdog
-
-Integrate high-resolution TIM2 timebase, timeout-safe output state, IWDG health-gated service in main loop, reset-cause reporting. Confirm Flash operations fit watchdog window. Fault inject: stop main loop, stop USART progress under pending workload, corrupt frame stream.
-
-Accept: watchdog resets deliberately stalled firmware, outputs initialize OFF on reboot, no resets under worst-case normal traffic/Flash saves, comms timeout enforces safe mask.
-
-### Stage 8 — WS2812 low-priority status
-
-Implement a single-LED status engine driven from low-priority loop, with documented states and brightness. Validate actual WS2812 timing and electrical levels; ensure no UART RX overrun, framing failure or DE timing errors during LED updates at max bus load.
-
-Accept: status indications correct, Modbus soak test unchanged with LED enabled, watchdog remains healthy.
-
-### Stage 9 — Integration, robustness and release
-
-Run continuous RS485 soak, multiple slaves, noise/CRC tests, power cycling, firmware updates, power loss during config writes, load switching, thermal/electrical checks and resource accounting. Pin exact Git revision, write README with flashing, protocol, wiring, commissioning and recovery. Produce a release checklist and record Flash/SRAM headroom.
-
-Accept: all earlier stage gates pass, no uncontrolled output transitions, repeatable release build, documented known limitations (especially single-page Flash power-loss semantics and commissioning security).
-
-## 8. Test vectors and negative tests
-
-- CRC16/MODBUS ASCII `123456789` -> `0x4B37`.
-- Standard write single coil request (slave 1, coil 0 ON) payload before CRC: `01 05 00 00 FF 00`; verify CRC using reference implementation; expected response echoes valid request.
-- Standard read coils request (slave 1, start 0, count 8) payload before CRC: `01 01 00 00 00 08`.
-- Standard write multiple coils request: start 0, quantity 8, byte count 1, data mask; test 0x00, 0xFF, 0x55, 0xAA.
-- Reject: bad CRC, wrong slave ID, malformed byte count, out-of-range coil/register, unsupported function, parity error, UART overrun, truncated frames, inter-byte gap >t1.5, frames longer than buffer, repeated request during TX, power failure mid-Flash-write.
-- Test DE remains HIGH until actual TC; ensure no reply to broadcast. Test UID-based assignment with two unconfigured boards and collisions/slot retries.
-- Test watchdog fault injection and startup output state after reset; measure WS2812 updates under continuous serial traffic.
-
-## 9. Coding-agent execution instructions
-
-1. Work **one stage at a time**. Before each stage, inspect actual project files and locked HAL source, list exact APIs, and identify assumptions. Never fabricate PAC register methods, peripheral pin mappings, or interrupt names.
-2. Implement the smallest compiling increment, then run `cargo firmware` (and tests if host-side pure modules exist). Report compile output and binary size. Do not claim `cargo flash` or hardware validation passed unless actually run with connected hardware.
-3. Preserve existing toolchain, target JSON, `no_std` and project conventions. Avoid unnecessary dependencies and dynamic allocation. Keep code and buffers small.
-4. Write tests for pure CRC, parser, register mapping, configuration encode/decode, UID selection and timeout logic. Keep hardware-specific code behind small interfaces where practical.
-5. Use critical sections for shared ISR/main state and document interrupt priorities; avoid atomic RMW unsupported by `riscv32ec`.
-6. Do not program/erase the reserved Flash page until linker exclusion and chip-specific Flash operations have been confirmed. Require explicit approval before destructive Flash tests on devices with valuable configuration.
-7. Update `docs/protocol.md`, `docs/hardware-validation.md`, README and this checklist as decisions become verified. Track deviations and unresolved questions.
-8. At each stage return: files changed, architectural decisions, tests/builds run, actual outcomes, Flash/RAM usage, hardware validation still required, and next stage.
-
-## 10. Decisions to settle before production
-
-- Exact manufacturer-confirmed physical pinout and whether PC1 WS2812 logic levels require a shifter.
-- Whether output channels should always power up OFF or apply configured startup mask (safe default OFF recommended).
-- Exact Modbus framing 8E1 and RTU gap policy accepted by main controller.
-- UID width and silicon uniqueness guarantee; discovery protocol byte layout and whether multi-device simultaneous commissioning is required for first release.
-- Whether a single 64-byte config page with safe recovery is sufficient, or two-page atomic updates are required.
-- Whether flashing tool can preserve reserved configuration across firmware updates.
-- RS485 bus termination, biasing, surge protection, wiring and required failsafe behavior.
-- Security/physical access controls for readdressing and configuration writes.
-- Required output timeout and watchdog duration based on actual load/application safety.
-
-## 11. References to validate against
-
-- WCH CH32V003 datasheet (English), CH32V003 reference manual (English), manufacturer errata.
-- `ch32-rs/ch32-hal` source at **locked Cargo revision**; `qingke-rt` 0.8.2 source.
-- Modbus Organization: *Modbus Application Protocol Specification* and *Modbus over Serial Line Specification and Implementation Guide*.
-- MaxLinear SP485EEN-L/TR datasheet, ULN2803A manufacturer datasheet, WS2812 variant datasheet.
-
-**Do not begin by generating an entire monolithic firmware from this plan.** Begin with Stage 0 and carry forward only verified interfaces, tests, and acceptance evidence.
+Use the checked-in `docs/CH32V003DS0.pdf`, `docs/CH32V003RM.pdf`, schematic and component document, pinned `ch32-hal` sources, Modbus Application Protocol and Modbus over Serial Line specifications. `docs/protocol.md` defines current wire behavior; `src/main.rs`, `src/server.rs`, `src/config.rs` and the hardware modules define current implemented behavior. Resolve conflicts by inspecting the target PCB and testing the firmware, then update all documents together.
