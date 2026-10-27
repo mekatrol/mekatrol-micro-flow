@@ -1,6 +1,6 @@
 # CH32V003F4P6 RS485 Output Expander — Implementation Plan
 
-Status: active implementation plan. Software progress was reviewed 2026-10-27: Stage 1 is implemented using the provisional eight-pin mapping and active-low board behavior; Stage 2 RX and most Stage 3 protocol logic are implemented. Hardware acceptance for Stage 1 and all later stages remains outstanding. **Do not treat unverified HAL APIs, pin mappings, or silicon details as established facts; validate them against the pinned sources before coding.**
+Status: active implementation plan. Software progress was reviewed 2026-10-27: Stage 1 is implemented using the provisional eight-pin mapping and active-low board behavior; Stage 2 RX, Stage 3 protocol logic, and Stage 4 read-only register/UID logic are implemented. Hardware acceptance for Stage 1 and all later stages remains outstanding. **Do not treat unverified HAL APIs, pin mappings, or silicon details as established facts; validate them against the pinned sources before coding.**
 
 ## 0. Project context and objective
 
@@ -193,6 +193,13 @@ Implement CRC and parser, accurate t1.5/t3.5, address filtering, `0x01`, `0x05`,
 Accept: interoperates with independent Modbus RTU master; read/write all eight outputs; no response to broadcasts; measured timing and memory footprint.
 
 ### Stage 4 — UID and read-only information registers
+
+**Software status (2026-10-27): implemented.** The pinned HAL's complete 96-bit
+UID is exposed as six big-endian input registers. Functions `0x03` and `0x04`
+serve bounded holding/input-register ranges, including firmware version, live
+output state, defined status bits, configuration values, and UID. Host tests
+cover UID byte order, Modbus response byte order, and map boundaries. Hardware
+acceptance remains open pending UID stability/uniqueness checks on sample boards.
 
 Verify actual UID layout and expose full ID through `0x04` input registers; add firmware/status registers and `0x03` read-only configuration view. Document byte/word order and prove ID stability across resets and uniqueness across available sample devices.
 

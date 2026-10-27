@@ -12,7 +12,9 @@ Modbus RTU uses 19,200 bit/s, 8E1. Multi-byte Modbus fields are big-endian; CRC1
 - Holding 4: LED brightness, 0–255.
 - Input 0: firmware major in the high byte, minor in the low byte.
 - Input 1: current output mask.
-- Input 2: status flags (allocation pending hardware integration).
+- Input 2: status flags: bit 0 configured, bit 1 communications timeout,
+  bit 2 UART receive error, bit 3 persistent-configuration fault. Unallocated
+  bits are zero and must be ignored by a controller.
 - Input 3–8: the full 96-bit UID as six big-endian 16-bit words in HAL byte order.
 
 Supported standard functions are 01, 03, 04, 05 and 0F. Function 06 remains disabled until persistent commit semantics are hardware-validated. Responses use exceptions 01–04 as applicable. The implementation caps ADUs at 128 bytes and rejects larger frames.

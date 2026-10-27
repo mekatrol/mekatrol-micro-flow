@@ -10,6 +10,7 @@ use crate::config::Config;
 use crate::modbus::{self, Exception, MAX_RESPONSE, Request};
 use crate::outputs::Outputs;
 use crate::registers::RegisterBank;
+use crate::registers::STATUS_CONFIGURED;
 use crate::uid::UID_BYTES;
 
 /// A processed request and any resulting configuration change.
@@ -54,7 +55,11 @@ impl Server {
             bank: RegisterBank {
                 config,
                 outputs,
-                status: 0,
+                status: if config.is_configured() {
+                    STATUS_CONFIGURED
+                } else {
+                    0
+                },
                 uid,
             },
         }
@@ -95,6 +100,7 @@ impl Server {
                 {
 
                     self.bank.config.slave_address = assignment.address;
+                    self.bank.status |= STATUS_CONFIGURED;
 
                     return Outcome {
                         response_len: 0,
@@ -325,6 +331,32 @@ mod tests {
 
         assert_eq!(&reply[9..21], &[0xA5; UID_BYTES]);
 
+        assert!(modbus::valid_crc(&reply[..outcome.response_len]));
+    }
+
+    #[test]
+    fn reads_holding_registers_in_modbus_byte_order() {
+        let mut server = server();
+        server.bank.config.comms_timeout_ms = 0x1234;
+
+        let (req, len) = request(&[247, 0x03, 0, 1, 0, 3]);
+        let mut reply = [0; MAX_RESPONSE];
+        let outcome = server.handle(&req[..len], &mut reply);
+
+        assert_eq!(outcome.response_len, 11);
+        assert_eq!(&reply[..9], &[247, 0x03, 6, 0, 0, 0x12, 0x34, 0, 0]);
+        assert!(modbus::valid_crc(&reply[..outcome.response_len]));
+    }
+
+    #[test]
+    fn rejects_register_ranges_that_cross_the_map_boundary() {
+        let mut server = server();
+        let (req, len) = request(&[247, 0x04, 0, 8, 0, 2]);
+        let mut reply = [0; MAX_RESPONSE];
+        let outcome = server.handle(&req[..len], &mut reply);
+
+        assert_eq!(outcome.response_len, 5);
+        assert_eq!(&reply[..3], &[247, 0x84, Exception::IllegalDataAddress as u8]);
         assert!(modbus::valid_crc(&reply[..outcome.response_len]));
     }
 
