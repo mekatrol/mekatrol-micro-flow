@@ -21,6 +21,8 @@ use output_expander::config::Config as DeviceConfig;
 // Maximum response size supported by the Modbus server.
 use output_expander::modbus::MAX_RESPONSE;
 
+use output_expander::output_gpio::OutputGpios;
+
 // Hardware abstraction for RS-485 direction control.
 use output_expander::rs485::Rs485Direction;
 
@@ -132,13 +134,19 @@ fn main() -> ! {
     // The interrupt handler will change its output state directly.
     let _status_led = Output::new(p.PC1, Level::High, Default::default());
 
-    // Physical output channel 1.
-    //
-    // Logical output 1 corresponds to bit 0 of the Modbus
-    // output bitmap and is provisionally assigned to PC0.
-    //
-    // Initialize LOW so the output starts in its OFF state.
-    let mut output_1 = Output::new(p.PC0, Level::High, Default::default());
+    // Configure all output pins OFF before placing them under application
+    // control. Channel order follows board::PROVISIONAL_OUTPUT_SIGNALS.
+    // The current board is active-low, hence HIGH is the safe OFF level.
+    let mut outputs = OutputGpios::new([
+        Output::new(p.PC0, Level::High, Default::default()),
+        Output::new(p.PC3, Level::High, Default::default()),
+        Output::new(p.PC4, Level::High, Default::default()),
+        Output::new(p.PC5, Level::High, Default::default()),
+        Output::new(p.PD0, Level::High, Default::default()),
+        Output::new(p.PD2, Level::High, Default::default()),
+        Output::new(p.PD3, Level::High, Default::default()),
+        Output::new(p.PD4, Level::High, Default::default()),
+    ]);
 
     // Initialize the free-running SysTick timer for Modbus RTU timing
     // and RS-485 turnaround delays.
@@ -216,6 +224,10 @@ fn main() -> ! {
     // and the MCU's unique silicon identifier.
     let mut server = Server::new(config, uid::read());
 
+    // Apply the configured startup mask only after every channel has first
+    // reached the safe OFF level.
+    outputs.apply_mask(server.bank.outputs.mask());
+
     // Frame timing uses the same SysTick tick rate as the USART interrupt.
     //
     // RtuReceiver owns the two receive buffers and detects Modbus RTU
@@ -277,25 +289,9 @@ fn main() -> ! {
         // while the server interprets it.
         let outcome = server.handle(&request[..request_len], &mut response);
 
-        // ---------------------------------------------------------
-        // Apply Modbus output channel 1 to physical GPIO PC0
-        // ---------------------------------------------------------
-        //
-        // The server stores eight output states in one byte.
-        // Bit 0 represents channel 1.
-        //
-        // Update PC0 only when a valid Modbus request changes
-        // the logical output state.
+        // Apply all eight logical output states as one bitmask update.
         if outcome.outputs_changed {
-            let mask = server.bank.outputs.mask();
-
-            if mask & 0x01 != 0 {
-                // Output 1 ON: drive PC0 HIGH.
-                output_1.set_low();
-            } else {
-                // Output 1 OFF: drive PC0 LOW.
-                output_1.set_high();
-            }
+            outputs.apply_mask(server.bank.outputs.mask());
         }
 
         if outcome.config_changed {

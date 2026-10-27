@@ -2,7 +2,9 @@
 
 - [x] Locked dependencies recorded and baseline `cargo firmware` succeeds.
 - [x] Pure logic tests cover output mapping, Modbus CRC/parser, UID word order, and config corruption.
+- [x] Eight-channel GPIO driver implemented with safe initialization and coherent bitmask updates.
 - [ ] Production schematic/pinout and output polarity approved.
+- [ ] Eight output channels independently verified on a logic analyzer with glitch-free startup.
 - [ ] Interrupt-driven USART RX/TXE/TC and TIM2 bindings implemented and scope-tested.
 - [ ] Reserved Flash page proven in linker map; erase/program/verify and power-loss tests passed.
 - [ ] Isolated commissioning and duplicate-ID behavior bench-tested.

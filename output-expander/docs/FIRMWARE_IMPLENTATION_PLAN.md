@@ -1,6 +1,6 @@
 # CH32V003F4P6 RS485 Output Expander — Implementation Plan
 
-Status: implementation specification and staged acceptance plan. Intended for a human developer or coding agent (Codex). **Do not treat unverified HAL APIs, pin mappings, or silicon details as established facts; validate them against the pinned sources before coding.**
+Status: active implementation plan. Software progress was reviewed 2026-10-27: Stage 1 is implemented using the provisional eight-pin mapping and active-low board behavior; Stage 2 RX and most Stage 3 protocol logic are implemented. Hardware acceptance for Stage 1 and all later stages remains outstanding. **Do not treat unverified HAL APIs, pin mappings, or silicon details as established facts; validate them against the pinned sources before coding.**
 
 ## 0. Project context and objective
 
@@ -173,6 +173,8 @@ Deliver: hardware validation notes, pinned `Cargo.lock`, baseline binary size, p
 Accept: `cargo firmware` succeeds; `cargo flash` works; pins and Flash page assumptions documented. No production Flash writes yet.
 
 ### Stage 1 — GPIO and safe output driver
+
+**Software status (2026-10-27): implemented.** All eight proposed pins are initialized to the safe inactive level before the startup mask is applied. Modbus coil changes apply the complete output bitmask through `OutputGpios`; host tests cover channel ordering and active-low conversion. Hardware acceptance remains open because the production PCB routing and common output polarity have not been approved.
 
 Implement `board.rs`/`outputs.rs`: initialize all ULN inputs LOW before enabling outputs; bitmask write/read; reject channels outside 0..7; ensure no unwanted glitches at boot/reset; reserve SWIO/NRST. Add host-side unit tests for bitmask-to-pin mapping using a pure-Rust mapping function.
 

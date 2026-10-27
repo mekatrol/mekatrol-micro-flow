@@ -12,6 +12,9 @@ pub mod commissioning;
 pub mod config;
 /// Modbus RTU parsing, checksums, and output command handling.
 pub mod modbus;
+/// Physical eight-channel GPIO output driver.
+#[cfg(target_arch = "riscv32")]
+pub mod output_gpio;
 /// Compact logical representation of the eight output channels.
 pub mod outputs;
 /// Mapping between application state and Modbus registers.

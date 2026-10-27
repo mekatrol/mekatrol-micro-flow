@@ -30,3 +30,42 @@ pub const RS485_STOP_BITS: u8 = 1;
 
 pub const PROVISIONAL_OUTPUT_SIGNALS: [&str; OUTPUT_COUNT] =
     ["PC0", "PC3", "PC4", "PC5", "PD0", "PD2", "PD3", "PD4"];
+
+/// Electrical polarity used by the current triac/FET board bring-up.
+///
+/// A logical output is active when its MCU pin is LOW. This matches the
+/// successfully tested PC0 channel. The production schematic must confirm
+/// that all eight channels use the same polarity before release.
+pub const OUTPUTS_ACTIVE_LOW: bool = true;
+
+/// Convert a logical output bit into the electrical GPIO-high state.
+///
+/// Keeping this conversion hardware-independent makes the channel ordering
+/// and polarity testable on the host.
+pub const fn output_pin_is_high(mask: u8, channel: usize) -> Option<bool> {
+    if channel >= OUTPUT_COUNT {
+        return None;
+    }
+
+    let logical_on = mask & (1u8 << channel) != 0;
+    Some(if OUTPUTS_ACTIVE_LOW {
+        !logical_on
+    } else {
+        logical_on
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_bits_map_to_active_low_pins() {
+        for channel in 0..OUTPUT_COUNT {
+            assert_eq!(output_pin_is_high(0, channel), Some(true));
+            assert_eq!(output_pin_is_high(1u8 << channel, channel), Some(false));
+        }
+
+        assert_eq!(output_pin_is_high(0, OUTPUT_COUNT), None);
+    }
+}
