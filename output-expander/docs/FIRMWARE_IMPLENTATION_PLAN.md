@@ -8,7 +8,7 @@ This document describes the **current repository baseline** and **work required 
 
 ## 2. Current repository baseline
 
-The supplied firmware currently provides eight GPIO outputs, an active-low push button, a WS2812 status LED, a half-duplex USART1/RS-485 driver, SysTick timing, an independent watchdog, interrupt-driven UART reception through a fixed-capacity ring buffer, COBS framing, CRC-16/CCITT-FALSE and a protocol-independent command dispatcher. Modbus register, server and RTU-silence modules have been removed. The firmware does not enable the `qingke-rt` `highcode` feature and has no `.highcode` section; `qingke-rt` remains a transitive dependency of the required `ch32-hal` `rt` feature. The current WS2812 bit-banging routine is a temporary timing workaround placed in executable `.data` SRAM. Replace that workaround with the timer/PWM/DMA design below so all application routines can return to Flash and LED timing no longer depends on CPU instruction-fetch latency. External EEPROM persistence, production pin relocation and some target behavior below remain to be implemented and hardware-validated.
+The supplied firmware currently provides eight GPIO outputs, an active-low push button, a WS2812 status LED, a half-duplex USART1/RS-485 driver, SysTick timing, an independent watchdog, interrupt-driven UART reception through a fixed-capacity ring buffer, COBS framing, CRC-16/CCITT-FALSE and a protocol-independent command dispatcher. Modbus register, server and RTU-silence modules have been removed. The firmware does not enable the `qingke-rt` `highcode` feature and has no `.highcode` section; `qingke-rt` remains a transitive dependency of the required `ch32-hal` `rt` feature. The existing WS2812 implementation is not part of the target architecture and must be removed when the mandatory timer/PWM/DMA driver below is integrated. External EEPROM persistence, production pin relocation and some target behavior below remain to be implemented and hardware-validated.
 
 ### Current pins in supplied source
 
@@ -91,7 +91,7 @@ Commissioning uses the MCU's full 96-bit UID to target one device. Uncommissione
 - **Watchdog:** Feed only from the lowest-priority point of the foreground main loop, alongside low-priority status-LED service, and only after the loop has made meaningful progress. No interrupt handler, timer callback or higher-priority execution path may feed the watchdog. If foreground processing stalls or is starved by interrupts, the watchdog must expire and reset the device. Define behavior when I²C is stuck, UART is noisy, or TX stalls; every blocking wait must be bounded. Deliberate reset is acknowledged before the watchdog is allowed to expire or an explicit reset is requested.
 - **Storage faults:** A failed EEPROM read or commit must be observable in status. Define whether an attempted address change takes effect immediately or only after successful commit; prefer **commit first, activate second**.
 
-### WS2812 timer, PWM and DMA architecture
+### WS2812 timer, PWM and DMA architecture (required)
 
 The CH32V003F4P6 exposes two hardware timers which are otherwise unused by the current firmware: advanced-control `TIM1` and general-purpose `TIM2`. Keep SysTick as the existing free-running monotonic time source; do not repurpose or reset SysTick for LED generation because UART diagnostics, status timing and bounded RS-485 delays share it.
 
@@ -165,7 +165,7 @@ Modbus-specific modules, register abstractions, RTU timing and tooling have been
 
 ## 8. Resource requirements
 
-The target has only 2 KiB SRAM. Do not enable the `qingke-rt` `highcode` feature or use `#[highcode]`; interrupt vectors, traps, handlers, the WS2812 driver and application code must execute from Flash. The release ELF must contain no allocated `.highcode` section and no executable routine in `.data`. Replace the current 164-byte SRAM WS2812 bit-banging workaround with timer/PWM/DMA rather than recalibrating CPU delay loops. Hardware peripherals, not executable SRAM, provide deterministic sub-microsecond timing.
+The target has only 2 KiB SRAM. Do not enable the `qingke-rt` `highcode` feature or use `#[highcode]`; interrupt vectors, traps, handlers, the WS2812 control/state code and other application code must execute from Flash. The release ELF must contain no allocated `.highcode` section and no executable routine in `.data`. WS2812 waveform generation is exclusively the responsibility of timer/PWM/DMA hardware; CPU delay-loop waveform generation from either Flash or SRAM is not an alternative architecture.
 
 Budget at least 48 bytes of static SRAM for one 24-entry `u16` WS2812 duty buffer plus explicit driver state. If double buffering is selected, budget 96 bytes for duty arrays and justify why a single DMA-owned buffer plus one pending RGB value is insufficient. Include DMA/HAL state introduced by enabling the selected channel in the measured `.data` and `.bss` totals; source-level array sizes alone are not the complete cost.
 
@@ -178,7 +178,7 @@ Treat SRAM headroom as a hardware-selection gate. If the measured worst-case sta
 ### P0 — Confirm hardware and clean baseline
 
 1. Verify the exact SOT-23-5 EEPROM datasheet and pinout, MCU package pinout, I²C alternate-function mapping and PA1 WS2812 availability.
-2. Record the current transition baseline accurately: the release ELF must have no `.highcode` section and vectors, traps and interrupt handlers must execute from Flash, while the temporary `.data.ws2812` routine and its exact SRAM cost remain documented until P3 replaces it. The direct `qingke-rt` dependency, its `highcode` feature and all `#[highcode]` annotations remain removed; the runtime remains transitively required by `ch32-hal`.
+2. Record the current transition baseline accurately: the release ELF must have no `.highcode` section and vectors, traps and interrupt handlers must execute from Flash. The direct `qingke-rt` dependency, its `highcode` feature and all `#[highcode]` annotations remain removed; the runtime remains transitively required by `ch32-hal`. Treat any legacy CPU-driven WS2812 waveform routine only as code to remove at P3, not as a release requirement to preserve, relocate or recalibrate.
 3. Revert internal-Flash persistence experiments. Confirm whether custom `build.rs`/`memory.x` are required for unrelated build reasons; otherwise use the standard HAL memory layout.
 4. Record a clean host-test and release-build baseline, Flash/SRAM section sizes and stack analysis.
 5. Confirm outputs default OFF at reset and during programming/debug access.
@@ -202,7 +202,7 @@ Treat SRAM headroom as a hardware-selection gate. If the measured worst-case sta
 
 1. Implement communications timeout/fallback outputs and recovery rules.
 2. Verify RS-485 DE/TC timing, multidrop traffic, noise, UART overrun and watchdog behavior.
-3. Replace SRAM bit-banging with the timer/PWM/DMA LED state machine. Verify PC1/TIM2_CH4 on current hardware and PA1/TIM1_CH2 on the production mapping as applicable. Measure bit periods, zero/one duty, first/final pulse behavior, reset LOW interval, GRB ordering, pending-color semantics and simultaneous USART traffic. Confirm the foreground only selects/services color, no per-bit or per-edge interrupt exists, and the minimal completion path cannot feed the watchdog.
+3. Implement the required timer/PWM/DMA LED state machine and remove the legacy CPU-driven waveform implementation. Verify PC1/TIM2_CH4 on current hardware and PA1/TIM1_CH2 on the production mapping as applicable. Measure bit periods, zero/one duty, first/final pulse behavior, reset LOW interval, GRB ordering, pending-color semantics and simultaneous USART traffic. Confirm the foreground only selects/services color, no per-bit or per-edge interrupt exists, and the minimal completion path cannot feed the watchdog.
 4. Verify that only the lowest-priority foreground path feeds the watchdog. Deliberately stall the foreground loop and create sustained interrupt load; in both cases the watchdog must expire rather than being kept alive by an interrupt or callback.
 5. Test power-up, brownout, watchdog reset, EEPROM bus faults and output fail-safe behavior.
 
