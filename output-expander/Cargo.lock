@@ -437,7 +437,6 @@ dependencies = [
  "critical-section",
  "panic-halt",
  "qingke",
- "qingke-rt",
 ]
 
 [[package]]

@@ -126,7 +126,7 @@ unsafe fn enable_usart1_rx_interrupts() {
     }
 }
 
-#[qingke_rt::entry]
+#[hal::entry]
 fn main() -> ! {
     // Initialize the microcontroller hardware abstraction layer.
     //

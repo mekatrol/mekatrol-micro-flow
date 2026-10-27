@@ -8,7 +8,7 @@ This document describes the **current repository baseline** and **work required 
 
 ## 2. Current repository baseline
 
-The supplied firmware currently provides eight GPIO outputs, an active-low push button, a WS2812 status LED, a half-duplex USART1/RS-485 driver, SysTick timing, an independent watchdog, and interrupt-driven UART reception with blocking transmission. Its request processing is Modbus-specific, including RTU silence timing, register-bank handling, Modbus CRC, and commissioning. The current build enables the `qingke-rt` `highcode` feature and places the software-driven WS2812 routine, interrupt vectors, traps and interrupt handlers in SRAM. The supplied `main.rs` references internal-Flash configuration storage and contains a diagnostic reference to Flash erase/write functions. The target architecture below is **not yet implemented**.
+The supplied firmware currently provides eight GPIO outputs, an active-low push button, a WS2812 status LED, a half-duplex USART1/RS-485 driver, SysTick timing, an independent watchdog, and interrupt-driven UART reception with blocking transmission. Its request processing is Modbus-specific, including RTU silence timing, register-bank handling, Modbus CRC, and commissioning. The firmware no longer directly depends on `qingke-rt`, enables no `highcode` feature, and places no application routine in `.highcode`; `qingke-rt` remains a transitive dependency of the required `ch32-hal` `rt` feature. The supplied `main.rs` references internal-Flash configuration storage and contains a diagnostic reference to Flash erase/write functions. The target architecture below is **not yet implemented**.
 
 ### Current pins in supplied source
 
@@ -114,7 +114,7 @@ Remove Modbus-specific modules, register abstractions, RTU timing and tooling **
 
 ## 8. Resource requirements
 
-The target has only 2 KiB SRAM. Do not enable the `qingke-rt` `highcode` feature or use `#[highcode]`; interrupt vectors, traps, handlers, the WS2812 driver and application code must execute from Flash. The release ELF must contain no allocated `.highcode` section in SRAM. Remove the current `highcode` feature and annotation, then validate interrupt operation and the WS2812 waveform on hardware. If any timing-sensitive feature cannot operate reliably from Flash, redesign that feature rather than consuming SRAM with executable code.
+The target has only 2 KiB SRAM. Do not enable the `qingke-rt` `highcode` feature or use `#[highcode]`; interrupt vectors, traps, handlers, the WS2812 driver and application code must execute from Flash. The release ELF must contain no allocated `.highcode` section in SRAM. Keep the removed `highcode` feature and annotation out of the firmware, then validate interrupt operation and the WS2812 waveform on hardware. If any timing-sensitive feature cannot operate reliably from Flash, redesign that feature rather than consuming SRAM with executable code.
 
 Measure `.data`, `.bss`, the `main` stack frame, nested calls and interrupt stack usage on every release build. A successful link is not proof of stack safety. Eliminate the RAM-resident internal-Flash writer and reduce duplicated RTU/event/request/response buffers. Define a maximum decoded packet length of **32 bytes** and allocate bounded COBS wire buffers; revise only with a documented command requirement. Use no heap.
 
@@ -125,7 +125,7 @@ Treat SRAM headroom as a hardware-selection gate. If the measured worst-case sta
 ### P0 — Confirm hardware and clean baseline
 
 1. Verify the exact SOT-23-5 EEPROM datasheet and pinout, MCU package pinout, I²C alternate-function mapping and PA1 WS2812 availability.
-2. Remove the `qingke-rt` `highcode` feature and all `#[highcode]` annotations. Confirm the release ELF executes vectors, traps, interrupt handlers and the WS2812 driver from Flash and allocates no `.highcode` section in SRAM.
+2. Confirm the release ELF executes vectors, traps, interrupt handlers and the WS2812 driver from Flash and allocates no `.highcode` section in SRAM. The direct `qingke-rt` dependency, its `highcode` feature, and all `#[highcode]` annotations have been removed; the runtime remains transitively required by `ch32-hal`.
 3. Revert internal-Flash persistence experiments. Confirm whether custom `build.rs`/`memory.x` are required for unrelated build reasons; otherwise use the standard HAL memory layout.
 4. Record a clean host-test and release-build baseline, Flash/SRAM section sizes and stack analysis.
 5. Confirm outputs default OFF at reset and during programming/debug access.

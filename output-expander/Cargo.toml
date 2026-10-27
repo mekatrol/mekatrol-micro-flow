@@ -15,7 +15,6 @@ ch32-hal = { git = "https://github.com/ch32-rs/ch32-hal", features = [
     "rt",
 ] }
 panic-halt = "1.0"
-qingke-rt = { version = "0.8.2", features = ["highcode"] }
 qingke = { version = "0.8.2", features = ["critical-section-impl"] }
 
 [profile.release]

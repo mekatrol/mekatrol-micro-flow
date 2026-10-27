@@ -1,10 +1,11 @@
 # Hardware and HAL validation
 
-Status: desktop/source validation completed 2026-10-26; production PCB and bench validation blocked.
+Status: desktop/source validation updated 2026-10-28; production PCB and bench validation blocked.
 
 ## Verified from pinned sources
 
-- `Cargo.lock` pins `ch32-hal` commit `bbcabaac96f482b1cfaea111d2fc938095b9a2fd` and `qingke-rt` 0.8.2.
+- `Cargo.lock` pins `ch32-hal` commit `bbcabaac96f482b1cfaea111d2fc938095b9a2fd`. The firmware has no direct `qingke-rt` dependency and does not enable its `highcode` feature; `qingke-rt` 0.8.2 remains transitively required by the HAL's `rt` feature for startup and interrupt support.
+- The 2026-10-28 release build succeeds with no `.highcode` section. Its `.vector_table`, `.text`, and `.rodata` are Flash-addressed; allocated SRAM sections are `.data` (280 bytes) and `.bss` (280 bytes), before stack usage.
 - CH32V003F4P6 has 16 KiB program Flash, 2 KiB SRAM and a 96-bit electronic signature UID. The pinned HAL reads 12 bytes at `0x1FFFF7E8` through `signature::unique_id()`.
 - Manufacturer TSSOP-20 signals include USART1 `PD5/UTX` and `PD6/URX`; PD1 is SWIO and PD7 can be NRST.
 - The pinned HAL accepts blocking USART construction on RX PD6/TX PD5. Existing firmware builds with this mapping.

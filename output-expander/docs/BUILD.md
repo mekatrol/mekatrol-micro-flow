@@ -24,6 +24,77 @@ The target specification enables the RISC-V embedded and compressed
 instruction sets used by the CH32V003. The `ch32-hal` dependency supplies the
 CH32V003F4P6 peripheral definitions, memory layout, and runtime support.
 
+## Memory usage and stack headroom
+
+Build the release firmware first, then use the LLVM tools shipped with the
+nightly Rust toolchain to display its section sizes:
+
+```sh
+cargo firmware
+
+ELF=target/riscv32ec-unknown-none-elf/release/output-expander
+LLVM_TOOLS="$(rustc +nightly --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+"$LLVM_TOOLS/llvm-size" "$ELF"
+"$LLVM_TOOLS/llvm-size" -A -x "$ELF"
+```
+
+The first command gives a compact summary. For this target, interpret it as:
+
+- Flash used = `text + data`. `data` counts here because its initial values are
+  stored in Flash and copied to SRAM during startup.
+- Static SRAM used = `data + bss`.
+- Maximum initial stack headroom = 2,048 bytes minus static SRAM used. The
+  firmware has no heap.
+
+The following command calculates those totals and percentages against the
+CH32V003F4P6's 16 KiB Flash and 2 KiB SRAM capacities:
+
+```sh
+"$LLVM_TOOLS/llvm-size" "$ELF" | tail -n 1 | awk '
+{
+    flash_used = $1 + $2
+    static_ram = $2 + $3
+    ram_after_variables = 2048 - static_ram
+    printf "Flash:              %5d / 16384 bytes (%5.1f%%), %d free\n", flash_used, 100 * flash_used / 16384, 16384 - flash_used
+    printf "Static SRAM:        %5d /  2048 bytes (%5.1f%%)\n", static_ram, 100 * static_ram / 2048
+    printf "RAM remaining after static/global variables: %d bytes\n", ram_after_variables
+    printf "Maximum available for runtime stack:         %d bytes\n", ram_after_variables
+}'
+```
+
+For example, the current firmware prints the remaining value explicitly—no
+manual subtraction is required:
+
+```text
+Flash:               8132 / 16384 bytes ( 49.6%), 8252 free
+Static SRAM:          560 /  2048 bytes ( 27.3%)
+RAM remaining after static/global variables: 1488 bytes
+Maximum available for runtime stack:         1488 bytes
+```
+
+`llvm-size -A -x` shows the individual sections and their addresses. Executable
+sections such as `.vector_table` and `.text` should be Flash-addressed, while
+`.data` and `.bss` should be in the `0x20000000` SRAM region. There must be no
+allocated `.highcode` section.
+
+To confirm the static SRAM boundary and initial stack pointer from linker
+symbols, run:
+
+```sh
+"$LLVM_TOOLS/llvm-nm" -n "$ELF" | grep -E ' (_edata|_ebss|_stack_start)$'
+```
+
+On this MCU, `_stack_start` should be `0x20000800`, the top of its 2 KiB SRAM.
+The stack grows downward toward `_ebss`, so `_stack_start - _ebss` agrees with
+the remaining RAM calculated above.
+
+This headroom is an upper bound, not a measured worst-case free-stack value.
+The ELF does not account for the maximum call chain, local variables that are
+live simultaneously, interrupt nesting, or compiler-generated spills. Treat a
+successful link as necessary but insufficient: release validation must also
+analyse the largest foreground and interrupt call paths and, preferably,
+measure the stack high-water mark on hardware using a fill-pattern/canary test.
+
 ## Firmware behavior
 
 The current firmware is a minimal half-duplex RS-485 echo test. USART1 uses

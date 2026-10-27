@@ -4,7 +4,6 @@
 //! by `Monotonic`, avoiding timing changes caused by compiler-generated loops.
 
 use ch32_hal::gpio::Output;
-use qingke_rt::highcode;
 
 use crate::monotonic::current_ticks;
 use crate::status_led::{Rgb, ws2812_word};
@@ -45,7 +44,6 @@ impl<'d> Ws2812<'d> {
     }
 
     /// Emit 24 bits, most-significant bit first, followed by the latch LOW.
-    #[highcode]
     fn write_word(&mut self, word: u32) {
         for bit in (0..24).rev() {
             let start = current_ticks();
