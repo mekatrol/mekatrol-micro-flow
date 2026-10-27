@@ -153,3 +153,17 @@ python tools/modbus_tool.py --port /dev/ttyACM1 outputs --address 1 --set 0x55
 # Read device ID
 python tools/modbus_tool.py --port /dev/ttyACM1 info --address 247
 ```
+
+### Test the error LED
+
+Send a validly shaped read-coils request with a deliberately corrupted CRC:
+
+```sh
+python tools/modbus_tool.py --port /dev/ttyACM1 simulate-error --address 247
+```
+
+The device intentionally sends no Modbus response to the invalid frame. Its
+error state latches and the WS2812 flashes red for 300 ms, then remains off for
+300 ms. A subsequent valid request clears the communication error: the LED
+briefly flashes blue, then returns to the healthy green heartbeat. A persistent
+configuration-storage fault is not cleared by Modbus traffic.

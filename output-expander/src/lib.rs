@@ -68,3 +68,6 @@ pub mod uart;
 pub mod uid;
 /// Progress checks that decide whether the watchdog may be fed.
 pub mod watchdog;
+/// GPIO waveform driver for the single PC1 WS2812 status LED.
+#[cfg(target_arch = "riscv32")]
+pub mod ws2812;

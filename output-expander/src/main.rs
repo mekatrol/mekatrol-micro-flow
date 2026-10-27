@@ -49,6 +49,11 @@ use panic_halt as _;
 
 use output_expander::irq_rx::{self, RxEvent};
 use output_expander::monotonic::current_ticks;
+use output_expander::registers::{STATUS_COMMS_TIMEOUT, STATUS_CONFIG_FAULT, STATUS_UART_ERROR};
+use output_expander::status_led::{OFF, pattern_color};
+use output_expander::ws2812::Ws2812;
+
+const STATUS_LED_BRIGHTNESS: u8 = 32;
 
 /// USART1 receive interrupt handler.
 ///
@@ -126,13 +131,13 @@ fn main() -> ! {
     //
     // This configures clocks and returns ownership of the
     // available hardware peripherals.
-    let p = hal::init(hal::Config::default());
+    // The GPIO WS2812 waveform is calibrated for a 48 MHz core clock.
+    let mut hal_config = hal::Config::default();
+    hal_config.rcc = hal::rcc::Config::SYSCLK_FREQ_48MHZ_HSI;
+    let p = hal::init(hal_config);
 
-    // Configure the status LED for USART1 interrupt diagnostics.
-    //
-    // Keep the pin configured as an output for the entire test.
-    // The interrupt handler will change its output state directly.
-    let _status_led = Output::new(p.PC1, Level::High, Default::default());
+    // WS2812 data idles LOW. The driver owns PC1 for the life of the firmware.
+    let mut status_led = Ws2812::new(Output::new(p.PC1, Level::Low, Default::default()));
 
     // Configure all output pins OFF before placing them under application
     // control. Channel order follows board::PROVISIONAL_OUTPUT_SIGNALS.
@@ -224,6 +229,13 @@ fn main() -> ! {
     // and the MCU's unique silicon identifier.
     let mut server = Server::new(config, uid::read());
 
+    status_led.set_rgb(OFF);
+    let mut displayed_color = OFF;
+    let mut command_flash_started = None;
+    let mut receiver_rejections = 0;
+    let mut error_present =
+        server.bank.status & (STATUS_COMMS_TIMEOUT | STATUS_UART_ERROR | STATUS_CONFIG_FAULT) != 0;
+
     // Apply the configured startup mask only after every channel has first
     // reached the safe OFF level.
     outputs.apply_mask(server.bank.outputs.mask());
@@ -257,6 +269,24 @@ fn main() -> ! {
     // ---------------------------------------------------------
 
     loop {
+        let now_ticks = timer.now_ticks();
+        let command_elapsed_ms = command_flash_started
+            .map(|started| now_ticks.wrapping_sub(started) / timer.ticks_per_us() / 1_000);
+        if matches!(command_elapsed_ms, Some(elapsed) if elapsed >= 100) {
+            command_flash_started = None;
+        }
+
+        let desired_color = pattern_color(
+            now_ticks / timer.ticks_per_us() / 1_000,
+            STATUS_LED_BRIGHTNESS,
+            error_present,
+            command_elapsed_ms,
+        );
+        if desired_color != displayed_color {
+            status_led.set_rgb(desired_color);
+            displayed_color = desired_color;
+        }
+
         // ---------------------------------------------------------
         // Process queued UART receive events
         // ---------------------------------------------------------
@@ -265,6 +295,12 @@ fn main() -> ! {
         // The foreground receiver uses those timestamps to detect
         // RTU frame boundaries and reject malformed receive streams.
         irq_consumer::drain_global_events(&mut receiver);
+
+        if receiver.rejected() != receiver_rejections {
+            receiver_rejections = receiver.rejected();
+            server.bank.status |= STATUS_UART_ERROR;
+            error_present = true;
+        }
 
         // ---------------------------------------------------------
         // Copy a completed Modbus request
@@ -288,6 +324,29 @@ fn main() -> ! {
         // No receive-buffer borrow or critical section is held
         // while the server interprets it.
         let outcome = server.handle(&request[..request_len], &mut response);
+
+        let modbus_error = !output_expander::modbus::valid_crc(&request[..request_len])
+            || (outcome.response_len >= 2 && response[1] & 0x80 != 0);
+        let message_handled =
+            outcome.response_len != 0 || outcome.outputs_changed || outcome.config_changed;
+        if modbus_error {
+            error_present = true;
+        } else if message_handled {
+            // A valid, successfully handled request acknowledges transient
+            // communication faults. Configuration faults remain latched until
+            // their underlying storage problem is resolved.
+            server.bank.status &= !(STATUS_COMMS_TIMEOUT | STATUS_UART_ERROR);
+            error_present = server.bank.status & STATUS_CONFIG_FAULT != 0;
+        }
+
+        // Give immediate visual feedback only when this device handled the
+        // request. The blue activity pulse also takes visual priority over a
+        // persistent configuration fault.
+        if message_handled {
+            displayed_color = pattern_color(0, STATUS_LED_BRIGHTNESS, error_present, Some(0));
+            status_led.set_rgb(displayed_color);
+            command_flash_started = Some(timer.now_ticks());
+        }
 
         // Apply all eight logical output states as one bitmask update.
         if outcome.outputs_changed {
@@ -316,8 +375,8 @@ fn main() -> ! {
             .write_response(&response[..outcome.response_len], &timer)
             .is_err()
         {
-            // TODO:
-            // Record a UART transmission error in diagnostics.
+            server.bank.status |= STATUS_UART_ERROR;
+            error_present = true;
         }
     }
 }

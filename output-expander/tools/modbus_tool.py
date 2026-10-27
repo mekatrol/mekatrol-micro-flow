@@ -11,6 +11,7 @@ Examples::
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 outputs --address 1
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 outputs --address 1 --set 0x55
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 output --address 1 3 on
+    python3 tools/modbus_tool.py --port /dev/ttyUSB0 simulate-error --address 1
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 set-address \
         --uid 00112233445566778899aabb --new-address 7
 
@@ -216,6 +217,20 @@ class OutputExpander:
                 f"UID verification failed: expected {uid.hex()}, got {actual.hex()}"
             )
 
+    def simulate_crc_error(self, address: int) -> bytes:
+        """Send a read-coils request with a deliberately corrupted CRC."""
+        request = bytearray(frame(address, 0x01, struct.pack(">HH", 0, 8)))
+        request[-1] ^= 0x01
+
+        self.serial.reset_input_buffer()
+        self.serial.write(request)
+        self.serial.flush()
+
+        # A bad-CRC request must be discarded without a Modbus response. Give
+        # the device enough time to finish RTU framing and update its LED state.
+        time.sleep(0.05)
+        return bytes(request)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -238,6 +253,11 @@ def build_parser() -> argparse.ArgumentParser:
     assign = subparsers.add_parser("set-address", help="assign or change a device address by UID")
     assign.add_argument("--uid", required=True, type=parse_uid)
     assign.add_argument("--new-address", required=True, type=slave_address)
+
+    simulate_error = subparsers.add_parser(
+        "simulate-error", help="send a bad-CRC request to trigger the error LED"
+    )
+    simulate_error.add_argument("--address", required=True, type=slave_address)
     return parser
 
 
@@ -284,6 +304,10 @@ def run(args: argparse.Namespace) -> None:
         elif args.command == "set-address":
             device.assign_address(args.uid, args.new_address)
             print(f"assigned UID {args.uid.hex()} to address {args.new_address}")
+        elif args.command == "simulate-error":
+            request = device.simulate_crc_error(args.address)
+            print(f"sent bad-CRC request: {request.hex(' ')}")
+            print("the LED should now flash red; reset the board to clear the error")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
