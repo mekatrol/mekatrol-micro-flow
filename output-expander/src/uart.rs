@@ -164,13 +164,14 @@ pub fn request_length(bytes: &[u8]) -> Option<usize> {
         // These functions have fixed eight-byte RTU requests:
         //
         // 0x01 - Read Coils
+        // 0x02 - Read Discrete Inputs
         // 0x03 - Read Holding Registers
         // 0x04 - Read Input Registers
         // 0x05 - Write Single Coil
         //
         // Eight bytes includes the address, function,
         // four data bytes, and two CRC bytes.
-        0x01 | 0x03 | 0x04 | 0x05 => Some(8),
+        0x01 | 0x02 | 0x03 | 0x04 | 0x05 => Some(8),
 
         // 0x0F - Write Multiple Coils
         //
@@ -514,7 +515,7 @@ mod framing_tests {
     /// existing request-length behavior.
     #[test]
     fn fixed_length_requests() {
-        for function in [0x01, 0x03, 0x04, 0x05] {
+        for function in [0x01, 0x02, 0x03, 0x04, 0x05] {
             assert_eq!(request_length(&[247, function]), Some(8));
         }
 

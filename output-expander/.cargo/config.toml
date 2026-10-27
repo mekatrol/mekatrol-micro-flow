@@ -10,5 +10,4 @@ runner = "wlink -v flash"
 rustflags = ["-C", "link-arg=-Tlink.x"]
 
 [unstable]
-build-std = ["core"]
 json-target-spec = true

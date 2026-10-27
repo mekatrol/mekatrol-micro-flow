@@ -14,7 +14,7 @@
 use ch32_hal as hal;
 
 // GPIO types needed to initialize RS-485 direction pins.
-use hal::gpio::{Level, Output};
+use hal::gpio::{Input, Level, Output, Pull};
 
 use output_expander::config::Config as DeviceConfig;
 
@@ -165,11 +165,7 @@ fn main() -> ! {
     // RS-485 direction control
     // ---------------------------------------------------------
     //
-    // Evaluation board:
-    // PC6 = Driver Enable (DE)
-    // PC7 = Receiver Enable (/RE, active LOW)
-    //
-    // Both pins start LOW:
+    // PC6 drives the electrically tied DE and /RE signals. It starts LOW:
     // - Transmitter disabled
     // - Receiver enabled
     //
@@ -177,14 +173,14 @@ fn main() -> ! {
     // Starting in receive mode prevents the device from
     // unintentionally driving the shared RS-485 bus.
     //
-    // Production PCB:
-    // DE and /RE are electrically connected to PC6.
-    // That configuration will use None for the second pin.
+    let direction = Rs485Direction::new(Output::new(
+        p.PC6,
+        Level::Low,
+        Default::default(),
+    ));
 
-    let direction = Rs485Direction::new(
-        Output::new(p.PC6, Level::Low, Default::default()),
-        Some(Output::new(p.PC7, Level::Low, Default::default())),
-    );
+    // PC7 is active LOW: wire a normally-open push button to ground.
+    let button = Input::new(p.PC7, Pull::Up);
 
     // ---------------------------------------------------------
     // Serial communication driver
@@ -327,6 +323,8 @@ fn main() -> ! {
         let request_len = irq_consumer::take_global_ready_frame(&mut receiver, &mut request);
 
         if let Some(request_len) = request_len {
+            // Discrete input zero is true while the PC7 button is pressed.
+            server.bank.discrete_inputs = u8::from(button.is_low());
             // ---------------------------------------------------------
             // Execute the Modbus request
             // ---------------------------------------------------------

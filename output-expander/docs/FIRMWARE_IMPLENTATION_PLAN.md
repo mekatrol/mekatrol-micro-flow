@@ -50,6 +50,7 @@ Tentative GPIO names from earlier discussion (verify exact physical pins and USA
 | ULN2803A IN1..IN8 | PC0, PC3, PC4, PC5, PD0, PD2, PD3, PD4 | Eight separate GPIO; mapping can change before PCB finalization |
 | USART1 TX / RX | PD5 / PD6 | Confirm default/remapped function in selected HAL configuration |
 | RS485 DE and /RE | PC6 | Tie DE and active-low /RE together: LOW = receive, HIGH = transmit |
+| Push button input | PC7 | Internal pull-up; button to GND; discrete input 0, 1=pressed |
 | WS2812 DIN | PC1 | One LED, existing status LED pin; verify voltage compatibility and waveform generation |
 | SWIO | PD1 | Reserve for programming/debugging |
 | NRST | PD7 | Prefer retaining reset functionality |
@@ -93,6 +94,7 @@ Avoid `static mut` shared unsafely. Use critical sections and static buffers wit
 - Standard exception codes: 0x01 illegal function, 0x02 illegal data address, 0x03 illegal data value, 0x04 slave device failure, as applicable; exceptions not returned to broadcasts.
 - Functions:
   - `0x01` Read Coils, addresses 0–7 (LSB first in response byte).
+  - `0x02` Read Discrete Inputs, address 0 (PC7 push button, 1=pressed).
   - `0x05` Write Single Coil (0xFF00 ON / 0x0000 OFF), validate address/value.
   - `0x0F` Write Multiple Coils, contiguous within 0–7, validate quantity and byte count; update output bitmask coherently.
   - `0x03` Read Holding Registers (config, bounded ranges).

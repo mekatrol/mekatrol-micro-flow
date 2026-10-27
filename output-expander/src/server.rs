@@ -59,6 +59,7 @@ impl Server {
             bank: RegisterBank {
                 config,
                 outputs,
+                discrete_inputs: 0,
                 status: if config.is_configured() {
                     STATUS_CONFIGURED
                 } else {
@@ -175,6 +176,24 @@ impl Server {
 
                 response[3] = mask & ((1u16 << count) - 1) as u8;
 
+                4
+            }
+            Request::ReadDiscreteInputs { start, count } => {
+                let end = start.checked_add(count);
+                if start >= crate::registers::DISCRETE_INPUT_COUNT
+                    || end.is_none_or(|end| end > crate::registers::DISCRETE_INPUT_COUNT) {
+                    return self.exception(
+                        address,
+                        function,
+                        Exception::IllegalDataAddress,
+                        response,
+                    );
+                }
+
+                response[0] = address;
+                response[1] = function;
+                response[2] = 1;
+                response[3] = (self.bank.discrete_inputs >> start) & ((1u16 << count) - 1) as u8;
                 4
             }
             Request::ReadHolding { start, count } | Request::ReadInput { start, count } => {
@@ -370,6 +389,34 @@ mod tests {
 
         assert_eq!(outcome.response_len, 11);
         assert_eq!(&reply[..9], &[247, 0x03, 6, 0, 0, 0x12, 0x34, 0, 0]);
+        assert!(modbus::valid_crc(&reply[..outcome.response_len]));
+    }
+
+    #[test]
+    fn reads_pc7_as_discrete_input_zero() {
+        let mut server = server();
+        server.bank.discrete_inputs = 1;
+
+        let (req, len) = request(&[247, 0x02, 0, 0, 0, 1]);
+        let mut reply = [0; MAX_RESPONSE];
+        let outcome = server.handle(&req[..len], &mut reply);
+
+        assert_eq!(outcome.response_len, 6);
+        assert_eq!(&reply[..4], &[247, 0x02, 1, 1]);
+        assert!(modbus::valid_crc(&reply[..outcome.response_len]));
+    }
+
+    #[test]
+    fn rejects_unmapped_discrete_input() {
+        let mut server = server();
+        let (req, len) = request(&[247, 0x02, 0, 1, 0, 1]);
+        let mut reply = [0; MAX_RESPONSE];
+        let outcome = server.handle(&req[..len], &mut reply);
+
+        assert_eq!(
+            &reply[..3],
+            &[247, 0x82, Exception::IllegalDataAddress as u8]
+        );
         assert!(modbus::valid_crc(&reply[..outcome.response_len]));
     }
 

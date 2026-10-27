@@ -32,6 +32,8 @@ pub enum Request<'a> {
         /// Number of consecutive coils to return.
         count: u16,
     },
+    /// Read a consecutive range of one-bit physical inputs.
+    ReadDiscreteInputs { start: u16, count: u16 },
     /// Change one output coil.
     WriteCoil {
         /// Zero-based coil address.
@@ -115,7 +117,7 @@ pub fn parse(frame: &[u8]) -> Result<Request<'_>, Exception> {
     // Function code selects both payload layout and resulting request variant.
     match frame[1] {
         // These three read functions share start-address and count fields.
-        0x01 | 0x03 | 0x04 if p.len() == 4 => {
+        0x01 | 0x02 | 0x03 | 0x04 if p.len() == 4 => {
 
             // Decode the first big-endian field as the starting address.
             let start = be16(p);
@@ -132,6 +134,7 @@ pub fn parse(frame: &[u8]) -> Result<Request<'_>, Exception> {
             // Preserve the distinct function while reusing the shared decoder.
             match frame[1] {
                 0x01 => Ok(Request::ReadCoils { start, count }),
+                0x02 => Ok(Request::ReadDiscreteInputs { start, count }),
                 0x03 => Ok(Request::ReadHolding { start, count }),
                 // The guarded outer match means the remaining value is 0x04.
                 _ => Ok(Request::ReadInput { start, count }),
@@ -182,7 +185,7 @@ pub fn parse(frame: &[u8]) -> Result<Request<'_>, Exception> {
             })
         }
         // A known function with the wrong payload shape has an illegal value.
-        0x01 | 0x03 | 0x04 | 0x05 | 0x0F => Err(Exception::IllegalDataValue),
+        0x01 | 0x02 | 0x03 | 0x04 | 0x05 | 0x0F => Err(Exception::IllegalDataValue),
         // Any other function is not supported by this device.
         _ => Err(Exception::IllegalFunction),
     }

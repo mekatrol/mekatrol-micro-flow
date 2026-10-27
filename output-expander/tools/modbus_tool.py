@@ -7,28 +7,26 @@ Requires pyserial::
 
 Examples::
 
-    python3 tools/modbus_tool.py --port /dev/ttyUSB0 info --address 1
+    python3 tools/modbus_tool.py --port /dev/ttyUSB0 info --address 1    
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 outputs --address 1
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 outputs --address 1 --set 0x55
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 output --address 1 3 on
+    python3 tools/modbus_tool.py --port /dev/ttyUSB0 input --address 1 1
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 simulate-error --address 1
     python3 tools/modbus_tool.py --port /dev/ttyUSB0 set-address \
         --uid 00112233445566778899aabb --new-address 7
 
-Output channels in the CLI are numbered 1 through 8. Modbus coil addresses on
-the wire remain zero based. Address assignment and readdressing select the
+Output and input channels in the CLI are numbered 1 through 8. Modbus
+coil and discrete-input addresses on the wire remain zero based. Address assignment and readdressing select the
 board by its complete 96-bit UID.
 """
-
-from __future__ import annotations
 
 import argparse
 import struct
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional, Sequence
-
 
 BAUDRATE = 19_200
 READ_TIMEOUT = 0.25
@@ -110,7 +108,9 @@ class OutputExpander:
             if chunk:
                 data.extend(chunk)
         if len(data) != count:
-            raise ModbusError(f"response timed out ({len(data)}/{count} bytes received)")
+            raise ModbusError(
+                f"response timed out ({len(data)}/{count} bytes received)"
+            )
         return bytes(data)
 
     def _request(
@@ -201,6 +201,17 @@ class OutputExpander:
         if response[2:-2] != payload:
             raise ModbusError("device acknowledgement does not match the write")
 
+    def read_input(self, address: int, channel: int) -> bool:
+        if not 1 <= channel <= 8:
+            raise ValueError("input channel must be between 1 and 8")
+        discrete_input = channel - 1
+        response = self._request(
+            address, 0x02, struct.pack(">HH", discrete_input, 1), 6
+        )
+        if response[2] != 1:
+            raise ModbusError(f"unexpected input byte count {response[2]}")
+        return bool(response[3] & 0x01)
+
     def assign_address(self, uid: bytes, new_address: int) -> None:
         # Function 0x41 is a broadcast and therefore intentionally has no reply.
         request = frame(0, 0x41, bytes((0x03,)) + uid + bytes((new_address,)))
@@ -238,23 +249,39 @@ class OutputExpander:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", required=True, help="serial device, e.g. /dev/ttyUSB0")
-    parser.add_argument("--timeout", type=float, default=READ_TIMEOUT, help="serial timeout in seconds")
+    parser.add_argument(
+        "--port", required=True, help="serial device, e.g. /dev/ttyUSB0"
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=READ_TIMEOUT, help="serial timeout in seconds"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    info = subparsers.add_parser("info", help="read address, firmware, UID, status, and outputs")
+    info = subparsers.add_parser(
+        "info", help="read address, firmware, UID, status, and outputs"
+    )
     info.add_argument("--address", required=True, type=slave_address)
 
     outputs = subparsers.add_parser("outputs", help="read or set all eight outputs")
     outputs.add_argument("--address", required=True, type=slave_address)
-    outputs.add_argument("--set", dest="mask", type=output_mask, help="output bitmask, e.g. 0x55")
+    outputs.add_argument(
+        "--set", dest="mask", type=output_mask, help="output bitmask, e.g. 0x55"
+    )
 
     output = subparsers.add_parser("output", help="turn one output on or off")
     output.add_argument("--address", required=True, type=slave_address)
     output.add_argument("channel", type=int, choices=range(1, 9), metavar="CHANNEL")
     output.add_argument("state", choices=("on", "off"))
 
-    assign = subparsers.add_parser("set-address", help="assign or change a device address by UID")
+    input_parser = subparsers.add_parser("input", help="read one discrete input")
+    input_parser.add_argument("--address", required=True, type=slave_address)
+    input_parser.add_argument(
+        "channel", type=int, choices=range(1, 9), metavar="CHANNEL"
+    )
+
+    assign = subparsers.add_parser(
+        "set-address", help="assign or change a device address by UID"
+    )
     assign.add_argument("--uid", required=True, type=parse_uid)
     assign.add_argument("--new-address", required=True, type=slave_address)
 
@@ -272,10 +299,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def print_outputs(mask: int) -> None:
     states = " ".join(
-        f"{channel}={'ON' if mask & (1 << (channel - 1)) else 'off'}"
+        f"{channel}={'ON' if mask & (1 << (channel - 1)) else 'OFF'}"
         for channel in range(1, 9)
     )
     print(f"outputs: 0x{mask:02x} ({states})")
+
+
+def print_input(channel: int, state: bool) -> None:
+    print(f"input {channel}: {'ON' if state else 'OFF'}")
 
 
 def run(args: argparse.Namespace) -> None:
@@ -310,6 +341,8 @@ def run(args: argparse.Namespace) -> None:
         elif args.command == "output":
             device.write_output(args.address, args.channel, args.state == "on")
             print_outputs(device.read_outputs(args.address))
+        elif args.command == "input":
+            print_input(args.channel, device.read_input(args.address, args.channel))
         elif args.command == "set-address":
             device.assign_address(args.uid, args.new_address)
             print(f"assigned UID {args.uid.hex()} to address {args.new_address}")
@@ -325,7 +358,7 @@ def run(args: argparse.Namespace) -> None:
             )
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     try:
         run(build_parser().parse_args(argv))
     except (ModbusError, OSError) as exc:

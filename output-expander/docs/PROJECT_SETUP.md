@@ -136,19 +136,22 @@ Run tool commands
 python tools/modbus_tool.py --help
 
 # Read device information
-python tools/modbus_tool.py --port /dev/ttyACM1 info --address 1
+python tools/modbus_tool.py --port /dev/ttyACM1 info --address 247
+
+# Read input
+python3 tools/modbus_tool.py --port /dev/ttyACM1 input --address 247 1
 
 # Read all outputs
-python tools/modbus_tool.py --port /dev/ttyACM1 outputs --address 1
+python tools/modbus_tool.py --port /dev/ttyACM1 outputs --address 247
 
 # Turn output 3 ON
-python tools/modbus_tool.py --port /dev/ttyACM1 output --address 1 3 on
+python tools/modbus_tool.py --port /dev/ttyACM1 output --address 247 3 on
 
 # Turn output 3 OFF
-python tools/modbus_tool.py --port /dev/ttyACM1 output --address 1 3 off
+python tools/modbus_tool.py --port /dev/ttyACM1 output --address 247 3 off
 
 # Set all eight outputs
-python tools/modbus_tool.py --port /dev/ttyACM1 outputs --address 1 --set 0x55
+python tools/modbus_tool.py --port /dev/ttyACM1 outputs --address 247 --set 0x55
 
 # Read device ID
 python tools/modbus_tool.py --port /dev/ttyACM1 info --address 247

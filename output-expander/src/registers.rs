@@ -9,6 +9,9 @@ pub const HOLDING_COUNT: u16 = 5;
 
 pub const INPUT_COUNT: u16 = 3 + uid::UID_REGISTERS as u16;
 
+/// Number of one-bit, read-only Modbus discrete inputs.
+pub const DISCRETE_INPUT_COUNT: u16 = 1;
+
 /// Firmware version reported by input register zero.
 ///
 /// Keep this explicit rather than parsing Cargo environment strings in the
@@ -34,6 +37,8 @@ pub struct RegisterBank {
     pub config: Config,
     /// Live output state reported by input register one.
     pub outputs: Outputs,
+    /// Live inputs; bit zero is the active-low PC7 push button.
+    pub discrete_inputs: u8,
     /// Firmware-defined health flags reported by input register two.
     pub status: u16,
     /// Immutable silicon identity spread over the remaining input registers.
@@ -104,6 +109,7 @@ mod tests {
         RegisterBank {
             config,
             outputs,
+            discrete_inputs: 0,
             status: STATUS_CONFIGURED | STATUS_UART_ERROR,
             uid: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
         }

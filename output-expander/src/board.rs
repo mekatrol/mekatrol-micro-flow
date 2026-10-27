@@ -38,6 +38,9 @@ pub const PROVISIONAL_OUTPUT_SIGNALS: [&str; OUTPUT_COUNT] =
 /// that all eight channels use the same polarity before release.
 pub const OUTPUTS_ACTIVE_LOW: bool = true;
 
+/// PC7 is the active-low push-button exposed as discrete input zero.
+pub const BUTTON_SIGNAL: &str = "PC7";
+
 /// Convert a logical output bit into the electrical GPIO-high state.
 ///
 /// Keeping this conversion hardware-independent makes the channel ordering

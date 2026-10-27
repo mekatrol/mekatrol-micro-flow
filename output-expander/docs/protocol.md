@@ -5,6 +5,8 @@ Modbus RTU uses 19,200 bit/s, 8E1. Multi-byte Modbus fields are big-endian; CRC1
 ## Data model
 
 - Coils 0–7: output channels 1–8, LSB first, `1=ON`.
+- Discrete input 0: PC7 push button, `1=pressed`. PC7 has an internal pull-up;
+  connect a normally-open button between PC7 and GND.
 - Holding 0: slave ID (`1..247`, or internal `0xFF` unconfigured); normal writes forbidden.
 - Holding 1: startup output mask.
 - Holding 2: communications timeout milliseconds; zero disables it.
@@ -17,7 +19,7 @@ Modbus RTU uses 19,200 bit/s, 8E1. Multi-byte Modbus fields are big-endian; CRC1
   bits are zero and must be ignored by a controller.
 - Input 3–8: the full 96-bit UID as six big-endian 16-bit words in HAL byte order.
 
-Supported standard functions are 01, 03, 04, 05 and 0F. Function 06 remains disabled until persistent commit semantics are hardware-validated. Responses use exceptions 01–04 as applicable. The implementation caps ADUs at 128 bytes and rejects larger frames.
+Supported standard functions are 01, 02, 03, 04, 05 and 0F. Function 06 remains disabled until persistent commit semantics are hardware-validated. Responses use exceptions 01–04 as applicable. The implementation caps ADUs at 128 bytes and rejects larger frames.
 
 ## Watchdog reset function 42
 
