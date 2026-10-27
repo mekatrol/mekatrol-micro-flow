@@ -12,7 +12,7 @@ use hal::gpio::{Input, Level, Output, Pull};
 use output_expander::config::Config as DeviceConfig;
 use output_expander::dispatcher::{Dispatcher, STATUS_CONFIG_FAULT, STATUS_UART_ERROR};
 use output_expander::irq_rx::{self, RxEvent, RxQueueRead};
-use output_expander::monotonic::{Monotonic, current_ticks};
+use output_expander::monotonic::Monotonic;
 use output_expander::output_gpio::OutputGpios;
 use output_expander::protocol::{self, FrameReceiver, ReceiveResult};
 use output_expander::rs485::Rs485Direction;
@@ -37,24 +37,22 @@ unsafe fn USART1() {
 
     // Snapshot all status bits before DATAR clears receive/error conditions.
     let status = uart.statr().read();
+
+    // There is an error if and of the status error bits are set
     let has_error = status.pe() || status.fe() || status.ne() || status.ore();
 
-    // Shared interrupt vectors may occasionally fire without receive work.
+    // Process only RXNE or receive-error conditions, return for others.
     if !status.rxne() && !has_error {
         return;
     }
-
-    // Keep the arrival timestamp for diagnostics even though COBS framing no
-    // longer depends on inter-character silence.
-    let ticks = current_ticks();
 
     // Reading DATAR consumes RXNE. A byte accompanied by an error is marked
     // unusable rather than allowing corrupt data into the frame decoder.
     let value = uart.datar().read().dr() as u8;
     irq_rx::push_from_interrupt(if has_error {
-        RxEvent::Error { ticks }
+        RxEvent::Error {}
     } else {
-        RxEvent::Byte { value, ticks }
+        RxEvent::Byte { value }
     });
 }
 

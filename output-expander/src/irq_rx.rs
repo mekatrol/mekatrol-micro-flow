@@ -21,23 +21,16 @@ pub const RX_QUEUE_CAPACITY: usize = 40;
 /// only on the zero delimiter.
 #[derive(Clone, Copy)]
 pub enum RxEvent {
-    /// A successfully received UART byte and its arrival timestamp.
+    /// A successfully received UART byte.
     Byte {
         /// Received byte value.
         value: u8,
-
-        /// SysTick counter captured by the interrupt handler.
-        ticks: u32,
     },
 
     /// A UART parity, framing, noise, or overrun error.
     ///
-    /// The timestamp marks when the interrupt observed the error.
     /// The current encoded frame must be discarded after this event.
-    Error {
-        /// SysTick counter captured when the error was observed.
-        ticks: u32,
-    },
+    Error {},
 }
 
 /// Result of retrieving an event from the interrupt receive queue.
@@ -214,30 +207,12 @@ mod tests {
     fn fifo_preserves_order() {
         let mut queue = RxQueue::new();
 
-        assert!(queue.push(RxEvent::Byte {
-            value: 0x11,
-            ticks: 100,
-        }));
-        assert!(queue.push(RxEvent::Byte {
-            value: 0x22,
-            ticks: 200,
-        }));
+        assert!(queue.push(RxEvent::Byte { value: 0x11 }));
+        assert!(queue.push(RxEvent::Byte { value: 0x22 }));
 
-        assert!(matches!(
-            queue.pop(),
-            Some(RxEvent::Byte {
-                value: 0x11,
-                ticks: 100
-            })
-        ));
+        assert!(matches!(queue.pop(), Some(RxEvent::Byte { value: 0x11 })));
 
-        assert!(matches!(
-            queue.pop(),
-            Some(RxEvent::Byte {
-                value: 0x22,
-                ticks: 200
-            })
-        ));
+        assert!(matches!(queue.pop(), Some(RxEvent::Byte { value: 0x22 })));
 
         assert!(queue.pop().is_none());
     }
@@ -247,30 +222,18 @@ mod tests {
         let mut queue = RxQueue::new();
 
         for i in 0..RX_QUEUE_CAPACITY {
-            assert!(queue.push(RxEvent::Byte {
-                value: i as u8,
-                ticks: i as u32,
-            }));
+            assert!(queue.push(RxEvent::Byte { value: i as u8 }));
         }
 
         // A full queue must reject an additional UART error event.
-        assert!(!queue.push(RxEvent::Error { ticks: 1234 }));
+        assert!(!queue.push(RxEvent::Error {}));
         assert!(queue.recover_overflow());
         assert!(queue.pop().is_none());
         assert!(!queue.recover_overflow());
 
         // Queue remains usable after recovery.
-        assert!(queue.push(RxEvent::Byte {
-            value: 0x55,
-            ticks: 1234,
-        }));
-        assert!(matches!(
-            queue.pop(),
-            Some(RxEvent::Byte {
-                value: 0x55,
-                ticks: 1234
-            })
-        ));
+        assert!(queue.push(RxEvent::Byte { value: 0x55 }));
+        assert!(matches!(queue.pop(), Some(RxEvent::Byte { value: 0x55 })));
     }
 
     #[test]
@@ -278,10 +241,7 @@ mod tests {
         let mut queue = RxQueue::new();
 
         for i in 0..RX_QUEUE_CAPACITY {
-            assert!(queue.push(RxEvent::Byte {
-                value: i as u8,
-                ticks: i as u32,
-            }));
+            assert!(queue.push(RxEvent::Byte { value: i as u8 }));
         }
 
         for _ in 0..10 {
@@ -290,8 +250,7 @@ mod tests {
 
         for i in 0..10 {
             assert!(queue.push(RxEvent::Byte {
-                value: (100 + i) as u8,
-                ticks: (100 + i) as u32,
+                value: (100 + i) as u8
             }));
         }
 
@@ -317,29 +276,23 @@ mod tests {
         let mut queue = RxQueue::new();
 
         // Fill the receive queue to capacity.
-        for ticks in 0..RX_QUEUE_CAPACITY as u32 {
-            assert!(queue.push(RxEvent::Byte { value: 0x55, ticks }));
+        for _ in 0..RX_QUEUE_CAPACITY as u32 {
+            assert!(queue.push(RxEvent::Byte { value: 0x55 }));
         }
 
         // Exceeding capacity latches the overflow condition.
-        assert!(!queue.push(RxEvent::Error { ticks: 1000 }));
+        assert!(!queue.push(RxEvent::Error {}));
 
         // Removing an event frees space but must not clear overflow.
         assert!(queue.pop().is_some());
 
         // Reject subsequent events until explicit recovery.
-        assert!(!queue.push(RxEvent::Byte {
-            value: 0x11,
-            ticks: 1100,
-        }));
+        assert!(!queue.push(RxEvent::Byte { value: 0x11 }));
 
         // Recovery discards the unreliable queued events.
         assert!(queue.recover_overflow());
 
         // New events can be accepted after recovery.
-        assert!(queue.push(RxEvent::Byte {
-            value: 0x22,
-            ticks: 1200,
-        }));
+        assert!(queue.push(RxEvent::Byte { value: 0x22 }));
     }
 }
