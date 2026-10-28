@@ -48,7 +48,8 @@ else()
     src/smoke.c
     src/irq_rx.c
     src/crc16.c
-    src/cobs.c)
+    src/cobs.c
+    src/protocol.c)
   target_include_directories(output_expander_core PUBLIC src)
   output_expander_warnings(output_expander_core)
   output_expander_sanitizers(output_expander_core)
@@ -118,4 +119,26 @@ else()
 
   set_tests_properties(cobs PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+  # Test complete packet serialization independently
+  # of CH32V003 registers and USART hardware.
+  #
+  # This exercises COBS and CRC together with the
+  # version-one wire-format validation rules.
+  add_executable(output_expander_protocol_test
+    tests/unit/test_protocol.c)
+
+  target_link_libraries(output_expander_protocol_test
+    PRIVATE output_expander_core)
+
+  output_expander_warnings(output_expander_protocol_test)
+  output_expander_sanitizers(output_expander_protocol_test)
+
+  add_test(
+    NAME protocol
+    COMMAND output_expander_protocol_test)
+
+  set_tests_properties(protocol PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
 endif()
