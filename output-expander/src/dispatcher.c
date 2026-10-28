@@ -1,62 +1,65 @@
+
 #include "dispatcher.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
 /*
- * Address 0x00 identifies a broadcast request.
+ * Protocol v1 reserved addresses.
  *
- * Address 0xFF represents the internal uncommissioned
- * state and is never a valid unicast destination.
+ * 0x00 is broadcast and cannot identify one device.
+ * 0xFF represents an uncommissioned device.
  *
- * Commissioned devices use addresses 0x01 through 0xFE.
+ * Valid commissioned addresses range from 0x01 to 0xFE.
  */
 #define DISPATCHER_BROADCAST_ADDRESS 0x00U
 #define DISPATCHER_UNCOMMISSIONED_ADDRESS 0xFFU
 
 /*
- * Verify at compile time that the fixed response payloads
- * fit inside the existing protocol packet structure.
+ * Verify protocol buffer capacity at compile time.
  *
  * WHY:
- * Future changes to protocol capacity must not silently
- * introduce an out-of-bounds payload write.
+ * A future protocol change must not allow any response
+ * builder to write beyond the fixed payload array.
+ *
+ * _Static_assert is supported by standard C11 and
+ * produces no runtime code or memory overhead.
  */
 _Static_assert(DISPATCHER_PING_RESPONSE_SIZE <= PROTOCOL_MAX_PAYLOAD,
-               "PING response exceeds protocol payload capacity");
+               "PING response exceeds payload capacity");
 
 _Static_assert(DISPATCHER_GET_OUTPUTS_RESPONSE_SIZE <= PROTOCOL_MAX_PAYLOAD,
-               "GET_OUTPUTS response exceeds protocol payload capacity");
+               "GET_OUTPUTS response exceeds payload capacity");
+
+_Static_assert(DISPATCHER_SET_OUTPUTS_RESPONSE_SIZE <= PROTOCOL_MAX_PAYLOAD,
+               "SET_OUTPUTS response exceeds payload capacity");
 
 dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
                                             uint8_t device_address) {
 
   /*
-   * Only request packets may reach the command dispatcher.
+   * Only requests may advance to command processing.
    *
-   * Responses and errors are master-bound traffic. Ignoring
-   * them prevents devices from interpreting another device's
-   * response as a command on the shared RS-485 bus.
+   * Responses and error packets are master-bound traffic.
+   * An expander must never execute them as commands.
    *
-   * Check for NULL before accessing packet fields.
+   * NULL is checked first to prevent invalid access.
    */
   if (packet == NULL || packet->type != PROTOCOL_TYPE_REQUEST) {
     return DISPATCHER_IGNORE;
   }
 
   /*
-   * Handle broadcast traffic before unicast address filtering.
+   * Process broadcast routing before unicast filtering.
    *
-   * An uncommissioned device must still be able to receive
-   * ASSIGN_UID even though it has no assigned unicast address.
+   * An uncommissioned device has no valid unicast address
+   * but must still recognize broadcast ASSIGN_UID.
    *
-   * Protocol v1 permits only ASSIGN_UID on broadcast.
-   * All other broadcast commands are silently ignored.
+   * Other broadcast commands are silently discarded,
+   * preventing multiple devices from responding together.
    *
-   * This result only indicates routing eligibility.
-   * UID validation and EEPROM persistence must occur later.
-   *
-   * Broadcast commissioning must never produce a response.
+   * UID matching and persistent address assignment
+   * are separate operations not performed here.
    */
   if (packet->destination == DISPATCHER_BROADCAST_ADDRESS) {
     if (packet->command == DISPATCHER_COMMAND_ASSIGN_UID) {
@@ -67,13 +70,11 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
   }
 
   /*
-   * Reject reserved and uncommissioned unicast addresses.
+   * Reject reserved unicast addresses.
    *
-   * 0xFF is not a usable destination, even when the device
-   * itself is uncommissioned.
-   *
-   * 0x00 cannot represent an individual device because
-   * it is reserved for broadcast traffic.
+   * An uncommissioned device cannot execute ordinary
+   * unicast requests, and destination 0xFF is invalid
+   * even if the device's internal address is also 0xFF.
    */
   if (device_address == DISPATCHER_UNCOMMISSIONED_ADDRESS ||
       device_address == DISPATCHER_BROADCAST_ADDRESS ||
@@ -82,11 +83,10 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
   }
 
   /*
-   * Only requests matching this device's commissioned
-   * address may advance to command-specific processing.
+   * Only the addressed device can execute the request.
    *
-   * Requests for other devices are discarded silently
-   * to avoid unwanted execution and RS-485 contention.
+   * Ignore requests for other devices without transmitting
+   * an error or causing any hardware side effects.
    */
   if (packet->destination == device_address) {
     return DISPATCHER_UNICAST_REQUEST;
@@ -103,10 +103,11 @@ bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
                                       protocol_packet_t *response) {
 
   /*
-   * Validate pointers before accessing packet or UID data.
+   * Reject invalid pointers before accessing their contents.
    *
-   * Separate request and response storage is required
-   * because response construction overwrites packet fields.
+   * Input and output packets must be separate objects
+   * to avoid overwriting request fields during response
+   * construction.
    */
   if (request == NULL || uid == NULL || response == NULL ||
       request == response) {
@@ -114,11 +115,8 @@ bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
   }
 
   /*
-   * Reuse the common address-filtering rules.
-   *
-   * Only correctly addressed unicast requests may generate
-   * a PING response. Broadcasts, uncommissioned addresses,
-   * responses and error packets must remain silent.
+   * Only correctly addressed unicast requests may
+   * generate a PING response.
    */
   if (dispatcher_route_request(request, device_address) !=
       DISPATCHER_UNICAST_REQUEST) {
@@ -126,12 +124,10 @@ bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
   }
 
   /*
-   * PING command 0x01 requires an empty request payload.
+   * PING requires command 0x01 and an empty payload.
    *
-   * A frame can have valid COBS encoding and CRC while still
-   * containing an invalid command-specific payload length.
-   *
-   * Reject these requests before constructing a response.
+   * COBS and CRC validation alone do not guarantee
+   * command-specific payload validity.
    */
   if (request->command != DISPATCHER_COMMAND_PING ||
       request->payload_length != 0U) {
@@ -139,20 +135,15 @@ bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
   }
 
   /*
-   * Build the entire response in temporary stack storage.
+   * Construct the response in local stack storage.
    *
-   * Zero-initialization gives deterministic values to
-   * unused payload bytes without allocating heap memory.
+   * Zero-initialization prevents uninitialized payload
+   * bytes from being retained in the completed object.
    *
-   * The caller's response is not modified until every
-   * validation check has succeeded.
+   * The caller's response is only updated on success.
    */
   protocol_packet_t prepared = {0};
 
-  /*
-   * Preserve the fields needed by the master to associate
-   * this response with the original request.
-   */
   prepared.destination = request->destination;
   prepared.sequence = request->sequence;
   prepared.type = PROTOCOL_TYPE_RESPONSE;
@@ -160,37 +151,31 @@ bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
   prepared.payload_length = DISPATCHER_PING_RESPONSE_SIZE;
 
   /*
-   * Copy the complete 96-bit MCU unique identifier.
+   * Copy the complete physical MCU UID.
    *
-   * The hardware layer supplies its required wire byte order.
-   * A byte loop avoids needing libc memcpy() in this portable
-   * protocol module and limits copying to exactly 12 bytes.
+   * The hardware-specific layer must supply the same
+   * byte ordering as the working Rust implementation.
+   *
+   * A bounded loop avoids requiring libc memcpy().
    */
   for (size_t i = 0U; i < DISPATCHER_UID_SIZE; ++i) {
     prepared.payload[i] = uid[i];
   }
 
   /*
-   * Append two separate firmware version bytes.
+   * Firmware version occupies two separate bytes.
    *
-   * Payload layout:
-   *   [0..11] = UID
-   *   [12]    = firmware major
-   *   [13]    = firmware minor
-   *
-   * Since these are separate bytes, no endian conversion
-   * is necessary.
+   * No endianness conversion is required because
+   * neither field is a multi-byte integer.
    */
   prepared.payload[DISPATCHER_UID_SIZE] = firmware_major;
   prepared.payload[DISPATCHER_UID_SIZE + 1U] = firmware_minor;
 
   /*
-   * Publish the completed packet.
+   * Publish the complete packet.
    *
-   * A future foreground dispatcher will pass this packet
-   * to protocol_encode() and then to the RS-485 transmitter.
-   *
-   * There is no hardware access or transmission here.
+   * The foreground application will later encode
+   * and transmit it after hardware integration.
    */
   *response = prepared;
 
@@ -203,21 +188,18 @@ bool dispatcher_prepare_get_outputs_response(const protocol_packet_t *request,
                                              protocol_packet_t *response) {
 
   /*
-   * Reject invalid pointers and overlapping packet objects.
-   *
-   * Keeping input and output separate prevents the response
-   * write from destroying request information still in use.
+   * Prevent invalid pointers or in-place overwriting
+   * of the incoming request packet.
    */
   if (request == NULL || response == NULL || request == response) {
     return false;
   }
 
   /*
-   * A GET_OUTPUTS response is permitted only for a valid
-   * unicast request addressed to this commissioned device.
+   * GET_OUTPUTS is a unicast-only command.
    *
-   * Broadcast GET_OUTPUTS must not generate responses:
-   * multiple devices replying would cause RS-485 contention.
+   * Broadcast reads would cause multiple expanders
+   * to drive the shared RS-485 bus simultaneously.
    */
   if (dispatcher_route_request(request, device_address) !=
       DISPATCHER_UNICAST_REQUEST) {
@@ -225,28 +207,21 @@ bool dispatcher_prepare_get_outputs_response(const protocol_packet_t *request,
   }
 
   /*
-   * GET_OUTPUTS command 0x11 has no request payload.
+   * A valid GET_OUTPUTS request has no payload.
    *
-   * Checking the command and declared payload length
-   * prevents CRC-valid but semantically invalid requests
-   * from being treated as successful commands.
+   * Reject any nonzero declared length even if the
+   * frame has otherwise valid CRC and COBS encoding.
    */
   if (request->command != DISPATCHER_COMMAND_GET_OUTPUTS ||
       request->payload_length != 0U) {
     return false;
   }
 
-  /*
-   * Construct a complete response in local storage.
-   *
-   * This guarantees that a rejected request cannot leave
-   * a partially constructed packet in the caller's buffer.
-   */
   protocol_packet_t prepared = {0};
 
   /*
-   * Copy the request identity and identify the packet
-   * as a successful response.
+   * Preserve request identity so the master can
+   * match the response to its outstanding transaction.
    */
   prepared.destination = request->destination;
   prepared.sequence = request->sequence;
@@ -254,23 +229,154 @@ bool dispatcher_prepare_get_outputs_response(const protocol_packet_t *request,
   prepared.command = DISPATCHER_COMMAND_GET_OUTPUTS;
 
   /*
-   * The response contains exactly one logical output mask.
+   * Return exactly one byte of logical output state.
    *
-   * Bit 0 represents channel 1; bit 7 represents channel 8.
-   * A set bit means ON even though the physical output pin
-   * is LOW on this active-low hardware.
+   * A set bit means ON although the physical GPIO
+   * is LOW on this active-low output hardware.
    *
-   * Do not invert the mask here: GPIO polarity belongs
-   * to the hardware abstraction layer.
+   * The dispatcher never inverts the mask.
    */
   prepared.payload_length = DISPATCHER_GET_OUTPUTS_RESPONSE_SIZE;
   prepared.payload[0] = output_mask;
 
+  *response = prepared;
+
+  return true;
+}
+
+bool dispatcher_parse_set_outputs(const protocol_packet_t *request,
+                                  uint8_t device_address,
+                                  uint8_t *requested_mask) {
+
   /*
-   * Publish only the completed response.
+   * Validate pointer arguments before reading the packet.
    *
-   * The function does not read GPIO registers, change
-   * output states or transmit on RS-485.
+   * On failure, the caller's requested_mask remains
+   * unchanged so invalid input cannot accidentally
+   * become a new output state.
+   */
+  if (request == NULL || requested_mask == NULL) {
+    return false;
+  }
+
+  /*
+   * SET_OUTPUTS must be a valid addressed unicast request.
+   *
+   * Broadcast writes are intentionally prohibited because
+   * they could change every expander's outputs at once.
+   *
+   * Uncommissioned devices must not execute the command.
+   */
+  if (dispatcher_route_request(request, device_address) !=
+      DISPATCHER_UNICAST_REQUEST) {
+    return false;
+  }
+
+  /*
+   * SET_OUTPUTS requires exactly one payload byte.
+   *
+   * This is important because malformed request lengths
+   * must not cause partial output changes.
+   *
+   * All eight output channels are represented by that
+   * one byte, so every possible uint8_t mask is valid.
+   */
+  if (request->command != DISPATCHER_COMMAND_SET_OUTPUTS ||
+      request->payload_length != 1U) {
+    return false;
+  }
+
+  /*
+   * Publish the requested LOGICAL output state.
+   *
+   * Bit 0 represents output channel 1.
+   * Bit 7 represents output channel 8.
+   *
+   * Do not invert the value for active-low GPIO here.
+   * Hardware polarity conversion belongs in the HAL.
+   *
+   * The foreground application must apply this mask
+   * to hardware before acknowledging success.
+   */
+  *requested_mask = request->payload[0];
+
+  return true;
+}
+
+bool dispatcher_prepare_set_outputs_response(const protocol_packet_t *request,
+                                             uint8_t device_address,
+                                             uint8_t applied_mask,
+                                             protocol_packet_t *response) {
+
+  /*
+   * Validate pointers and prohibit using the same
+   * packet object for input and output.
+   */
+  if (request == NULL || response == NULL || request == response) {
+    return false;
+  }
+
+  /*
+   * Revalidate the original SET_OUTPUTS request.
+   *
+   * WHY:
+   * A success response must not be prepared for a
+   * malformed command or a request addressed to
+   * another device.
+   *
+   * This function assumes the hardware application
+   * has already succeeded; it does not verify GPIO.
+   */
+  uint8_t requested_mask = 0U;
+
+  if (!dispatcher_parse_set_outputs(request, device_address, &requested_mask)) {
+    return false;
+  }
+
+  /*
+   * A mismatch between the requested and applied mask
+   * means the requested operation was not fully applied.
+   *
+   * The current protocol success response is used only
+   * when the requested state has been achieved exactly.
+   *
+   * If hardware application fails, the foreground must
+   * handle that failure rather than claim success.
+   *
+   * No response is constructed in the mismatch case.
+   */
+  if (applied_mask != requested_mask) {
+    return false;
+  }
+
+  /*
+   * Construct the success response in private storage.
+   *
+   * No packet is published until all validation passes.
+   */
+  protocol_packet_t prepared = {0};
+
+  prepared.destination = request->destination;
+  prepared.sequence = request->sequence;
+  prepared.type = PROTOCOL_TYPE_RESPONSE;
+  prepared.command = DISPATCHER_COMMAND_SET_OUTPUTS;
+
+  /*
+   * SET_OUTPUTS success payload:
+   *   LEN = 1
+   *   PAYLOAD[0] = applied logical output mask.
+   *
+   * This is not an electrical GPIO port value.
+   * Active-low conversion remains the HAL's job.
+   */
+  prepared.payload_length = DISPATCHER_SET_OUTPUTS_RESPONSE_SIZE;
+  prepared.payload[0] = applied_mask;
+
+  /*
+   * Publish the completed response.
+   *
+   * This function does not change outputs, write
+   * persistent configuration or enable RS-485 TX.
    */
   *response = prepared;
 

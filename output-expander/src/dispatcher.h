@@ -1,3 +1,4 @@
+
 #ifndef OUTPUT_EXPANDER_DISPATCHER_H
 #define OUTPUT_EXPANDER_DISPATCHER_H
 
@@ -7,44 +8,50 @@
 #include <stdint.h>
 
 /*
- * Protocol v1 command identifiers implemented by this module.
+ * Protocol version 1 command identifiers.
  *
- * PING returns the physical MCU UID and firmware version.
- * GET_OUTPUTS returns the logical state of all eight outputs.
- * ASSIGN_UID is recognized for routing only; UID matching and
- * persistent address assignment are not implemented here.
+ * Keep these values consistent with docs/protocol.md
+ * and the working Rust implementation.
+ *
+ * ASSIGN_UID is recognized for routing only.
+ * UID comparison and EEPROM persistence are not yet
+ * implemented in this portable dispatcher.
  */
 #define DISPATCHER_COMMAND_PING 0x01U
+#define DISPATCHER_COMMAND_SET_OUTPUTS 0x10U
 #define DISPATCHER_COMMAND_GET_OUTPUTS 0x11U
 #define DISPATCHER_COMMAND_ASSIGN_UID 0x30U
 
 /*
- * Fixed response payload sizes from protocol version 1.
+ * Fixed protocol response sizes.
  *
- * PING contains a 12-byte UID followed by two firmware
- * version bytes. GET_OUTPUTS contains one logical output mask.
+ * PING:
+ *   12 bytes UID + major version + minor version.
  *
- * Both fit within PROTOCOL_MAX_PAYLOAD (24 bytes).
+ * GET_OUTPUTS and SET_OUTPUTS:
+ *   One byte containing the logical output mask.
+ *
+ * All fit inside the protocol's 24-byte payload limit.
  */
 #define DISPATCHER_UID_SIZE 12U
 #define DISPATCHER_PING_RESPONSE_SIZE 14U
 #define DISPATCHER_GET_OUTPUTS_RESPONSE_SIZE 1U
+#define DISPATCHER_SET_OUTPUTS_RESPONSE_SIZE 1U
 
 /*
- * Results of the first command-dispatch stage.
+ * Request routing classifications.
  *
  * WHAT:
- * Classify an already decoded packet according to its
- * type, destination and command.
+ * Separate ignored traffic, addressed unicast requests
+ * and broadcast UID commissioning.
  *
  * WHY:
- * Every device on a multidrop RS-485 bus can receive the
- * same traffic. Only the addressed device may process
- * a unicast request.
+ * All devices on an RS-485 multidrop bus may receive
+ * the same traffic, but only the addressed device may
+ * execute a unicast command or transmit a response.
  *
- * Broadcast ASSIGN_UID must be distinguished from unicast
- * requests because commissioning requires full UID matching
- * and must never generate a response.
+ * Broadcast commissioning is special: it may be
+ * processed after UID validation but must never reply.
  */
 typedef enum {
   DISPATCHER_IGNORE = 0,
@@ -53,15 +60,13 @@ typedef enum {
 } dispatcher_route_t;
 
 /*
- * Determine whether a request belongs to this device.
+ * Classify a previously decoded and CRC-validated packet.
  *
- * The packet must already have passed COBS decoding,
- * packet structure validation and CRC verification.
+ * device_address:
+ *   0x01..0xFE = commissioned device
+ *   0xFF       = uncommissioned device
  *
- * device_address == 0xFF indicates an uncommissioned device.
- *
- * This function does not execute commands, access hardware
- * or transmit RS-485 data.
+ * This function has no hardware side effects.
  */
 dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
                                             uint8_t device_address);
@@ -69,28 +74,15 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
 /*
  * Construct a successful PING response.
  *
- * WHAT:
- * Validate a unicast PING request and construct a response
- * containing the MCU UID and firmware version.
+ * The UID must be supplied in the exact byte order
+ * defined by the working Rust firmware.
  *
- * WHY:
- * Separating response construction from hardware access
- * allows the protocol behavior to be tested on the host.
+ * This portable function does not read MCU registers.
  *
- * The caller supplies the UID in the protocol's required
- * byte order. Reading CH32V003 UID registers is the
- * responsibility of a future hardware-specific layer.
+ * On success, response contains the completed packet.
+ * On failure, response remains unchanged.
  *
- * The response preserves destination, sequence and command
- * so the master can match it with its outstanding request.
- *
- * Returns true on success.
- * Returns false for invalid arguments or requests.
- *
- * On failure, *response remains unchanged.
- * Request and response must not overlap.
- *
- * This function does not transmit or modify GPIO.
+ * Request and response must occupy separate storage.
  */
 bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
                                       uint8_t device_address,
@@ -100,39 +92,82 @@ bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
                                       protocol_packet_t *response);
 
 /*
- * Construct a successful GET_OUTPUTS response.
+ * Construct a GET_OUTPUTS success response.
  *
- * WHAT:
- * Validate a unicast GET_OUTPUTS request and construct
- * a response containing the current logical output mask.
+ * output_mask is the current LOGICAL state:
  *
- * WHY:
- * The dispatcher must remain independent of the physical
- * GPIO mapping and active-low output polarity.
+ *   Bit 0 = channel 1
+ *   Bit 7 = channel 8
+ *   1 = ON
+ *   0 = OFF
  *
- * output_mask:
- *   Bit 0 = output channel 1
- *   Bit 7 = output channel 8
- *   1 = logically ON
- *   0 = logically OFF
+ * The physical output pins are active-low, but the
+ * dispatcher must not invert the protocol mask.
  *
- * For active-low hardware, logical ON corresponds to
- * a LOW electrical output level.
- *
- * The caller supplies the actual current logical state.
- *
- * Returns true on success.
- * Returns false for invalid arguments or requests.
- *
- * On failure, *response remains unchanged.
- * Request and response must not overlap.
- *
- * This function does not access GPIO, modify outputs
- * or transmit RS-485 data.
+ * No GPIO registers are read by this function.
  */
 bool dispatcher_prepare_get_outputs_response(const protocol_packet_t *request,
                                              uint8_t device_address,
                                              uint8_t output_mask,
+                                             protocol_packet_t *response);
+
+/*
+ * Validate SET_OUTPUTS and extract its requested mask.
+ *
+ * WHAT:
+ * Verify that this is a correctly addressed unicast
+ * SET_OUTPUTS request with exactly one payload byte.
+ *
+ * WHY:
+ * A valid CRC does not establish that a particular
+ * command has a valid payload length.
+ *
+ * The application must validate the command BEFORE
+ * modifying any GPIO outputs.
+ *
+ * On success, *requested_mask receives the logical
+ * output mask from the request.
+ *
+ * On failure, *requested_mask remains unchanged.
+ *
+ * This function does NOT:
+ *   - Change output GPIO states.
+ *   - Update EEPROM.
+ *   - Modify the communications timeout.
+ *   - Generate or transmit a response.
+ *
+ * These operations belong to the foreground
+ * application after request validation succeeds.
+ */
+bool dispatcher_parse_set_outputs(const protocol_packet_t *request,
+                                  uint8_t device_address,
+                                  uint8_t *requested_mask);
+
+/*
+ * Construct SET_OUTPUTS acknowledgment AFTER application.
+ *
+ * WHAT:
+ * Validate the original request and construct a response
+ * containing the logical mask actually applied.
+ *
+ * WHY:
+ * The protocol requires the APPLIED mask, not simply
+ * the mask requested by the master.
+ *
+ * Calling this function does not apply GPIO outputs.
+ * The foreground must first execute the output change,
+ * determine the resulting state, and only then call it.
+ *
+ * No success response should be transmitted if the
+ * hardware operation cannot be completed successfully.
+ *
+ * On failure, response remains unchanged.
+ *
+ * This function never transmits on RS-485.
+ */
+bool dispatcher_prepare_set_outputs_response(const protocol_packet_t *request,
+                                             uint8_t device_address,
+                                             uint8_t applied_mask,
                                              protocol_packet_t *response);
 
 #endif
