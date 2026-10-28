@@ -12,6 +12,10 @@ if(CMAKE_CROSSCOMPILING)
   add_executable(output-expander
     src/main.c
     src/hal.c
+    src/rs485.c
+    src/irq_rx.c
+    src/usart.c
+    src/usart_irq.c
     src/startup.S)
   target_include_directories(output-expander PRIVATE src)
   output_expander_warnings(output-expander)
@@ -40,7 +44,9 @@ if(CMAKE_CROSSCOMPILING)
 else()
   include(CTest)
   include(cmake/sanitizers.cmake)
-  add_library(output_expander_core src/smoke.c)
+  add_library(output_expander_core
+    src/smoke.c
+    src/irq_rx.c)
   target_include_directories(output_expander_core PUBLIC src)
   output_expander_warnings(output_expander_core)
   output_expander_sanitizers(output_expander_core)
@@ -51,5 +57,23 @@ else()
   output_expander_sanitizers(output_expander_smoke_test)
   add_test(NAME portable_smoke COMMAND output_expander_smoke_test)
   set_tests_properties(portable_smoke PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+  # Verify interrupt-to-foreground queue behavior on
+  # the host without requiring CH32V003 hardware.
+  add_executable(output_expander_irq_rx_test
+    tests/unit/test_irq_rx.c)
+
+  target_link_libraries(output_expander_irq_rx_test
+    PRIVATE output_expander_core)
+
+  output_expander_warnings(output_expander_irq_rx_test)
+  output_expander_sanitizers(output_expander_irq_rx_test)
+
+  add_test(
+    NAME irq_rx
+    COMMAND output_expander_irq_rx_test)
+
+  set_tests_properties(irq_rx PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()

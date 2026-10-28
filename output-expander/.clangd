@@ -1,24 +1,25 @@
+
 Diagnostics:
   UnusedIncludes: None
 
 CompileFlags:
-  # Portable sources and unit tests use the sanitizer-enabled host build.
+  # Default for portable sources and unit tests.
   CompilationDatabase: build/host-debug
   Add:
     - -Isrc
 
 ---
 If:
-  PathMatch: src/(main|ch32v003)\.(c|h)|src/startup\.S
+  PathMatch: src/(main|hal|rs485|ch32v003)\.(c|h)|src/startup\.S
+
 CompileFlags:
-  # Hardware sources need the RV32EC/ILP32E flags and cross-compiler headers.
+  # Hardware sources use the cross-compilation database.
   CompilationDatabase: build/ch32v003-release
+
   Remove:
     - -Werror
-    # clangd 18 misinterprets GCC's combined ISA string as a CPU name. The
-    # production database remains authoritative; these removals affect only
-    # editor parsing.
     - -march=*
     - -mabi=*
+
   Add:
     - --target=riscv32-unknown-elf
