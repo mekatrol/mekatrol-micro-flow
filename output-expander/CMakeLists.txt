@@ -46,7 +46,8 @@ else()
   include(cmake/sanitizers.cmake)
   add_library(output_expander_core
     src/smoke.c
-    src/irq_rx.c)
+    src/irq_rx.c
+    src/crc16.c)
   target_include_directories(output_expander_core PUBLIC src)
   output_expander_warnings(output_expander_core)
   output_expander_sanitizers(output_expander_core)
@@ -75,5 +76,25 @@ else()
     COMMAND output_expander_irq_rx_test)
 
   set_tests_properties(irq_rx PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+  
+  # Test the portable CRC implementation on the host.
+  #
+  # The same algorithm will later be compiled into
+  # CH32V003 firmware, without any hardware dependencies.
+  add_executable(output_expander_crc16_test
+    tests/unit/test_crc16.c)
+
+  target_link_libraries(output_expander_crc16_test
+    PRIVATE output_expander_core)
+
+  output_expander_warnings(output_expander_crc16_test)
+  output_expander_sanitizers(output_expander_crc16_test)
+
+  add_test(
+    NAME crc16
+    COMMAND output_expander_crc16_test)
+
+  set_tests_properties(crc16 PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()
