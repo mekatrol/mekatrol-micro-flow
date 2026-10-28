@@ -27,7 +27,7 @@
  * These constants remain private until the corresponding
  * command implementations are introduced.
  *
- * ASSIGN_UID is also defined by the existing dispatcher,
+ * ASSIGN_ADDRESS_BY_UID is also defined by the existing dispatcher,
  * but it is a broadcast-only commissioning command.
  */
 #define COMMAND_GET_STATUS 0x02U
@@ -301,7 +301,7 @@ command_processor_process(const command_processor_context_t *context,
   case COMMAND_GET_STATUS:
   case COMMAND_GET_CONFIG:
   case COMMAND_SET_CONFIG:
-  case DISPATCHER_COMMAND_ASSIGN_UID:
+  case DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID:
   case COMMAND_RESET:
     /*
      * These commands are defined by protocol v1 but are
@@ -309,7 +309,7 @@ command_processor_process(const command_processor_context_t *context,
      *
      * GET_STATUS requires status/input integration.
      * GET_CONFIG and SET_CONFIG require persistent storage.
-     * ASSIGN_UID requires UID matching and EEPROM writes.
+     * ASSIGN_ADDRESS_BY_UID requires UID matching and EEPROM writes.
      * RESET requires transmission-complete coordination.
      *
      * WHAT:
@@ -320,7 +320,7 @@ command_processor_process(const command_processor_context_t *context,
      * The master can distinguish unavailable functionality
      * from an entirely unknown command identifier.
      *
-     * ASSIGN_UID broadcast requests were already filtered
+     * ASSIGN_ADDRESS_BY_UID broadcast requests were already filtered
      * out above, so they still receive no response.
      */
     return prepare_error_response(request, COMMAND_ERROR_UNSUPPORTED, response);

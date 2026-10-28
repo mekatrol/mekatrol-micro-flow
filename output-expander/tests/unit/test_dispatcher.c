@@ -140,7 +140,7 @@ static void test_unicast_routing(void) {
 }
 
 /*
- * Only ASSIGN_UID may be routed from broadcast traffic.
+ * Only ASSIGN_ADDRESS_BY_UID may be routed from broadcast traffic.
  *
  * A broadcast commissioning request is not a permission
  * to alter the address until the full UID is checked.
@@ -162,13 +162,13 @@ static void test_broadcast_routing(void) {
 
   assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 
-  packet.command = DISPATCHER_COMMAND_ASSIGN_UID;
+  packet.command = DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID;
 
   assert(dispatcher_route_request(&packet, 0x23U) ==
-         DISPATCHER_BROADCAST_ASSIGN_UID);
+         DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID);
 
   assert(dispatcher_route_request(&packet, 0xFFU) ==
-         DISPATCHER_BROADCAST_ASSIGN_UID);
+         DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID);
 }
 
 /*
@@ -190,7 +190,7 @@ static void test_packet_types(void) {
   assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 
   packet.destination = 0x00U;
-  packet.command = DISPATCHER_COMMAND_ASSIGN_UID;
+  packet.command = DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID;
 
   assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 }

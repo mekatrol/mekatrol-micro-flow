@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 /*
- * Protocol v1 ASSIGN_UID request layout.
+ * Protocol v1 ASSIGN_ADDRESS_BY_UID request layout.
  *
  * WHAT:
  * The broadcast commissioning payload contains the
@@ -19,7 +19,7 @@
  * A device may accept a commissioning request only
  * when every UID byte matches its factory identity.
  * The new address cannot be inferred from the packet
- * destination because ASSIGN_UID uses broadcast 0x00.
+ * destination because ASSIGN_ADDRESS_BY_UID uses broadcast 0x00.
  *
  * The UID byte order must be the same order used by
  * PING and by the working Rust implementation.
@@ -52,14 +52,14 @@
 bool commissioning_address_valid(uint8_t address);
 
 /*
- * Validate one decoded broadcast ASSIGN_UID request.
+ * Validate one decoded broadcast ASSIGN_ADDRESS_BY_UID request.
  *
  * WHAT:
  * Verify that the packet:
  *
  * - Is a request packet.
  * - Is addressed to broadcast 0x00.
- * - Uses command ASSIGN_UID (0x30).
+ * - Uses command ASSIGN_ADDRESS_BY_UID (0x30).
  * - Contains exactly 13 payload bytes.
  * - Matches the local UID in all 12 positions.
  * - Requests a commissioned address in 0x01..0xFE.
@@ -98,7 +98,7 @@ bool commissioning_address_valid(uint8_t address);
  * Broadcast commissioning must remain silent even
  * after a successful persistent commit.
  */
-bool commissioning_validate_assign_uid(
+bool commissioning_validate_assign_address_by_uid(
     const protocol_packet_t *request,
     const uint8_t local_uid[COMMISSIONING_UID_SIZE], uint8_t *new_address);
 

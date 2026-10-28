@@ -90,7 +90,7 @@ static protocol_packet_t make_request(uint8_t address, uint8_t command) {
 
 static protocol_packet_t make_assign(uint8_t address) {
   protocol_packet_t request =
-      make_request(0x00U, DISPATCHER_COMMAND_ASSIGN_UID);
+      make_request(0x00U, DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID);
 
   request.payload_length = 13U;
 

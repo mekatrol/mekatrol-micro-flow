@@ -28,7 +28,7 @@ static const uint8_t test_uid[COMMISSIONING_UID_SIZE] = {
     0xBCU, 0xDEU, 0xF0U, 0x11U, 0x22U, 0x33U};
 
 /*
- * Build one decoded broadcast ASSIGN_UID request.
+ * Build one decoded broadcast ASSIGN_ADDRESS_BY_UID request.
  *
  * The framing layer normally produces this packet
  * only after validating COBS, version, length and CRC.
@@ -42,7 +42,7 @@ static protocol_packet_t make_assign_request(uint8_t new_address) {
   packet.destination = 0x00U;
   packet.sequence = 0x42U;
   packet.type = PROTOCOL_TYPE_REQUEST;
-  packet.command = DISPATCHER_COMMAND_ASSIGN_UID;
+  packet.command = DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID;
   packet.payload_length = COMMISSIONING_PAYLOAD_SIZE;
 
   for (size_t i = 0U; i < COMMISSIONING_UID_SIZE; ++i) {
@@ -92,7 +92,8 @@ static void test_all_valid_assignments(void) {
 
     uint8_t candidate = 0xFFU;
 
-    assert(commissioning_validate_assign_uid(&request, test_uid, &candidate));
+    assert(commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                        &candidate));
 
     assert(candidate == (uint8_t)address);
 
@@ -134,7 +135,8 @@ static void test_every_uid_bit_mismatch(void) {
       uint8_t candidate = 0xA5U;
 
       assert(
-          !commissioning_validate_assign_uid(&request, test_uid, &candidate));
+          !commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                        &candidate));
 
       assert(candidate == 0xA5U);
     }
@@ -157,7 +159,8 @@ static void test_reserved_addresses(void) {
 
     uint8_t candidate = 0xA5U;
 
-    assert(!commissioning_validate_assign_uid(&request, test_uid, &candidate));
+    assert(!commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                         &candidate));
 
     assert(candidate == 0xA5U);
   }
@@ -186,7 +189,8 @@ static void test_all_payload_lengths(void) {
     uint8_t candidate = 0xA5U;
 
     const bool accepted =
-        commissioning_validate_assign_uid(&request, test_uid, &candidate);
+        commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                      &candidate);
 
     if (length == COMMISSIONING_PAYLOAD_SIZE) {
       assert(accepted);
@@ -216,29 +220,34 @@ static void test_invalid_routing(void) {
 
   request.destination = 0x23U;
 
-  assert(!commissioning_validate_assign_uid(&request, test_uid, &candidate));
+  assert(!commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                       &candidate));
   assert(candidate == 0xA5U);
 
   request.destination = 0xFFU;
 
-  assert(!commissioning_validate_assign_uid(&request, test_uid, &candidate));
+  assert(!commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                       &candidate));
   assert(candidate == 0xA5U);
 
   request.destination = 0x00U;
   request.type = PROTOCOL_TYPE_RESPONSE;
 
-  assert(!commissioning_validate_assign_uid(&request, test_uid, &candidate));
+  assert(!commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                       &candidate));
   assert(candidate == 0xA5U);
 
   request.type = PROTOCOL_TYPE_ERROR;
 
-  assert(!commissioning_validate_assign_uid(&request, test_uid, &candidate));
+  assert(!commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                       &candidate));
   assert(candidate == 0xA5U);
 
   request.type = PROTOCOL_TYPE_REQUEST;
   request.command = DISPATCHER_COMMAND_PING;
 
-  assert(!commissioning_validate_assign_uid(&request, test_uid, &candidate));
+  assert(!commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                       &candidate));
   assert(candidate == 0xA5U);
 }
 
@@ -258,11 +267,14 @@ static void test_invalid_arguments(void) {
 
   uint8_t candidate = 0xA5U;
 
-  assert(!commissioning_validate_assign_uid(NULL, test_uid, &candidate));
+  assert(!commissioning_validate_assign_address_by_uid(NULL, test_uid,
+                                                       &candidate));
 
-  assert(!commissioning_validate_assign_uid(&request, NULL, &candidate));
+  assert(!commissioning_validate_assign_address_by_uid(&request, NULL,
+                                                       &candidate));
 
-  assert(!commissioning_validate_assign_uid(&request, test_uid, NULL));
+  assert(!commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                       NULL));
 
   assert(candidate == 0xA5U);
 }
@@ -288,10 +300,12 @@ static void test_repeated_assignment(void) {
   uint8_t second_candidate = 0xFFU;
 
   assert(
-      commissioning_validate_assign_uid(&request, test_uid, &first_candidate));
+      commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                    &first_candidate));
 
   assert(
-      commissioning_validate_assign_uid(&request, test_uid, &second_candidate));
+      commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                    &second_candidate));
 
   assert(first_candidate == 0x23U);
   assert(second_candidate == first_candidate);
@@ -317,7 +331,8 @@ static void test_uid_byte_order(void) {
 
   uint8_t candidate = 0xA5U;
 
-  assert(!commissioning_validate_assign_uid(&request, test_uid, &candidate));
+  assert(!commissioning_validate_assign_address_by_uid(&request, test_uid,
+                                                       &candidate));
 
   assert(candidate == 0xA5U);
 }
@@ -348,7 +363,8 @@ static void test_inputs_unchanged(void) {
 
   uint8_t candidate = 0xA5U;
 
-  assert(commissioning_validate_assign_uid(&request, local_uid, &candidate));
+  assert(commissioning_validate_assign_address_by_uid(&request, local_uid,
+                                                      &candidate));
 
   assert(candidate == 0x23U);
   assert(memcmp(&request, &original_request, sizeof(request)) == 0);

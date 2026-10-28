@@ -42,7 +42,7 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
    * Process broadcast routing before unicast filtering.
    *
    * An uncommissioned device has no valid unicast address
-   * but must still recognize broadcast ASSIGN_UID.
+   * but must still recognize broadcast ASSIGN_ADDRESS_BY_UID.
    *
    * Other broadcast commands are silently discarded,
    * preventing multiple devices from responding together.
@@ -51,8 +51,8 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
    * are separate operations not performed here.
    */
   if (packet->destination == PROTOCOL_BROADCAST_ADDRESS) {
-    if (packet->command == DISPATCHER_COMMAND_ASSIGN_UID) {
-      return DISPATCHER_BROADCAST_ASSIGN_UID;
+    if (packet->command == DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID) {
+      return DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID;
     }
 
     return DISPATCHER_IGNORE;

@@ -11,7 +11,7 @@ A small, open, binary master/device protocol for CH32V003-based output expanders
 | `PING` | Implemented |
 | `GET_OUTPUTS` | Implemented |
 | `SET_OUTPUTS` | Implemented |
-| `ASSIGN_UID` | Implemented in RAM only; reset or power loss restores the configured boot address (`0xFF` by default) |
+| `ASSIGN_ADDRESS_BY_UID` | Implemented in RAM only; reset or power loss restores the configured boot address (`0xFF` by default) |
 | `RESET` | Implemented; acknowledgement is transmitted before watchdog reset |
 | `GET_STATUS` | Defined but returns `UNSUPPORTED` |
 | `GET_CONFIG` | Defined but returns `UNSUPPORTED` |
@@ -104,7 +104,7 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 | `0x11` | `GET_OUTPUTS` | None | current mask `u8` | No |
 | `0x20` | `GET_CONFIG` | None | address `u8`, startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | No |
 | `0x21` | `SET_CONFIG` | startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | same 5 bytes on successful EEPROM commit | No |
-| `0x30` | `ASSIGN_UID` | UID `[12]`, new address `u8` | None | Yes |
+| `0x30` | `ASSIGN_ADDRESS_BY_UID` | UID `[12]`, new address `u8` | None | Yes |
 | `0x40` | `RESET` | None | None; see reset rule | No |
 
 ### Command details
@@ -113,7 +113,7 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 
 **SET_CONFIG:** Validate every field before writing. Commit the new record to the inactive EEPROM slot, verify by readback, then activate it in RAM. Respond only after success. A failure leaves the last valid record active and returns `STORAGE_ERROR` if communication is still operational.
 
-**ASSIGN_UID:** Intended for isolated-device commissioning. With exactly one uncommissioned device connected, send `PING` to `0xFF` to read its UID, then broadcast `ASSIGN_UID` with that UID and a new address in `0x01..0xFE`. Every device compares all 12 UID bytes; only the matching device accepts the new address. The current C firmware activates the address in RAM only, so reset or power loss restores `0xFF`. Because assignment is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned UID. Do not discover multiple uncommissioned devices together: they would all respond to `PING 0xFF` and collide. Readdressing an already commissioned unit is permitted on a trusted bus.
+**ASSIGN_ADDRESS_BY_UID:** Intended for isolated-device commissioning. With exactly one uncommissioned device connected, send `PING` to `0xFF` to read its factory UID, then broadcast `ASSIGN_ADDRESS_BY_UID` with that UID and a new address in `0x01..0xFE`. Every device compares all 12 UID bytes; only the device whose immutable factory UID matches accepts the new address. The command does not assign or modify the UID. The current C firmware activates the address in RAM only, so reset or power loss restores `0xFF`. Because assignment is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned UID. Do not discover multiple uncommissioned devices together: they would all respond to `PING 0xFF` and collide. Readdressing an already commissioned unit is permitted on a trusted bus.
 
 **RESET:** The device must finish transmitting a valid response before triggering reset or intentionally allowing the watchdog to expire. The successful response has an empty payload. This is an unauthenticated maintenance command and must only be exposed on a trusted bus.
 

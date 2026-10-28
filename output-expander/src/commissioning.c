@@ -25,7 +25,7 @@ _Static_assert(COMMISSIONING_UID_SIZE == 12U,
                "Protocol v1 requires a 12-byte UID");
 
 _Static_assert(COMMISSIONING_PAYLOAD_SIZE == 13U,
-               "ASSIGN_UID must contain 13 payload bytes");
+               "ASSIGN_ADDRESS_BY_UID must contain 13 payload bytes");
 
 _Static_assert(COMMISSIONING_PAYLOAD_SIZE <= PROTOCOL_MAX_PAYLOAD,
                "Commissioning payload exceeds packet capacity");
@@ -44,7 +44,7 @@ bool commissioning_address_valid(uint8_t address) {
          address <= COMMISSIONING_MAX_ADDRESS;
 }
 
-bool commissioning_validate_assign_uid(
+bool commissioning_validate_assign_address_by_uid(
     const protocol_packet_t *request,
     const uint8_t local_uid[COMMISSIONING_UID_SIZE], uint8_t *new_address) {
 
@@ -64,7 +64,7 @@ bool commissioning_validate_assign_uid(
    *
    * WHAT:
    * Accept only request packets routed as broadcast
-   * ASSIGN_UID.
+   * ASSIGN_ADDRESS_BY_UID.
    *
    * WHY:
    * Commissioning must not be performed from unicast
@@ -79,7 +79,7 @@ bool commissioning_validate_assign_uid(
    * broadcast assignments, as protocol v1 permits.
    */
   if (dispatcher_route_request(request, PROTOCOL_UNCOMMISSIONED_ADDRESS) !=
-      DISPATCHER_BROADCAST_ASSIGN_UID) {
+      DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID) {
     return false;
   }
 

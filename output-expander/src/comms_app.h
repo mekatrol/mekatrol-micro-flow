@@ -11,7 +11,7 @@
 /*
  * Temporary firmware development address.
  *
- * EEPROM is not installed yet. A matching ASSIGN_UID
+ * EEPROM is not installed yet. A matching ASSIGN_ADDRESS_BY_UID
  * broadcast may change this address in RAM, but the
  * original value returns after a hardware reset.
  */

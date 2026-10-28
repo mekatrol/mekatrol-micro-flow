@@ -10,7 +10,7 @@ logic are kept together without generic SoC/board/core abstraction layers.
 The current firmware provides eight active-low outputs, RS-485 protocol v1
 framing, interrupt-driven reception, a WS2812 status LED, and watchdog reset.
 It implements `PING`, `GET_OUTPUTS`, `SET_OUTPUTS`, `RESET`, and UID-targeted
-`ASSIGN_UID`. Address assignment is currently RAM-only: reset or power loss
+`ASSIGN_ADDRESS_BY_UID`. Address assignment is currently RAM-only: reset or power loss
 restores the configured boot address (`0xFF` by default). `GET_STATUS`,
 `GET_CONFIG`, and `SET_CONFIG` return `UNSUPPORTED` until status and EEPROM
 integration land.

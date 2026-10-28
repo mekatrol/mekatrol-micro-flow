@@ -256,11 +256,11 @@ static void test_ignored_requests(void) {
   assert(memcmp(&response, &original, sizeof(response)) == 0);
 
   /*
-   * Broadcast ASSIGN_UID is recognized by the
+   * Broadcast ASSIGN_ADDRESS_BY_UID is recognized by the
    * dispatcher, but commissioning is not yet
    * implemented and must remain completely silent.
    */
-  request.command = DISPATCHER_COMMAND_ASSIGN_UID;
+  request.command = DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID;
 
   assert(command_processor_process(&context, &request, &response) ==
          COMMAND_PROCESSOR_IGNORED);
@@ -437,7 +437,7 @@ static void test_unknown_commands(void) {
  *
  * WHAT:
  * Cover the remaining protocol v1 commands, including
- * unicast ASSIGN_UID, which is not an allowed form
+ * unicast ASSIGN_ADDRESS_BY_UID, which is not an allowed form
  * of the broadcast commissioning request.
  *
  * WHY:
@@ -451,7 +451,7 @@ static void test_unsupported_commands(void) {
       0x02U, /* GET_STATUS */
       0x20U, /* GET_CONFIG */
       0x21U, /* SET_CONFIG */
-      0x30U, /* ASSIGN_UID */
+      0x30U, /* ASSIGN_ADDRESS_BY_UID */
       0x40U  /* RESET */
   };
 

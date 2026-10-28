@@ -205,7 +205,7 @@ int main(void) {
        * Execute decoded commands in foreground context.
        *
        * SET_OUTPUTS may change physical active-low GPIO.
-       * ASSIGN_UID may change the RAM-only address.
+       * ASSIGN_ADDRESS_BY_UID may change the RAM-only address.
        * RESET may acknowledge and latch watchdog expiry.
        *
        * The USART transmit driver waits for TC before

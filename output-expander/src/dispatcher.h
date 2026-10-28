@@ -13,14 +13,14 @@
  * Keep these values consistent with docs/protocol.md
  * and the working Rust implementation.
  *
- * ASSIGN_UID is recognized for routing only.
+ * ASSIGN_ADDRESS_BY_UID is recognized for routing only.
  * UID comparison and EEPROM persistence are not yet
  * implemented in this portable dispatcher.
  */
 #define DISPATCHER_COMMAND_PING 0x01U
 #define DISPATCHER_COMMAND_SET_OUTPUTS 0x10U
 #define DISPATCHER_COMMAND_GET_OUTPUTS 0x11U
-#define DISPATCHER_COMMAND_ASSIGN_UID 0x30U
+#define DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID 0x30U
 
 /*
  * Fixed protocol response sizes.
@@ -56,7 +56,7 @@
 typedef enum {
   DISPATCHER_IGNORE = 0,
   DISPATCHER_UNICAST_REQUEST,
-  DISPATCHER_BROADCAST_ASSIGN_UID
+  DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID
 } dispatcher_route_t;
 
 /*

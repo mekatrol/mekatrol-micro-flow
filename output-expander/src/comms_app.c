@@ -174,7 +174,7 @@ comms_app_result_t comms_app_process(comms_app_t *app,
   const dispatcher_route_t route =
       dispatcher_route_request(request, app->command.device_address);
 
-  if (route == DISPATCHER_BROADCAST_ASSIGN_UID) {
+  if (route == DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID) {
     uint8_t proposed_address = PROTOCOL_UNCOMMISSIONED_ADDRESS;
 
     /*
@@ -184,8 +184,8 @@ comms_app_result_t comms_app_process(comms_app_t *app,
      * This remains RAM-only until EEPROM is installed.
      * Broadcast requests do not produce responses.
      */
-    if (!commissioning_validate_assign_uid(request, app->command.uid,
-                                           &proposed_address)) {
+    if (!commissioning_validate_assign_address_by_uid(
+            request, app->command.uid, &proposed_address)) {
       return COMMS_APP_IGNORED;
     }
 
