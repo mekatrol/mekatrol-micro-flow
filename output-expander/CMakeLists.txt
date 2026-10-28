@@ -24,6 +24,7 @@ if(CMAKE_CROSSCOMPILING)
     src/freestanding.c
     src/output_driver.c
     src/output_state.c
+    src/command_processor.c
     src/startup.S)
 
   # Prevent GCC from recognizing the loops inside our memory
@@ -273,5 +274,35 @@ else()
     COMMAND output_expander_output_driver_test)
 
   set_tests_properties(output_driver PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+    # Test the foreground command processor with a simulated
+  # output driver, without linking CH32V003 hardware code.
+  #
+  # WHAT:
+  # Compile the production command processor, existing
+  # dispatcher, and test-provided output-driver functions.
+  #
+  # WHY:
+  # Verify address filtering and GPIO execution ordering
+  # before allowing bus traffic to control real outputs.
+  add_executable(output_expander_command_processor_test
+    tests/unit/test_command_processor.c
+    src/command_processor.c)
+
+  target_include_directories(output_expander_command_processor_test
+    PRIVATE src)
+
+  target_link_libraries(output_expander_command_processor_test
+    PRIVATE output_expander_core)
+
+  output_expander_warnings(output_expander_command_processor_test)
+  output_expander_sanitizers(output_expander_command_processor_test)
+
+  add_test(
+    NAME command_processor
+    COMMAND output_expander_command_processor_test)
+
+  set_tests_properties(command_processor PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()
