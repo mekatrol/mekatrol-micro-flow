@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Reference CLI for the output-expander proprietary RS-485 protocol.
+"""CLI for the commands implemented by the current output-expander firmware.
 
 The framing functions intentionally mirror the no-heap firmware codec.
 An independent host implementation verifies byte order, COBS encoding,
 CRC validation, and response matching without special libraries.
+
+The current firmware implements PING, GET_OUTPUTS, SET_OUTPUTS, RESET, and
+RAM-only UID-targeted address assignment. Persistent configuration and status
+commands remain part of protocol version one but are not exposed here until
+the firmware implements them.
 """
 
 import argparse
@@ -259,14 +264,6 @@ class OutputExpander:
             raise ProtocolError("invalid PING response")
         return payload[:12], payload[12], payload[13]
 
-    def status(self, addr: int) -> tuple[int, int, int]:
-        """Return output mask, input mask, and little-endian status bits."""
-
-        payload = self.request(addr, 0x02)
-        if len(payload) != 4:
-            raise ProtocolError("invalid GET_STATUS response")
-        return payload[0], payload[1], int.from_bytes(payload[2:], "little")
-
     def outputs(self, addr: int) -> int:
         """Read the current logical state of all eight outputs."""
 
@@ -283,13 +280,8 @@ class OutputExpander:
             raise ProtocolError("invalid SET_OUTPUTS response")
         return payload[0]
 
-    def config(self, addr: int) -> bytes:
-        """Read the compact configuration payload without reinterpreting it."""
-
-        return self.request(addr, 0x20)
-
     def assign(self, uid: bytes, new_address: int) -> None:
-        """Broadcast UID-targeted assignment, then verify it by PING."""
+        """Assign a RAM-only address, then verify it by PING."""
 
         # Broadcasts intentionally have no reply. Advance the sequence after TX
         # and prove success by matching the complete UID at the new address.
@@ -325,23 +317,42 @@ class OutputExpander:
 def build_parser() -> argparse.ArgumentParser:
     """Describe CLI commands while sharing protocol-specific validators."""
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", required=True)
-    parser.add_argument("--timeout", type=float, default=READ_TIMEOUT)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--port", required=True, help="serial adapter device")
+    parser.add_argument(
+        "--timeout", type=float, default=READ_TIMEOUT,
+        help=f"response timeout in seconds (default: {READ_TIMEOUT})",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    for name in ("info", "status", "outputs", "config", "reset", "simulate-error"):
-        command = commands.add_parser(name)
+    command_help = {
+        "info": "show UID, firmware version, and outputs",
+        "outputs": "read or replace the complete output mask",
+        "reset": "request an acknowledged watchdog reset",
+        "simulate-error": "send a deliberately invalid-CRC PING",
+    }
+    for name, help_text in command_help.items():
+        command = commands.add_parser(name, help=help_text)
         command.add_argument("--address", required=True, type=address)
         if name == "outputs":
             command.add_argument("--set", type=mask)
 
-    one = commands.add_parser("output")
+    one = commands.add_parser("output", help="change one output channel")
     one.add_argument("--address", required=True, type=address)
     one.add_argument("channel", type=int, choices=range(1, 9))
     one.add_argument("state", choices=("on", "off"))
 
-    assign = commands.add_parser("set-address")
+    assign = commands.add_parser(
+        "set-address",
+        help="assign and verify a temporary address (lost on reset)",
+        description=(
+            "Assign an address to the matching UID in RAM. The current firmware "
+            "does not persist it, so reset or power loss restores the configured "
+            "boot address (0x17 by default)."
+        ),
+    )
     assign.add_argument("--uid", required=True, type=parse_uid)
     assign.add_argument("--new-address", required=True, type=address)
     return parser
@@ -379,16 +390,11 @@ def run(args: argparse.Namespace) -> None:
         device = OutputExpander(port, args.timeout)
         if args.command == "info":
             uid, major, minor = device.ping(args.address)
-            outputs, inputs, status = device.status(args.address)
+            outputs = device.outputs(args.address)
             print(f"address: {args.address}")
             print(f"firmware: {major}.{minor}")
             print(f"uid: {uid.hex()}")
-            print(f"inputs: 0x{inputs:02x}")
-            print(f"status: 0x{status:04x}")
             show_outputs(outputs)
-        elif args.command == "status":
-            outputs, inputs, status = device.status(args.address)
-            print(f"outputs=0x{outputs:02x} inputs=0x{inputs:02x} status=0x{status:04x}")
         elif args.command == "outputs":
             value = (
                 device.set_outputs(args.address, args.set)
@@ -402,11 +408,12 @@ def run(args: argparse.Namespace) -> None:
             bit = 1 << (args.channel - 1)
             value = value | bit if args.state == "on" else value & ~bit
             show_outputs(device.set_outputs(args.address, value))
-        elif args.command == "config":
-            print(device.config(args.address).hex(" "))
         elif args.command == "set-address":
             device.assign(args.uid, args.new_address)
-            print(f"assigned {args.uid.hex()} to {args.new_address}")
+            print(
+                f"temporarily assigned {args.uid.hex()} to {args.new_address}; "
+                "reset or power loss restores the configured boot address"
+            )
         elif args.command == "reset":
             device.reset(args.address)
             print(f"board {args.address} acknowledged reset")

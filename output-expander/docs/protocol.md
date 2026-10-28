@@ -2,7 +2,24 @@
 
 ## 1. Purpose
 
-A small, open, binary master/device protocol for CH32V003-based output expanders and related automation peripherals. The bus is controlled by the project's own controller or a gateway exposing a Python API to software such as Home Assistant. This document is a **proposed specification**; firmware and host tooling must implement and validate it before declaring interoperability.
+A small, open, binary master/device protocol for CH32V003-based output expanders and related automation peripherals. The bus is controlled by the project's own controller or a gateway exposing a Python API to software such as Home Assistant. This document defines the version-one target contract. The command set is larger than the current C firmware implementation.
+
+### Current C firmware status
+
+| Command | Current behavior |
+|---|---|
+| `PING` | Implemented |
+| `GET_OUTPUTS` | Implemented |
+| `SET_OUTPUTS` | Implemented |
+| `ASSIGN_UID` | Implemented in RAM only; reset or power loss restores the configured boot address (`0x17` by default) |
+| `RESET` | Implemented; acknowledgement is transmitted before watchdog reset |
+| `GET_STATUS` | Defined but returns `UNSUPPORTED` |
+| `GET_CONFIG` | Defined but returns `UNSUPPORTED` |
+| `SET_CONFIG` | Defined but returns `UNSUPPORTED` |
+
+The Python CLI exposes only implemented operations. Persistent address and
+configuration behavior described later remains the target for future EEPROM
+integration.
 
 ## 2. Physical layer and bus ownership
 
@@ -95,7 +112,7 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 
 **SET_CONFIG:** Validate every field before writing. Commit the new record to the inactive EEPROM slot, verify by readback, then activate it in RAM. Respond only after success. A failure leaves the last valid record active and returns `STORAGE_ERROR` if communication is still operational.
 
-**ASSIGN_UID:** Intended for isolated-device commissioning. Every device compares all 12 UID bytes; only the matching device accepts the new address, which must be `0x01..0xFE`. The matched device commits the address to EEPROM and activates it only after verified persistence. Because the command is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned full UID. Multiple factory devices can share the bus electrically but their UIDs must be known before targeted assignment; v1 does not provide collision-free UID discovery. Readdressing an already commissioned unit is permitted on a trusted bus.
+**ASSIGN_UID:** Intended for isolated-device commissioning. Every device compares all 12 UID bytes; only the matching device accepts the new address, which must be `0x01..0xFE`. The current C firmware activates the address in RAM only, so reset or power loss restores the configured boot address (`0x17` by default). The target implementation commits the address to EEPROM before activating it. Because the command is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned full UID. Multiple factory devices can share the bus electrically but their UIDs must be known before targeted assignment; v1 does not provide collision-free UID discovery. Readdressing an already commissioned unit is permitted on a trusted bus.
 
 **RESET:** The device must finish transmitting a valid response before triggering reset or intentionally allowing the watchdog to expire. The successful response has an empty payload. This is an unauthenticated maintenance command and must only be exposed on a trusted bus.
 
