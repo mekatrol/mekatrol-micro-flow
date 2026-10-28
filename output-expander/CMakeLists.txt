@@ -9,13 +9,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(cmake/warnings.cmake)
 
 if(CMAKE_CROSSCOMPILING)
-  add_executable(output-expander
+   add_executable(output-expander
     src/main.c
     src/hal.c
     src/rs485.c
     src/irq_rx.c
     src/usart.c
     src/usart_irq.c
+    src/crc16.c
+    src/cobs.c
+    src/protocol.c
+    src/frame_receiver.c
     src/startup.S)
   target_include_directories(output-expander PRIVATE src)
   output_expander_warnings(output-expander)
@@ -49,7 +53,8 @@ else()
     src/irq_rx.c
     src/crc16.c
     src/cobs.c
-    src/protocol.c)
+    src/protocol.c
+    src/frame_receiver.c)
   target_include_directories(output_expander_core PUBLIC src)
   output_expander_warnings(output_expander_core)
   output_expander_sanitizers(output_expander_core)
@@ -139,6 +144,28 @@ else()
     COMMAND output_expander_protocol_test)
 
   set_tests_properties(protocol PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+  # Test the delimiter-driven receiver with the actual RX
+  # event queue, COBS decoder and packet validator.
+  #
+  # WHY:
+  # No CH32V003 registers are needed to verify framing,
+  # errors, oversized frames and overflow recovery.
+  add_executable(output_expander_frame_receiver_test
+    tests/unit/test_frame_receiver.c)
+
+  target_link_libraries(output_expander_frame_receiver_test
+    PRIVATE output_expander_core)
+
+  output_expander_warnings(output_expander_frame_receiver_test)
+  output_expander_sanitizers(output_expander_frame_receiver_test)
+
+  add_test(
+    NAME frame_receiver
+    COMMAND output_expander_frame_receiver_test)
+
+  set_tests_properties(frame_receiver PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 
 endif()
