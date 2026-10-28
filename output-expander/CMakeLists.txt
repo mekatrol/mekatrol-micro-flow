@@ -11,7 +11,7 @@ include(cmake/warnings.cmake)
 if(CMAKE_CROSSCOMPILING)
   add_executable(output-expander
     src/main.c
-    src/ch32v003.c
+    src/hal.c
     src/startup.S)
   target_include_directories(output-expander PRIVATE src)
   output_expander_warnings(output-expander)
