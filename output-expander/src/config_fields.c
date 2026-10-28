@@ -1,6 +1,8 @@
 
 #include "config_fields.h"
 
+#include "protocol.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -136,8 +138,9 @@ bool config_fields_encode_get(uint8_t address, const config_fields_t *fields,
    * not permit uncommissioned unicast responses.
    */
   if (fields == NULL || output == NULL ||
-      capacity < CONFIG_FIELDS_GET_RESPONSE_SIZE || address == 0x00U ||
-      address == 0xFFU) {
+      capacity < CONFIG_FIELDS_GET_RESPONSE_SIZE ||
+      address == PROTOCOL_BROADCAST_ADDRESS ||
+      address == PROTOCOL_UNCOMMISSIONED_ADDRESS) {
     return false;
   }
 

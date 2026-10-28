@@ -11,7 +11,7 @@ The current firmware provides eight active-low outputs, RS-485 protocol v1
 framing, interrupt-driven reception, a WS2812 status LED, and watchdog reset.
 It implements `PING`, `GET_OUTPUTS`, `SET_OUTPUTS`, `RESET`, and UID-targeted
 `ASSIGN_UID`. Address assignment is currently RAM-only: reset or power loss
-restores the configured boot address (`0x17` by default). `GET_STATUS`,
+restores the configured boot address (`0xFF` by default). `GET_STATUS`,
 `GET_CONFIG`, and `SET_CONFIG` return `UNSUPPORTED` until status and EEPROM
 integration land.
 
@@ -22,20 +22,23 @@ tools/build.sh ch32v003-release
 tools/flash.sh ch32v003-release
 ```
 
-Use the matching host CLI after installing `pyserial`:
+Factory-fresh devices use `0xFF` internally as the uncommissioned sentinel and
+accept only `PING` at that address. Connect one uncommissioned device, read its
+UID, then assign a temporary address:
 
 ```sh
-python3 tools/device_tool.py --port /dev/ttyUSB0 info --address 0x17
-python3 tools/device_tool.py --port /dev/ttyUSB0 outputs --address 0x17 --set 0x05
-python3 tools/device_tool.py --port /dev/ttyUSB0 output --address 0x17 2 on
-python3 tools/device_tool.py --port /dev/ttyUSB0 reset --address 0x17
-```
-
-Temporary UID-targeted address assignment is also available:
-
-```sh
+python3 tools/device_tool.py --port /dev/ttyUSB0 info --address 0xFF
 python3 tools/device_tool.py --port /dev/ttyUSB0 set-address \
   --uid 00112233445566778899aabb --new-address 0x18
+```
+
+Then use that commissioned address for normal commands:
+
+```sh
+python3 tools/device_tool.py --port /dev/ttyUSB0 info --address 0x18
+python3 tools/device_tool.py --port /dev/ttyUSB0 outputs --address 0x18 --set 0x05
+python3 tools/device_tool.py --port /dev/ttyUSB0 output --address 0x18 2 on
+python3 tools/device_tool.py --port /dev/ttyUSB0 reset --address 0x18
 ```
 
 The assigned address is verified with `PING`, but is not persistent.

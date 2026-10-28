@@ -1,6 +1,7 @@
 
 #include "response_tx.h"
 
+#include "dispatcher.h"
 #include "protocol.h"
 #include "usart.h"
 
@@ -32,29 +33,6 @@ bool response_tx_send(const protocol_packet_t *packet) {
   }
 
   /*
-   * Reject reserved or broadcast destinations.
-   *
-   * WHAT:
-   * Only commissioned unicast addresses, 0x01..0xFE,
-   * are legal response destinations.
-   *
-   * WHY:
-   * The v1 protocol forbids broadcast replies because
-   * multiple devices transmitting simultaneously could
-   * corrupt traffic or cause RS-485 bus contention.
-   *
-   * Address 0xFF is reserved for uncommissioned state
-   * and cannot identify a unicast device.
-   *
-   * This check is an additional safety boundary.
-   * Correct addressing must also be enforced by the
-   * command processor before any command execution.
-   */
-  if (packet->destination == 0x00U || packet->destination == 0xFFU) {
-    return false;
-  }
-
-  /*
    * Transmit only response or error packet types.
    *
    * WHAT:
@@ -70,6 +48,28 @@ bool response_tx_send(const protocol_packet_t *packet) {
     return false;
   }
 
+  /*
+   * Response address restrictions
+   * -----------------------------
+   * Broadcast address (PROTOCOL_BROADCAST_ADDRESS):
+   *   Never transmit a response. Multiple devices may receive and process
+   *   broadcast messages, so responding could cause bus contention.
+   *
+   * Uncommissioned address (PROTOCOL_UNCOMMISSIONED_ADDRESS / 0xFF):
+   *   Only permit a successful PING information response. This allows a
+   *   single isolated, uncommissioned device to be discovered before its
+   *   unique address is assigned using its UID.
+   *
+   * All other destination addresses:
+   *   Responses are permitted, subject to normal address validation.
+   */
+  if (packet->destination == PROTOCOL_BROADCAST_ADDRESS ||
+      (packet->destination == PROTOCOL_UNCOMMISSIONED_ADDRESS &&
+       (packet->type != PROTOCOL_TYPE_RESPONSE ||
+        packet->command != DISPATCHER_COMMAND_PING ||
+        packet->payload_length != DISPATCHER_PING_RESPONSE_SIZE))) {
+    return false;
+  }
   /*
    * Check the fixed payload capacity before encoding.
    *

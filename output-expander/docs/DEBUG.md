@@ -808,12 +808,12 @@ print/x debug_last_command
 print debug_last_payload_length
 ```
 
-Expected values after a correctly received PING request with destination `0x17` and sequence `0x42`:
+Expected values after a correctly received PING request with destination `0xFF` and sequence `0x42`:
 
 | Variable | Expected value |
 |---|---|
 | `debug_valid_packet_count` | Increases by one |
-| `debug_last_destination` | `0x17` |
+| `debug_last_destination` | `0xFF` |
 | `debug_last_sequence` | `0x42` |
 | `debug_last_type` | `0x00` |
 | `debug_last_command` | `0x01` |

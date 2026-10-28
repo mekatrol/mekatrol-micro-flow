@@ -23,6 +23,17 @@
 #define PROTOCOL_MAX_ENCODED_SIZE 34U
 
 /*
+ * Reserved protocol addresses.
+ *
+ * BROADCAST delivers an explicitly broadcast-capable request to every device
+ * and must never be used as a response destination. UNCOMMISSIONED identifies
+ * a factory/default device before UID-targeted assignment; only the isolated
+ * device PING discovery exchange may use it as a wire destination.
+ */
+#define PROTOCOL_BROADCAST_ADDRESS 0x00U
+#define PROTOCOL_UNCOMMISSIONED_ADDRESS 0xFFU
+
+/*
  * Packet types defined by protocol version 1.
  *
  * The device processes requests; responses and

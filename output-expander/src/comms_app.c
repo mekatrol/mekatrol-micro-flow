@@ -17,7 +17,8 @@ void comms_app_init(comms_app_t *app, uint8_t boot_address,
    *
    * A zero address is reserved for broadcast.
    */
-  if (app == NULL || uid == NULL || boot_address == 0x00U) {
+  if (app == NULL || uid == NULL ||
+      boot_address == PROTOCOL_BROADCAST_ADDRESS) {
     return;
   }
 
@@ -43,7 +44,7 @@ void comms_app_init(comms_app_t *app, uint8_t boot_address,
 
 uint8_t comms_app_address(const comms_app_t *app) {
   if (app == NULL) {
-    return 0xFFU;
+    return PROTOCOL_UNCOMMISSIONED_ADDRESS;
   }
 
   return app->command.device_address;
@@ -174,7 +175,7 @@ comms_app_result_t comms_app_process(comms_app_t *app,
       dispatcher_route_request(request, app->command.device_address);
 
   if (route == DISPATCHER_BROADCAST_ASSIGN_UID) {
-    uint8_t proposed_address = 0xFFU;
+    uint8_t proposed_address = PROTOCOL_UNCOMMISSIONED_ADDRESS;
 
     /*
      * Accept only complete UID matches with a valid

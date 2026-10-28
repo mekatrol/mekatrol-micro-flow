@@ -45,9 +45,9 @@ static void test_known_vector(void) {
    */
   uint8_t get[CONFIG_FIELDS_GET_RESPONSE_SIZE] = {0};
 
-  const uint8_t expected_get[] = {0x17U, 0x81U, 0x34U, 0x12U, 0x42U, 0xFFU};
+  const uint8_t expected_get[] = {0x23U, 0x81U, 0x34U, 0x12U, 0x42U, 0xFFU};
 
-  assert(config_fields_encode_get(0x17U, &parsed, get, sizeof(get)));
+  assert(config_fields_encode_get(0x23U, &parsed, get, sizeof(get)));
 
   assert(memcmp(get, expected_get, sizeof(get)) == 0);
 }
@@ -138,11 +138,11 @@ static void test_invalid_arguments(void) {
 
   assert(!config_fields_encode_get(0xFFU, &original, output, sizeof(output)));
 
-  assert(!config_fields_encode_get(0x17U, NULL, output, sizeof(output)));
+  assert(!config_fields_encode_get(0x23U, NULL, output, sizeof(output)));
 
-  assert(!config_fields_encode_get(0x17U, &original, NULL, sizeof(output)));
+  assert(!config_fields_encode_get(0x23U, &original, NULL, sizeof(output)));
 
-  assert(!config_fields_encode_get(0x17U, &original, output, 5U));
+  assert(!config_fields_encode_get(0x23U, &original, output, 5U));
 
   /*
    * No failed operation may alter the output buffer.

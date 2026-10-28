@@ -126,16 +126,19 @@ def encode_packet(packet: Packet) -> bytes:
 
     # Construct fields explicitly so host structure layout cannot affect the
     # protocol. CRC is little-endian and covers header through final payload.
-    decoded = bytes(
-        (
-            VERSION,
-            packet.address,
-            packet.sequence,
-            packet.kind,
-            packet.command,
-            len(packet.payload),
+    decoded = (
+        bytes(
+            (
+                VERSION,
+                packet.address,
+                packet.sequence,
+                packet.kind,
+                packet.command,
+                len(packet.payload),
+            )
         )
-    ) + packet.payload
+        + packet.payload
+    )
     protected = decoded + crc16(decoded).to_bytes(2, "little")
 
     # COBS guarantees the body contains no zero, making this delimiter unique.
@@ -192,6 +195,18 @@ def address(value: str) -> int:
     return result
 
 
+def ping_address(value: str) -> int:
+    """Parse a commissioned address or the isolated discovery address 0xFF."""
+
+    try:
+        result = int(value, 0)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("address must be an integer") from exc
+    if not 1 <= result <= 0xFF:
+        raise argparse.ArgumentTypeError("address must be between 1 and 255")
+    return result
+
+
 def mask(value: str) -> int:
     """Parse the complete eight-channel logical output mask."""
 
@@ -233,7 +248,9 @@ class OutputExpander:
         sequence = self.sequence
         self.sequence = (self.sequence + 1) & 0xFF
         self.port.reset_input_buffer()
-        self.port.write(encode_packet(Packet(addr, sequence, REQUEST, command, payload)))
+        self.port.write(
+            encode_packet(Packet(addr, sequence, REQUEST, command, payload))
+        )
         self.port.flush()
 
         reply = decode_packet(self._read_frame())
@@ -302,7 +319,9 @@ class OutputExpander:
     def send_bad_crc(self, addr: int) -> bytes:
         """Send one intentionally corrupted packet for fault-path testing."""
 
-        encoded_frame = bytearray(encode_packet(Packet(addr, self.sequence, REQUEST, 0x01)))
+        encoded_frame = bytearray(
+            encode_packet(Packet(addr, self.sequence, REQUEST, 0x01))
+        )
 
         # Flip an encoded body byte rather than the delimiter. The device must
         # reject the resulting CRC/COBS failure without transmitting a reply.
@@ -322,7 +341,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--port", required=True, help="serial adapter device")
     parser.add_argument(
-        "--timeout", type=float, default=READ_TIMEOUT,
+        "--timeout",
+        type=float,
+        default=READ_TIMEOUT,
         help=f"response timeout in seconds (default: {READ_TIMEOUT})",
     )
     commands = parser.add_subparsers(dest="command", required=True)
@@ -335,7 +356,11 @@ def build_parser() -> argparse.ArgumentParser:
     }
     for name, help_text in command_help.items():
         command = commands.add_parser(name, help=help_text)
-        command.add_argument("--address", required=True, type=address)
+        command.add_argument(
+            "--address",
+            required=True,
+            type=ping_address if name == "info" else address,
+        )
         if name == "outputs":
             command.add_argument("--set", type=mask)
 
@@ -350,7 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Assign an address to the matching UID in RAM. The current firmware "
             "does not persist it, so reset or power loss restores the configured "
-            "boot address (0x17 by default)."
+            "boot address (0xFF by default)."
         ),
     )
     assign.add_argument("--uid", required=True, type=parse_uid)
@@ -390,11 +415,11 @@ def run(args: argparse.Namespace) -> None:
         device = OutputExpander(port, args.timeout)
         if args.command == "info":
             uid, major, minor = device.ping(args.address)
-            outputs = device.outputs(args.address)
             print(f"address: {args.address}")
             print(f"firmware: {major}.{minor}")
             print(f"uid: {uid.hex()}")
-            show_outputs(outputs)
+            if args.address != 0xFF:
+                show_outputs(device.outputs(args.address))
         elif args.command == "outputs":
             value = (
                 device.set_outputs(args.address, args.set)
@@ -418,10 +443,7 @@ def run(args: argparse.Namespace) -> None:
             device.reset(args.address)
             print(f"board {args.address} acknowledged reset")
         elif args.command == "simulate-error":
-            print(
-                "sent bad-CRC request: "
-                f"{device.send_bad_crc(args.address).hex(' ')}"
-            )
+            print(f"sent bad-CRC request: {device.send_bad_crc(args.address).hex(' ')}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

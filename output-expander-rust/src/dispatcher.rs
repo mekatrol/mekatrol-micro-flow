@@ -90,6 +90,16 @@ impl Dispatcher {
         }
         let broadcast = request.destination == BROADCAST;
 
+        // Address 0xFF is an internal uncommissioned state, never a usable
+        // unicast destination. A factory-fresh device accepts only the
+        // UID-targeted broadcast assignment handled below.
+        if !broadcast
+            && self.config.slave_address == UNCOMMISSIONED
+            && !(request.destination == UNCOMMISSIONED && request.command == 0x01)
+        {
+            return Outcome::default();
+        }
+
         // Wrong-address packets belong to another device and are silently
         // ignored to prevent multiple nodes from driving the half-duplex bus.
         if !broadcast && request.destination != self.config.slave_address {
@@ -238,7 +248,9 @@ mod tests {
     }
     #[test]
     fn set_outputs_changes_all_channels() {
-        let mut d = Dispatcher::new(Config::default(), [7; UID_BYTES]);
+        let mut config = Config::default();
+        config.slave_address = 42;
+        let mut d = Dispatcher::new(config, [7; UID_BYTES]);
         let o = d.handle(request(d.config.slave_address, 0x10, &[0xa5]));
         assert!(o.outputs_changed);
         assert_eq!(d.outputs.mask(), 0xa5);
@@ -255,5 +267,36 @@ mod tests {
         assert!(o.response.is_none());
         assert!(o.config_changed);
         assert_eq!(d.config.slave_address, 42);
+    }
+
+    #[test]
+    fn uncommissioned_device_accepts_only_uid_targeted_assignment() {
+        let uid = [7; UID_BYTES];
+        let mut d = Dispatcher::new(Config::default(), uid);
+
+        assert_eq!(d.config.slave_address, UNCOMMISSIONED);
+        assert!(!d.config.is_configured());
+        let discovery = d.handle(request(UNCOMMISSIONED, 0x01, &[]));
+        assert_eq!(discovery.response.unwrap().payload()[..UID_BYTES], uid);
+        assert!(
+            d.handle(request(UNCOMMISSIONED, 0x11, &[]))
+                .response
+                .is_none()
+        );
+
+        let mut wrong_uid_payload = [0; UID_BYTES + 1];
+        wrong_uid_payload[UID_BYTES] = 42;
+        let outcome = d.handle(request(BROADCAST, 0x30, &wrong_uid_payload));
+        assert!(!outcome.config_changed);
+        assert_eq!(d.config.slave_address, UNCOMMISSIONED);
+
+        let mut payload = [0; UID_BYTES + 1];
+        payload[..UID_BYTES].copy_from_slice(&uid);
+        payload[UID_BYTES] = 42;
+        let outcome = d.handle(request(BROADCAST, 0x30, &payload));
+        assert!(outcome.response.is_none());
+        assert!(outcome.config_changed);
+        assert_eq!(d.config.slave_address, 42);
+        assert!(d.config.is_configured());
     }
 }

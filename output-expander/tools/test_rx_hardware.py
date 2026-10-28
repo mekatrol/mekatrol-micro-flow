@@ -20,7 +20,7 @@ import time
 import serial
 from device_tool import REQUEST, Packet, encode_packet
 
-DESTINATION = 0x17
+DESTINATION = 0xFF
 PING = 0x01
 
 

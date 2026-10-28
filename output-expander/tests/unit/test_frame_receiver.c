@@ -13,7 +13,7 @@
 
 static frame_receiver_t receiver;
 
-static const protocol_packet_t request = {.destination = 0x17U,
+static const protocol_packet_t request = {.destination = 0x23U,
                                           .sequence = 0x42U,
                                           .type = PROTOCOL_TYPE_REQUEST,
                                           .command = 0x11U,

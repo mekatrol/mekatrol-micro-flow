@@ -10,15 +10,15 @@ pub const MAGIC: u32 = 0x4D45_4B31;
 
 pub const VERSION: u16 = 1;
 
-/// Reachable factory address used until persistent commissioning is available.
-pub const FACTORY_ADDRESS: u8 = 247;
+/// Reserved factory address used until UID-targeted commissioning succeeds.
+pub const FACTORY_ADDRESS: u8 = 0xFF;
 
 // Configuration is a compact value that can be copied and compared in tests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Settings that survive power cycles after being stored in flash.
 
 pub struct Config {
-    /// Protocol address; factory-fresh devices use address 247.
+    /// Protocol address; factory-fresh devices use uncommissioned address 0xFF.
     pub slave_address: u8,
     /// Output bit mask applied when firmware starts.
     pub startup_outputs: u8,
@@ -48,7 +48,7 @@ impl Config {
     /// Check whether all fields that have restricted values are legal.
 
     pub const fn is_valid(&self) -> bool {
-        self.slave_address >= 1 && self.slave_address <= 0xFE
+        self.slave_address != 0
     }
 
     /// Report whether the device has a usable unicast protocol address.
@@ -176,5 +176,14 @@ mod tests {
 
         // The CRC must make that corrupted record unusable.
         assert_eq!(Config::decode(&r), None);
+    }
+
+    #[test]
+    fn uncommissioned_default_is_valid_but_not_configured() {
+        let c = Config::default();
+
+        assert_eq!(c.slave_address, 0xFF);
+        assert!(c.is_valid());
+        assert!(!c.is_configured());
     }
 }

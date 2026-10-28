@@ -120,10 +120,10 @@ static void test_ping(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
   const protocol_packet_t request =
-      make_request(0x17U, DISPATCHER_COMMAND_PING);
+      make_request(0x23U, DISPATCHER_COMMAND_PING);
 
   assert(comms_app_watchdog_feed_allowed(&app));
   assert(comms_app_process(&app, &request) == COMMS_APP_RESPONSE_SENT);
@@ -131,7 +131,7 @@ static void test_ping(void) {
   assert(response_count == 1U);
   assert(output_write_count == 0U);
 
-  assert(last_response.destination == 0x17U);
+  assert(last_response.destination == 0x23U);
   assert(last_response.sequence == 0x42U);
   assert(last_response.type == PROTOCOL_TYPE_RESPONSE);
   assert(last_response.command == DISPATCHER_COMMAND_PING);
@@ -153,9 +153,9 @@ static void test_output_round_trip(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
-  protocol_packet_t set = make_request(0x17U, DISPATCHER_COMMAND_SET_OUTPUTS);
+  protocol_packet_t set = make_request(0x23U, DISPATCHER_COMMAND_SET_OUTPUTS);
 
   set.payload_length = 1U;
   set.payload[0] = 0xA5U;
@@ -168,7 +168,7 @@ static void test_output_round_trip(void) {
   assert(last_response.payload[0] == 0xA5U);
 
   const protocol_packet_t get =
-      make_request(0x17U, DISPATCHER_COMMAND_GET_OUTPUTS);
+      make_request(0x23U, DISPATCHER_COMMAND_GET_OUTPUTS);
 
   assert(comms_app_process(&app, &get) == COMMS_APP_RESPONSE_SENT);
 
@@ -192,16 +192,21 @@ static void test_commissioning(void) {
   comms_app_t app = {0};
   init_app(&app, 0xFFU);
 
-  protocol_packet_t ping = make_request(0x17U, DISPATCHER_COMMAND_PING);
+  protocol_packet_t ping = make_request(0x23U, DISPATCHER_COMMAND_PING);
 
   assert(comms_app_process(&app, &ping) == COMMS_APP_IGNORED);
+
+  ping.destination = 0xFFU;
+  assert(comms_app_process(&app, &ping) == COMMS_APP_RESPONSE_SENT);
+  assert(last_response.destination == 0xFFU);
+  assert(memcmp(last_response.payload, test_uid, sizeof(test_uid)) == 0);
 
   const protocol_packet_t assign = make_assign(0x23U);
 
   assert(comms_app_process(&app, &assign) == COMMS_APP_ADDRESS_CHANGED);
 
   assert(comms_app_address(&app) == 0x23U);
-  assert(response_count == 0U);
+  assert(response_count == 1U);
 
   ping.destination = 0x23U;
 
@@ -223,7 +228,7 @@ static void test_invalid_commissioning(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
   protocol_packet_t request = make_assign(0x23U);
   request.payload[5] ^= 1U;
@@ -243,7 +248,7 @@ static void test_invalid_commissioning(void) {
 
   assert(comms_app_process(&app, &request) == COMMS_APP_IGNORED);
 
-  assert(comms_app_address(&app) == 0x17U);
+  assert(comms_app_address(&app) == 0x23U);
   assert(response_count == 0U);
   assert(output_write_count == 0U);
   assert(comms_app_watchdog_feed_allowed(&app));
@@ -253,7 +258,7 @@ static void test_silent_rejections(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
   protocol_packet_t packet =
       make_request(0x18U, DISPATCHER_COMMAND_SET_OUTPUTS);
@@ -267,7 +272,7 @@ static void test_silent_rejections(void) {
 
   assert(comms_app_process(&app, &packet) == COMMS_APP_IGNORED);
 
-  packet.destination = 0x17U;
+  packet.destination = 0x23U;
   packet.type = PROTOCOL_TYPE_RESPONSE;
 
   assert(comms_app_process(&app, &packet) == COMMS_APP_IGNORED);
@@ -286,9 +291,9 @@ static void test_command_error(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
-  const protocol_packet_t packet = make_request(0x17U, 0xEEU);
+  const protocol_packet_t packet = make_request(0x23U, 0xEEU);
 
   assert(comms_app_process(&app, &packet) == COMMS_APP_RESPONSE_SENT);
 
@@ -303,11 +308,11 @@ static void test_transport_failure(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
   allow_transmission = false;
 
-  const protocol_packet_t packet = make_request(0x17U, DISPATCHER_COMMAND_PING);
+  const protocol_packet_t packet = make_request(0x23U, DISPATCHER_COMMAND_PING);
 
   assert(comms_app_process(&app, &packet) == COMMS_APP_TRANSMIT_FAILED);
 
@@ -327,9 +332,9 @@ static void test_reset_success(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
-  const protocol_packet_t reset = make_request(0x17U, COMMS_COMMAND_RESET);
+  const protocol_packet_t reset = make_request(0x23U, COMMS_COMMAND_RESET);
 
   assert(comms_app_watchdog_feed_allowed(&app));
 
@@ -356,7 +361,7 @@ static void test_reset_success(void) {
    * Once reset is pending, further requests must not
    * transmit or change physical outputs.
    */
-  protocol_packet_t set = make_request(0x17U, DISPATCHER_COMMAND_SET_OUTPUTS);
+  protocol_packet_t set = make_request(0x23U, DISPATCHER_COMMAND_SET_OUTPUTS);
 
   set.payload_length = 1U;
   set.payload[0] = 0xFFU;
@@ -377,9 +382,9 @@ static void test_reset_invalid_length(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
-  protocol_packet_t reset = make_request(0x17U, COMMS_COMMAND_RESET);
+  protocol_packet_t reset = make_request(0x23U, COMMS_COMMAND_RESET);
 
   reset.payload_length = 1U;
   reset.payload[0] = 0xA5U;
@@ -404,7 +409,7 @@ static void test_reset_invalid_routing(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
   protocol_packet_t reset = make_request(0x18U, COMMS_COMMAND_RESET);
 
@@ -414,7 +419,7 @@ static void test_reset_invalid_routing(void) {
 
   assert(comms_app_process(&app, &reset) == COMMS_APP_IGNORED);
 
-  reset.destination = 0x17U;
+  reset.destination = 0x23U;
   reset.type = PROTOCOL_TYPE_RESPONSE;
 
   assert(comms_app_process(&app, &reset) == COMMS_APP_IGNORED);
@@ -438,11 +443,11 @@ static void test_reset_transmit_failure(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
   allow_transmission = false;
 
-  const protocol_packet_t reset = make_request(0x17U, COMMS_COMMAND_RESET);
+  const protocol_packet_t reset = make_request(0x23U, COMMS_COMMAND_RESET);
 
   assert(comms_app_process(&app, &reset) == COMMS_APP_TRANSMIT_FAILED);
 
@@ -472,18 +477,18 @@ static void test_reset_reinitialization(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
-  const protocol_packet_t reset = make_request(0x17U, COMMS_COMMAND_RESET);
+  const protocol_packet_t reset = make_request(0x23U, COMMS_COMMAND_RESET);
 
   assert(comms_app_process(&app, &reset) == COMMS_APP_RESPONSE_SENT);
 
   assert(!comms_app_watchdog_feed_allowed(&app));
 
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
   assert(comms_app_watchdog_feed_allowed(&app));
-  assert(comms_app_address(&app) == 0x17U);
+  assert(comms_app_address(&app) == 0x23U);
 }
 
 /*
@@ -494,9 +499,9 @@ static void test_invalid_arguments(void) {
   reset_fakes();
 
   comms_app_t app = {0};
-  init_app(&app, 0x17U);
+  init_app(&app, 0x23U);
 
-  const protocol_packet_t packet = make_request(0x17U, DISPATCHER_COMMAND_PING);
+  const protocol_packet_t packet = make_request(0x23U, DISPATCHER_COMMAND_PING);
 
   assert(comms_app_process(NULL, &packet) == COMMS_APP_IGNORED);
 

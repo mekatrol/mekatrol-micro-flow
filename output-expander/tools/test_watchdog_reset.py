@@ -18,9 +18,9 @@ import serial
 # Support both `python3 tools/test_watchdog_reset.py` and direct execution.
 # device_tool.py lives in the same tools directory as this test utility.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from device_tool import OutputExpander, ProtocolError  # noqa: E402
+from device_tool import OutputExpander, ProtocolError
 
-RESET_COMMAND = 0x40
+D = 0x40
 ALL_ON = 0xFF
 ALL_OFF = 0x00
 
@@ -28,7 +28,7 @@ ALL_OFF = 0x00
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", default="/dev/ttyACM1")
-    parser.add_argument("--address", type=lambda value: int(value, 0), default=0x17)
+    parser.add_argument("--address", type=lambda value: int(value, 0), default=0xFF)
     parser.add_argument("--timeout", type=float, default=1.0)
     parser.add_argument("--reset-wait", type=float, default=6.0)
     args = parser.parse_args()

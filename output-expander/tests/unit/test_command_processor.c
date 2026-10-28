@@ -45,7 +45,7 @@ uint8_t output_driver_set(uint8_t requested_mask) {
 static command_processor_context_t make_context(void) {
   command_processor_context_t context = {0};
 
-  context.device_address = 0x17U;
+  context.device_address = 0x23U;
   context.firmware_major = 1U;
   context.firmware_minor = 2U;
 
@@ -68,7 +68,7 @@ static command_processor_context_t make_context(void) {
 static protocol_packet_t make_request(uint8_t command) {
   protocol_packet_t packet = {0};
 
-  packet.destination = 0x17U;
+  packet.destination = 0x23U;
   packet.sequence = 0x42U;
   packet.type = PROTOCOL_TYPE_REQUEST;
   packet.command = command;
@@ -133,7 +133,7 @@ static void test_ping(void) {
   assert(command_processor_process(&context, &request, &response) ==
          COMMAND_PROCESSOR_RESPONSE_READY);
 
-  assert(response.destination == 0x17U);
+  assert(response.destination == 0x23U);
   assert(response.sequence == 0x42U);
   assert(response.type == PROTOCOL_TYPE_RESPONSE);
   assert(response.command == DISPATCHER_COMMAND_PING);
@@ -269,7 +269,7 @@ static void test_ignored_requests(void) {
   assert(memcmp(&response, &original, sizeof(response)) == 0);
 
   /* Restore the correct destination and output command. */
-  request.destination = 0x17U;
+  request.destination = 0x23U;
   request.command = DISPATCHER_COMMAND_SET_OUTPUTS;
 
   /* Responses must not be executed as commands. */

@@ -21,11 +21,13 @@
  * Keeping this boundary separate makes framing and
  * transmission behavior independently testable.
  *
- * Only TYPE=RESPONSE and TYPE=ERROR packets addressed
- * to 0x01..0xFE may be transmitted.
+ * TYPE=RESPONSE and TYPE=ERROR packets addressed to
+ * 0x01..0xFE may be transmitted. A successful PING
+ * information response may also use destination 0xFF
+ * for isolated uncommissioned-device discovery.
  *
  * The function never transmits requests, broadcasts,
- * or packets using reserved destination 0xFF.
+ * or other packets using reserved destination 0xFF.
  *
  * Return true only when validation and encoding succeed
  * and the blocking USART transmission returns.

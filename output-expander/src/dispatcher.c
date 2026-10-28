@@ -5,17 +5,6 @@
 #include <stdint.h>
 
 /*
- * Protocol v1 reserved addresses.
- *
- * 0x00 is broadcast and cannot identify one device.
- * 0xFF represents an uncommissioned device.
- *
- * Valid commissioned addresses range from 0x01 to 0xFE.
- */
-#define DISPATCHER_BROADCAST_ADDRESS 0x00U
-#define DISPATCHER_UNCOMMISSIONED_ADDRESS 0xFFU
-
-/*
  * Verify protocol buffer capacity at compile time.
  *
  * WHY:
@@ -61,7 +50,7 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
    * UID matching and persistent address assignment
    * are separate operations not performed here.
    */
-  if (packet->destination == DISPATCHER_BROADCAST_ADDRESS) {
+  if (packet->destination == PROTOCOL_BROADCAST_ADDRESS) {
     if (packet->command == DISPATCHER_COMMAND_ASSIGN_UID) {
       return DISPATCHER_BROADCAST_ASSIGN_UID;
     }
@@ -69,16 +58,17 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
     return DISPATCHER_IGNORE;
   }
 
-  /*
-   * Reject reserved unicast addresses.
-   *
-   * An uncommissioned device cannot execute ordinary
-   * unicast requests, and destination 0xFF is invalid
-   * even if the device's internal address is also 0xFF.
-   */
-  if (device_address == DISPATCHER_UNCOMMISSIONED_ADDRESS ||
-      device_address == DISPATCHER_BROADCAST_ADDRESS ||
-      packet->destination == DISPATCHER_UNCOMMISSIONED_ADDRESS) {
+  /* Permit isolated-device UID discovery before commissioning. */
+  if (device_address == PROTOCOL_UNCOMMISSIONED_ADDRESS &&
+      packet->destination == PROTOCOL_UNCOMMISSIONED_ADDRESS &&
+      packet->command == DISPATCHER_COMMAND_PING) {
+    return DISPATCHER_UNICAST_REQUEST;
+  }
+
+  /* Reject every other use of the reserved addresses. */
+  if (device_address == PROTOCOL_UNCOMMISSIONED_ADDRESS ||
+      device_address == PROTOCOL_BROADCAST_ADDRESS ||
+      packet->destination == PROTOCOL_UNCOMMISSIONED_ADDRESS) {
     return DISPATCHER_IGNORE;
   }
 

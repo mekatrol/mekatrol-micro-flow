@@ -1,6 +1,7 @@
 
 #include "response_tx.h"
 
+#include "dispatcher.h"
 #include "protocol.h"
 #include "usart.h"
 
@@ -79,7 +80,7 @@ void usart_write_response(const uint8_t *data, size_t length) {
 static protocol_packet_t make_response(void) {
   protocol_packet_t packet = {0};
 
-  packet.destination = 0x17U;
+  packet.destination = 0x23U;
   packet.sequence = 0x42U;
   packet.type = PROTOCOL_TYPE_RESPONSE;
   packet.command = 0x11U;
@@ -263,7 +264,7 @@ static void test_maximum_payload(void) {
  * storage or reserved destination addresses.
  *
  * The shared RS-485 bus must never see responses
- * addressed to broadcast 0x00 or uncommissioned 0xFF.
+ * addressed to broadcast 0x00 or ordinary commands at 0xFF.
  */
 static void test_invalid_destination(void) {
   reset_transmitter();
@@ -279,6 +280,21 @@ static void test_invalid_destination(void) {
   assert(transmission_count == 0U);
 
   packet.destination = 0xFFU;
+
+  assert(!response_tx_send(&packet));
+  assert(transmission_count == 0U);
+
+  packet.type = PROTOCOL_TYPE_RESPONSE;
+  packet.command = DISPATCHER_COMMAND_PING;
+  packet.payload_length = DISPATCHER_PING_RESPONSE_SIZE;
+
+  assert(response_tx_send(&packet));
+  assert_transmitted_packet(&packet);
+
+  reset_transmitter();
+
+  packet.type = PROTOCOL_TYPE_ERROR;
+  packet.payload_length = 1U;
 
   assert(!response_tx_send(&packet));
   assert(transmission_count == 0U);

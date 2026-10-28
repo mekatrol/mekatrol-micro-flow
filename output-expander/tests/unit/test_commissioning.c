@@ -126,7 +126,7 @@ static void test_every_uid_bit_mismatch(void) {
 
     for (unsigned int bit_index = 0U; bit_index < 8U; ++bit_index) {
 
-      protocol_packet_t request = make_assign_request(0x17U);
+      protocol_packet_t request = make_assign_request(0x23U);
 
       request.payload[byte_index] =
           (uint8_t)(request.payload[byte_index] ^ (uint8_t)(1U << bit_index));
@@ -179,7 +179,7 @@ static void test_reserved_addresses(void) {
  */
 static void test_all_payload_lengths(void) {
   for (unsigned int length = 0U; length < 256U; ++length) {
-    protocol_packet_t request = make_assign_request(0x17U);
+    protocol_packet_t request = make_assign_request(0x23U);
 
     request.payload_length = (uint8_t)length;
 
@@ -190,7 +190,7 @@ static void test_all_payload_lengths(void) {
 
     if (length == COMMISSIONING_PAYLOAD_SIZE) {
       assert(accepted);
-      assert(candidate == 0x17U);
+      assert(candidate == 0x23U);
     } else {
       assert(!accepted);
       assert(candidate == 0xA5U);
@@ -211,10 +211,10 @@ static void test_all_payload_lengths(void) {
  * traffic on a multidrop bus.
  */
 static void test_invalid_routing(void) {
-  protocol_packet_t request = make_assign_request(0x17U);
+  protocol_packet_t request = make_assign_request(0x23U);
   uint8_t candidate = 0xA5U;
 
-  request.destination = 0x17U;
+  request.destination = 0x23U;
 
   assert(!commissioning_validate_assign_uid(&request, test_uid, &candidate));
   assert(candidate == 0xA5U);
@@ -254,7 +254,7 @@ static void test_invalid_routing(void) {
  * and must never be interpreted as a valid assignment.
  */
 static void test_invalid_arguments(void) {
-  const protocol_packet_t request = make_assign_request(0x17U);
+  const protocol_packet_t request = make_assign_request(0x23U);
 
   uint8_t candidate = 0xA5U;
 
@@ -282,7 +282,7 @@ static void test_invalid_arguments(void) {
  * later persistent-configuration layer.
  */
 static void test_repeated_assignment(void) {
-  const protocol_packet_t request = make_assign_request(0x17U);
+  const protocol_packet_t request = make_assign_request(0x23U);
 
   uint8_t first_candidate = 0xFFU;
   uint8_t second_candidate = 0xFFU;
@@ -293,7 +293,7 @@ static void test_repeated_assignment(void) {
   assert(
       commissioning_validate_assign_uid(&request, test_uid, &second_candidate));
 
-  assert(first_candidate == 0x17U);
+  assert(first_candidate == 0x23U);
   assert(second_candidate == first_candidate);
 }
 
@@ -309,7 +309,7 @@ static void test_repeated_assignment(void) {
  * byte ordering based on host/target architecture.
  */
 static void test_uid_byte_order(void) {
-  protocol_packet_t request = make_assign_request(0x17U);
+  protocol_packet_t request = make_assign_request(0x23U);
 
   for (size_t i = 0U; i < COMMISSIONING_UID_SIZE; ++i) {
     request.payload[i] = test_uid[COMMISSIONING_UID_SIZE - 1U - i];
@@ -337,7 +337,7 @@ static void test_uid_byte_order(void) {
  * the same validated request for diagnostics if needed.
  */
 static void test_inputs_unchanged(void) {
-  protocol_packet_t request = make_assign_request(0x17U);
+  protocol_packet_t request = make_assign_request(0x23U);
   const protocol_packet_t original_request = request;
 
   uint8_t local_uid[COMMISSIONING_UID_SIZE];
@@ -350,7 +350,7 @@ static void test_inputs_unchanged(void) {
 
   assert(commissioning_validate_assign_uid(&request, local_uid, &candidate));
 
-  assert(candidate == 0x17U);
+  assert(candidate == 0x23U);
   assert(memcmp(&request, &original_request, sizeof(request)) == 0);
 
   assert(memcmp(local_uid, original_uid, sizeof(local_uid)) == 0);

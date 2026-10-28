@@ -16,7 +16,7 @@
  * original value returns after a hardware reset.
  */
 #ifndef COMMS_BOOT_ADDRESS
-#define COMMS_BOOT_ADDRESS 0x17U
+#define COMMS_BOOT_ADDRESS PROTOCOL_UNCOMMISSIONED_ADDRESS
 #endif
 
 #define COMMS_FIRMWARE_MAJOR 1U

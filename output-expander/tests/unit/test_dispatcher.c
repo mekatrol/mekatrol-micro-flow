@@ -21,7 +21,7 @@
 static protocol_packet_t make_request(uint8_t command) {
   protocol_packet_t packet = {0};
 
-  packet.destination = 0x17U;
+  packet.destination = 0x23U;
   packet.sequence = 0x42U;
   packet.type = PROTOCOL_TYPE_REQUEST;
   packet.command = command;
@@ -110,7 +110,7 @@ static protocol_packet_t round_trip(const protocol_packet_t *response) {
 static void test_unicast_routing(void) {
   protocol_packet_t packet = make_request(DISPATCHER_COMMAND_PING);
 
-  assert(dispatcher_route_request(&packet, 0x17U) ==
+  assert(dispatcher_route_request(&packet, 0x23U) ==
          DISPATCHER_UNICAST_REQUEST);
 
   assert(dispatcher_route_request(&packet, 0x18U) == DISPATCHER_IGNORE);
@@ -121,8 +121,12 @@ static void test_unicast_routing(void) {
 
   packet.destination = 0xFFU;
 
-  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+  assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 
+  assert(dispatcher_route_request(&packet, 0xFFU) ==
+         DISPATCHER_UNICAST_REQUEST);
+
+  packet.command = DISPATCHER_COMMAND_GET_OUTPUTS;
   assert(dispatcher_route_request(&packet, 0xFFU) == DISPATCHER_IGNORE);
 
   /*
@@ -148,19 +152,19 @@ static void test_broadcast_routing(void) {
 
   packet.destination = 0x00U;
 
-  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+  assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 
   packet.command = DISPATCHER_COMMAND_GET_OUTPUTS;
 
-  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+  assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 
   packet.command = DISPATCHER_COMMAND_SET_OUTPUTS;
 
-  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+  assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 
   packet.command = DISPATCHER_COMMAND_ASSIGN_UID;
 
-  assert(dispatcher_route_request(&packet, 0x17U) ==
+  assert(dispatcher_route_request(&packet, 0x23U) ==
          DISPATCHER_BROADCAST_ASSIGN_UID);
 
   assert(dispatcher_route_request(&packet, 0xFFU) ==
@@ -179,20 +183,20 @@ static void test_packet_types(void) {
 
   packet.type = PROTOCOL_TYPE_RESPONSE;
 
-  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+  assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 
   packet.type = PROTOCOL_TYPE_ERROR;
 
-  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+  assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 
   packet.destination = 0x00U;
   packet.command = DISPATCHER_COMMAND_ASSIGN_UID;
 
-  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+  assert(dispatcher_route_request(&packet, 0x23U) == DISPATCHER_IGNORE);
 }
 
 static void test_null_packet(void) {
-  assert(dispatcher_route_request(NULL, 0x17U) == DISPATCHER_IGNORE);
+  assert(dispatcher_route_request(NULL, 0x23U) == DISPATCHER_IGNORE);
 }
 
 /*
@@ -210,7 +214,7 @@ static void test_ping_response(void) {
 
   protocol_packet_t response = {0};
 
-  assert(dispatcher_prepare_ping_response(&request, 0x17U, uid, 2U, 5U,
+  assert(dispatcher_prepare_ping_response(&request, 0x23U, uid, 2U, 5U,
                                           &response));
 
   assert_response_header(&request, &response, DISPATCHER_PING_RESPONSE_SIZE);
@@ -248,29 +252,29 @@ static void test_ping_rejected_requests(void) {
 
   request.destination = 0x18U;
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, uid, 1U, 0U,
                                            &response));
 
   assert_response_unchanged(&response, &original);
 
   request.destination = 0x00U;
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, uid, 1U, 0U,
                                            &response));
 
   assert_response_unchanged(&response, &original);
 
-  request.destination = 0x17U;
+  request.destination = 0x23U;
   request.type = PROTOCOL_TYPE_RESPONSE;
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, uid, 1U, 0U,
                                            &response));
 
   assert_response_unchanged(&response, &original);
 
   request.type = PROTOCOL_TYPE_ERROR;
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, uid, 1U, 0U,
                                            &response));
 
   assert_response_unchanged(&response, &original);
@@ -278,7 +282,7 @@ static void test_ping_rejected_requests(void) {
   request.type = PROTOCOL_TYPE_REQUEST;
   request.command = DISPATCHER_COMMAND_SET_OUTPUTS;
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, uid, 1U, 0U,
                                            &response));
 
   assert_response_unchanged(&response, &original);
@@ -286,7 +290,7 @@ static void test_ping_rejected_requests(void) {
   request.command = DISPATCHER_COMMAND_PING;
   request.payload_length = 1U;
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, uid, 1U, 0U,
                                            &response));
 
   assert_response_unchanged(&response, &original);
@@ -313,14 +317,14 @@ static void test_ping_invalid_arguments(void) {
   protocol_packet_t response = {0};
 
   assert(
-      !dispatcher_prepare_ping_response(NULL, 0x17U, uid, 1U, 0U, &response));
+      !dispatcher_prepare_ping_response(NULL, 0x23U, uid, 1U, 0U, &response));
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, NULL, 1U, 0U,
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, NULL, 1U, 0U,
                                            &response));
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U, NULL));
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, uid, 1U, 0U, NULL));
 
-  assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
+  assert(!dispatcher_prepare_ping_response(&request, 0x23U, uid, 1U, 0U,
                                            &request));
 }
 
@@ -338,7 +342,7 @@ static void test_get_outputs_response(void) {
   for (size_t i = 0U; i < sizeof(masks); ++i) {
     protocol_packet_t response = {0};
 
-    assert(dispatcher_prepare_get_outputs_response(&request, 0x17U, masks[i],
+    assert(dispatcher_prepare_get_outputs_response(&request, 0x23U, masks[i],
                                                    &response));
 
     assert_response_header(&request, &response,
@@ -370,29 +374,29 @@ static void test_get_outputs_rejected_requests(void) {
 
   request.destination = 0x18U;
 
-  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
 
   request.destination = 0x00U;
 
-  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
 
-  request.destination = 0x17U;
+  request.destination = 0x23U;
   request.type = PROTOCOL_TYPE_RESPONSE;
 
-  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
 
   request.type = PROTOCOL_TYPE_ERROR;
 
-  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
@@ -400,7 +404,7 @@ static void test_get_outputs_rejected_requests(void) {
   request.type = PROTOCOL_TYPE_REQUEST;
   request.command = DISPATCHER_COMMAND_PING;
 
-  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
@@ -408,7 +412,7 @@ static void test_get_outputs_rejected_requests(void) {
   request.command = DISPATCHER_COMMAND_GET_OUTPUTS;
   request.payload_length = 1U;
 
-  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
@@ -427,12 +431,12 @@ static void test_get_outputs_invalid_arguments(void) {
   protocol_packet_t response = {0};
 
   assert(
-      !dispatcher_prepare_get_outputs_response(NULL, 0x17U, 0x85U, &response));
+      !dispatcher_prepare_get_outputs_response(NULL, 0x23U, 0x85U, &response));
 
   assert(
-      !dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U, NULL));
+      !dispatcher_prepare_get_outputs_response(&request, 0x23U, 0x85U, NULL));
 
-  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x23U, 0x85U,
                                                   &request));
 }
 
@@ -463,7 +467,7 @@ static void test_set_outputs_parse_valid(void) {
 
     uint8_t requested_mask = 0x5AU;
 
-    assert(dispatcher_parse_set_outputs(&request, 0x17U, &requested_mask));
+    assert(dispatcher_parse_set_outputs(&request, 0x23U, &requested_mask));
 
     /*
      * The dispatcher must preserve the exact logical
@@ -492,22 +496,22 @@ static void test_set_outputs_parse_invalid(void) {
   /* A wrong-address request must not change state. */
   request.destination = 0x18U;
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, &mask));
   assert(mask == 0x5AU);
 
   /* Broadcast SET_OUTPUTS is forbidden. */
   request.destination = 0x00U;
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, &mask));
   assert(mask == 0x5AU);
 
   /* Destination 0xFF is reserved. */
   request.destination = 0xFFU;
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, &mask));
   assert(mask == 0x5AU);
 
-  request.destination = 0x17U;
+  request.destination = 0x23U;
 
   /* No ordinary unicast commands before commissioning. */
   assert(!dispatcher_parse_set_outputs(&request, 0xFFU, &mask));
@@ -516,12 +520,12 @@ static void test_set_outputs_parse_invalid(void) {
   /* A response is not an executable request. */
   request.type = PROTOCOL_TYPE_RESPONSE;
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, &mask));
   assert(mask == 0x5AU);
 
   request.type = PROTOCOL_TYPE_ERROR;
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, &mask));
   assert(mask == 0x5AU);
 
   request.type = PROTOCOL_TYPE_REQUEST;
@@ -529,7 +533,7 @@ static void test_set_outputs_parse_invalid(void) {
   /* The command identifier must match SET_OUTPUTS. */
   request.command = DISPATCHER_COMMAND_PING;
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, &mask));
   assert(mask == 0x5AU);
 
   request.command = DISPATCHER_COMMAND_SET_OUTPUTS;
@@ -540,12 +544,12 @@ static void test_set_outputs_parse_invalid(void) {
    */
   request.payload_length = 0U;
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, &mask));
   assert(mask == 0x5AU);
 
   request.payload_length = 2U;
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, &mask));
   assert(mask == 0x5AU);
 }
 
@@ -563,11 +567,11 @@ static void test_set_outputs_parse_arguments(void) {
 
   uint8_t mask = 0x5AU;
 
-  assert(!dispatcher_parse_set_outputs(NULL, 0x17U, &mask));
+  assert(!dispatcher_parse_set_outputs(NULL, 0x23U, &mask));
 
   assert(mask == 0x5AU);
 
-  assert(!dispatcher_parse_set_outputs(&request, 0x17U, NULL));
+  assert(!dispatcher_parse_set_outputs(&request, 0x23U, NULL));
 }
 
 /*
@@ -596,7 +600,7 @@ static void test_set_outputs_response(void) {
 
     protocol_packet_t response = {0};
 
-    assert(dispatcher_prepare_set_outputs_response(&request, 0x17U, masks[i],
+    assert(dispatcher_prepare_set_outputs_response(&request, 0x23U, masks[i],
                                                    &response));
 
     assert_response_header(&request, &response,
@@ -635,12 +639,12 @@ static void test_set_outputs_applied_mismatch(void) {
 
   const protocol_packet_t original = response;
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x00U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x00U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0xFFU,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0xFFU,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
@@ -649,7 +653,7 @@ static void test_set_outputs_applied_mismatch(void) {
    * An exact applied mask is accepted.
    * The response is now a complete success packet.
    */
-  assert(dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                  &response));
 
   assert(response.payload[0] == 0x85U);
@@ -674,19 +678,19 @@ static void test_set_outputs_response_invalid(void) {
 
   request.destination = 0x18U;
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
 
   request.destination = 0x00U;
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
 
-  request.destination = 0x17U;
+  request.destination = 0x23U;
 
   assert(!dispatcher_prepare_set_outputs_response(&request, 0xFFU, 0x85U,
                                                   &response));
@@ -695,14 +699,14 @@ static void test_set_outputs_response_invalid(void) {
 
   request.type = PROTOCOL_TYPE_RESPONSE;
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
 
   request.type = PROTOCOL_TYPE_ERROR;
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
@@ -710,7 +714,7 @@ static void test_set_outputs_response_invalid(void) {
   request.type = PROTOCOL_TYPE_REQUEST;
   request.command = DISPATCHER_COMMAND_GET_OUTPUTS;
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
@@ -718,14 +722,14 @@ static void test_set_outputs_response_invalid(void) {
   request.command = DISPATCHER_COMMAND_SET_OUTPUTS;
   request.payload_length = 0U;
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
 
   request.payload_length = 2U;
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                   &response));
 
   assert_response_unchanged(&response, &original);
@@ -746,12 +750,12 @@ static void test_set_outputs_response_arguments(void) {
   protocol_packet_t response = {0};
 
   assert(
-      !dispatcher_prepare_set_outputs_response(NULL, 0x17U, 0x85U, &response));
+      !dispatcher_prepare_set_outputs_response(NULL, 0x23U, 0x85U, &response));
 
   assert(
-      !dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U, NULL));
+      !dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U, NULL));
 
-  assert(!dispatcher_prepare_set_outputs_response(&request, 0x17U, 0x85U,
+  assert(!dispatcher_prepare_set_outputs_response(&request, 0x23U, 0x85U,
                                                   &request));
 }
 

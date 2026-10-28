@@ -78,7 +78,7 @@ bool commissioning_validate_assign_uid(
    * commissioned devices to validate UID-directed
    * broadcast assignments, as protocol v1 permits.
    */
-  if (dispatcher_route_request(request, 0xFFU) !=
+  if (dispatcher_route_request(request, PROTOCOL_UNCOMMISSIONED_ADDRESS) !=
       DISPATCHER_BROADCAST_ASSIGN_UID) {
     return false;
   }
