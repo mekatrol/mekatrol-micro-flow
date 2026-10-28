@@ -5,8 +5,33 @@
 #include "dispatcher.h"
 #include "protocol.h"
 
-#include <stdbool.h>
 #include <stdint.h>
+
+/*
+ * Protocol v1 error codes.
+ *
+ * WHAT:
+ * Identify why a well-formed, addressed request could
+ * not be completed.
+ *
+ * WHY:
+ * The master must distinguish unsupported functionality
+ * from malformed command data and persistent-storage
+ * failures.
+ *
+ * These values are defined by docs/protocol.md.
+ *
+ * The additional error codes are reserved here for
+ * later implementation increments. They must not be
+ * returned unless the corresponding condition has
+ * actually occurred.
+ */
+#define COMMAND_ERROR_UNKNOWN_COMMAND 0x01U
+#define COMMAND_ERROR_BAD_LENGTH 0x02U
+#define COMMAND_ERROR_BAD_VALUE 0x03U
+#define COMMAND_ERROR_STORAGE_ERROR 0x04U
+#define COMMAND_ERROR_BUSY 0x05U
+#define COMMAND_ERROR_UNSUPPORTED 0x06U
 
 /*
  * Foreground command execution context.
@@ -47,6 +72,12 @@ typedef struct {
  * transmission. Incorrect addresses and broadcasts must
  * remain completely silent.
  *
+ * RESPONSE_READY includes both successful replies and
+ * protocol error replies.
+ *
+ * The caller must inspect the response TYPE field when
+ * it needs to distinguish success from an error.
+ *
  * Response transmission is intentionally excluded from
  * this module.
  */
@@ -62,6 +93,10 @@ typedef enum {
  * Route the request and execute PING, GET_OUTPUTS or
  * SET_OUTPUTS using the existing dispatcher and output
  * driver implementations.
+ *
+ * Construct protocol error responses for invalid command
+ * lengths, unknown commands and known commands that are
+ * currently unavailable.
  *
  * WHY:
  * Protocol decoding and command execution must remain

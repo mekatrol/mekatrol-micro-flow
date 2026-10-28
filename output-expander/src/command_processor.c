@@ -6,6 +6,89 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Commands defined by protocol v1 but not yet implemented
+ * by the foreground command processor.
+ *
+ * WHAT:
+ * Identify valid protocol commands separately from unknown
+ * command identifiers.
+ *
+ * WHY:
+ * The protocol defines different error responses:
+ *
+ * UNKNOWN_COMMAND:
+ *   The command identifier is not defined by protocol v1.
+ *
+ * UNSUPPORTED:
+ *   The command is defined but currently unavailable on
+ *   this firmware implementation.
+ *
+ * These constants remain private until the corresponding
+ * command implementations are introduced.
+ *
+ * ASSIGN_UID is also defined by the existing dispatcher,
+ * but it is a broadcast-only commissioning command.
+ */
+#define COMMAND_GET_STATUS 0x02U
+#define COMMAND_GET_CONFIG 0x20U
+#define COMMAND_SET_CONFIG 0x21U
+#define COMMAND_RESET 0x40U
+
+/*
+ * Build a protocol error response.
+ *
+ * WHAT:
+ * Construct the complete decoded response packet using
+ * the identity fields from the original request.
+ *
+ * WHY:
+ * The master matches replies against the outstanding
+ * destination, sequence number and command.
+ *
+ * Error responses use:
+ *
+ *   TYPE = PROTOCOL_TYPE_ERROR
+ *   LEN = 1
+ *   PAYLOAD[0] = error code
+ *
+ * The caller must already have verified that the request
+ * is an addressed unicast request.
+ *
+ * This helper performs no transmission or GPIO operation.
+ *
+ * It builds into local storage before publishing the
+ * response, so the caller never observes a partially
+ * constructed packet.
+ */
+static command_processor_result_t
+prepare_error_response(const protocol_packet_t *request, uint8_t error_code,
+                       protocol_packet_t *response) {
+
+  protocol_packet_t prepared = {0};
+
+  prepared.destination = request->destination;
+  prepared.sequence = request->sequence;
+  prepared.type = PROTOCOL_TYPE_ERROR;
+  prepared.command = request->command;
+  prepared.payload_length = 1U;
+  prepared.payload[0] = error_code;
+
+  /*
+   * Assign the completed structure only after every
+   * response field has been initialized.
+   *
+   * C structure assignment copies the entire packet
+   * object, including its fixed-capacity payload array.
+   *
+   * Zero-initialization above ensures unused payload
+   * bytes do not contain uninitialized stack data.
+   */
+  *response = prepared;
+
+  return COMMAND_PROCESSOR_RESPONSE_READY;
+}
+
 command_processor_result_t
 command_processor_process(const command_processor_context_t *context,
                           const protocol_packet_t *request,
@@ -37,6 +120,9 @@ command_processor_process(const command_processor_context_t *context,
    * shared traffic. Only a matching commissioned
    * device may execute unicast commands.
    *
+   * A wrong destination must be discarded silently,
+   * not answered with an error packet.
+   *
    * Broadcast commissioning is not implemented here.
    * In particular, broadcast packets must not produce
    * responses or activate outputs.
@@ -47,25 +133,61 @@ command_processor_process(const command_processor_context_t *context,
   }
 
   /*
+   * Defensive packet-length validation.
+   *
+   * WHAT:
+   * Reject an impossible declared payload length before
+   * evaluating command-specific fields.
+   *
+   * WHY:
+   * A normal caller supplies only packets accepted by
+   * protocol_decode(), which already enforces this limit.
+   *
+   * Keeping this guard prevents a future caller from
+   * accidentally treating an oversized packet object
+   * as a valid command.
+   *
+   * This condition is not expected from real bus traffic
+   * passing through the verified decoder.
+   */
+  if (request->payload_length > PROTOCOL_MAX_PAYLOAD) {
+    return COMMAND_PROCESSOR_IGNORED;
+  }
+
+  /*
    * Execute commands in foreground context.
    *
    * The individual dispatcher functions perform
-   * command-specific payload validation.
+   * command-specific validation.
    *
-   * Invalid commands or lengths are not permitted
-   * to modify physical output state.
+   * Return a BAD_LENGTH error when a recognized command
+   * has an invalid payload length.
+   *
+   * No invalid command may modify physical outputs.
    */
   switch (request->command) {
 
   case DISPATCHER_COMMAND_PING:
     /*
+     * PING has no request payload.
+     *
+     * WHY:
+     * Its response contains the physical UID and firmware
+     * version; extra request bytes have no defined meaning.
+     */
+    if (request->payload_length != 0U) {
+      return prepare_error_response(request, COMMAND_ERROR_BAD_LENGTH,
+                                    response);
+    }
+
+    /*
      * PING is read-only.
      *
-     * The full physical UID and firmware version
-     * are included in the success response.
+     * The full physical UID and firmware version are
+     * included in the success response.
      *
-     * This stage constructs the response but does
-     * not transmit it.
+     * This stage constructs the response but does not
+     * transmit it or refresh a hardware timer.
      */
     if (dispatcher_prepare_ping_response(request, context->device_address,
                                          context->uid, context->firmware_major,
@@ -77,6 +199,17 @@ command_processor_process(const command_processor_context_t *context,
 
   case DISPATCHER_COMMAND_GET_OUTPUTS:
     /*
+     * GET_OUTPUTS also requires an empty request payload.
+     *
+     * The length check occurs before accessing the output
+     * driver, so malformed requests have no GPIO effects.
+     */
+    if (request->payload_length != 0U) {
+      return prepare_error_response(request, COMMAND_ERROR_BAD_LENGTH,
+                                    response);
+    }
+
+    /*
      * Read the current logical output mask.
      *
      * WHAT:
@@ -84,16 +217,10 @@ command_processor_process(const command_processor_context_t *context,
      * GPIO output state.
      *
      * WHY:
-     * GET_OUTPUTS must report the actual commanded
-     * output state rather than an earlier request or
-     * a physical active-low GPIO register value.
-     *
-     * Validate the request before calling the driver.
+     * GET_OUTPUTS must report the commanded output state,
+     * not an earlier request or a physical active-low
+     * GPIO register value.
      */
-    if (request->payload_length != 0U) {
-      return COMMAND_PROCESSOR_IGNORED;
-    }
-
     if (dispatcher_prepare_get_outputs_response(
             request, context->device_address, output_driver_get(), response)) {
       return COMMAND_PROCESSOR_RESPONSE_READY;
@@ -103,11 +230,25 @@ command_processor_process(const command_processor_context_t *context,
 
   case DISPATCHER_COMMAND_SET_OUTPUTS: {
     /*
-     * Validate the complete SET_OUTPUTS request
-     * before changing physical GPIO outputs.
+     * SET_OUTPUTS requires exactly one byte.
+     *
+     * All 256 possible logical masks are permitted.
+     * There are no reserved output bits.
+     *
+     * The payload-length check must precede the GPIO
+     * operation to avoid partial or unintended changes.
+     */
+    if (request->payload_length != 1U) {
+      return prepare_error_response(request, COMMAND_ERROR_BAD_LENGTH,
+                                    response);
+    }
+
+    /*
+     * Validate the complete SET_OUTPUTS request before
+     * changing physical GPIO outputs.
      *
      * A valid COBS frame and CRC do not guarantee
-     * that the command has the correct payload length.
+     * command-specific validity.
      */
     uint8_t requested_mask = 0U;
 
@@ -125,21 +266,29 @@ command_processor_process(const command_processor_context_t *context,
      * The HAL handles physical GPIO pin mapping and
      * active-low conversion.
      *
-     * This operation changes volatile output state
-     * only. No EEPROM write takes place.
+     * This operation changes volatile output state only.
+     * No EEPROM write takes place.
      */
     const uint8_t applied_mask = output_driver_set(requested_mask);
 
     /*
-     * Construct acknowledgment only after the
-     * GPIO writes have been issued.
+     * Construct acknowledgment only after the GPIO
+     * writes have been issued.
      *
-     * The response contains the applied logical
-     * mask, not an electrical GPIO register value.
+     * The response contains the applied logical mask,
+     * not an electrical GPIO register value.
      *
-     * The current HAL provides no external load
-     * feedback, so this confirms commanded GPIO
-     * state rather than physical relay operation.
+     * The current HAL provides no external load feedback,
+     * so this confirms commanded GPIO state rather than
+     * physical relay operation.
+     *
+     * A requested/applied mismatch is not a success.
+     * The dispatcher refuses to construct a success reply
+     * in that case.
+     *
+     * No hardware-failure error code is defined by v1.
+     * Leave that condition silent rather than incorrectly
+     * claiming a STORAGE_ERROR or successful operation.
      */
     if (dispatcher_prepare_set_outputs_response(
             request, context->device_address, applied_mask, response)) {
@@ -149,17 +298,45 @@ command_processor_process(const command_processor_context_t *context,
     return COMMAND_PROCESSOR_IGNORED;
   }
 
+  case COMMAND_GET_STATUS:
+  case COMMAND_GET_CONFIG:
+  case COMMAND_SET_CONFIG:
+  case DISPATCHER_COMMAND_ASSIGN_UID:
+  case COMMAND_RESET:
+    /*
+     * These commands are defined by protocol v1 but are
+     * unavailable in the current foreground processor.
+     *
+     * GET_STATUS requires status/input integration.
+     * GET_CONFIG and SET_CONFIG require persistent storage.
+     * ASSIGN_UID requires UID matching and EEPROM writes.
+     * RESET requires transmission-complete coordination.
+     *
+     * WHAT:
+     * Return UNSUPPORTED rather than executing a partial
+     * implementation or accepting the command silently.
+     *
+     * WHY:
+     * The master can distinguish unavailable functionality
+     * from an entirely unknown command identifier.
+     *
+     * ASSIGN_UID broadcast requests were already filtered
+     * out above, so they still receive no response.
+     */
+    return prepare_error_response(request, COMMAND_ERROR_UNSUPPORTED, response);
+
   default:
     /*
-     * Unsupported commands are not executed.
+     * A command not defined by protocol v1 receives
+     * UNKNOWN_COMMAND.
      *
-     * Protocol v1 requires defined error responses
-     * for valid addressed unicast requests.
+     * This is permitted only because earlier routing
+     * confirmed that the packet is a valid addressed
+     * unicast request.
      *
-     * Error construction is not implemented yet,
-     * so do not connect this processor to main.c
-     * until that behavior is added and tested.
+     * Unknown commands cannot change GPIO or EEPROM.
      */
-    return COMMAND_PROCESSOR_IGNORED;
+    return prepare_error_response(request, COMMAND_ERROR_UNKNOWN_COMMAND,
+                                  response);
   }
 }

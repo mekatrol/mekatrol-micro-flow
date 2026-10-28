@@ -59,9 +59,11 @@ static command_processor_context_t make_context(void) {
 /*
  * Construct a decoded unicast request.
  *
- * All test packets represent data already accepted
- * by the protocol decoder. Individual tests modify
- * command-specific fields to exercise rejection.
+ * All ordinary test packets represent data already
+ * accepted by the protocol decoder.
+ *
+ * Individual tests modify command-specific fields
+ * to exercise validation and error responses.
  */
 static protocol_packet_t make_request(uint8_t command) {
   protocol_packet_t packet = {0};
@@ -75,6 +77,45 @@ static protocol_packet_t make_request(uint8_t command) {
 }
 
 /*
+ * Verify a complete protocol error response.
+ *
+ * WHAT:
+ * Check TYPE, destination, sequence, command, length
+ * and the exact error-code payload.
+ *
+ * WHY:
+ * Matching just the error code would not detect a
+ * broken response header that causes the master
+ * to reject an otherwise correctly encoded packet.
+ *
+ * Every error response must contain precisely one
+ * payload byte.
+ */
+static void assert_error_response(const protocol_packet_t *request,
+                                  const protocol_packet_t *response,
+                                  uint8_t expected_error) {
+
+  assert(response->destination == request->destination);
+  assert(response->sequence == request->sequence);
+  assert(response->command == request->command);
+
+  assert(response->type == PROTOCOL_TYPE_ERROR);
+  assert(response->payload_length == 1U);
+  assert(response->payload[0] == expected_error);
+
+  /*
+   * The production error builder zero-initializes the
+   * complete packet before filling its defined fields.
+   *
+   * Check unused payload storage as an additional
+   * deterministic-output invariant.
+   */
+  for (size_t i = 1U; i < PROTOCOL_MAX_PAYLOAD; ++i) {
+    assert(response->payload[i] == 0U);
+  }
+}
+
+/*
  * Verify successful PING processing.
  *
  * PING must not change output state.
@@ -85,7 +126,6 @@ static void test_ping(void) {
   output_driver_init();
 
   const command_processor_context_t context = make_context();
-
   const protocol_packet_t request = make_request(DISPATCHER_COMMAND_PING);
 
   protocol_packet_t response = {0};
@@ -100,7 +140,6 @@ static void test_ping(void) {
   assert(response.payload_length == DISPATCHER_PING_RESPONSE_SIZE);
 
   assert(memcmp(response.payload, context.uid, DISPATCHER_UID_SIZE) == 0);
-
   assert(response.payload[12] == 1U);
   assert(response.payload[13] == 2U);
 
@@ -118,7 +157,6 @@ static void test_get_outputs(void) {
   fake_output_mask = 0x85U;
 
   const command_processor_context_t context = make_context();
-
   const protocol_packet_t request =
       make_request(DISPATCHER_COMMAND_GET_OUTPUTS);
 
@@ -180,6 +218,9 @@ static void test_set_outputs_all_masks(void) {
  * This is essential for multidrop RS-485 operation:
  * a packet intended for another device must not
  * activate loads connected to this device.
+ *
+ * Silent rejection remains different from returning
+ * a protocol error response.
  */
 static void test_ignored_requests(void) {
   command_processor_context_t context = make_context();
@@ -214,8 +255,22 @@ static void test_ignored_requests(void) {
   assert(fake_set_calls == 0U);
   assert(memcmp(&response, &original, sizeof(response)) == 0);
 
-  /* Restore the correct destination. */
+  /*
+   * Broadcast ASSIGN_UID is recognized by the
+   * dispatcher, but commissioning is not yet
+   * implemented and must remain completely silent.
+   */
+  request.command = DISPATCHER_COMMAND_ASSIGN_UID;
+
+  assert(command_processor_process(&context, &request, &response) ==
+         COMMAND_PROCESSOR_IGNORED);
+
+  assert(fake_set_calls == 0U);
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
+
+  /* Restore the correct destination and output command. */
   request.destination = 0x17U;
+  request.command = DISPATCHER_COMMAND_SET_OUTPUTS;
 
   /* Responses must not be executed as commands. */
   request.type = PROTOCOL_TYPE_RESPONSE;
@@ -224,6 +279,7 @@ static void test_ignored_requests(void) {
          COMMAND_PROCESSOR_IGNORED);
 
   assert(fake_set_calls == 0U);
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
 
   /* Error packets must also be ignored. */
   request.type = PROTOCOL_TYPE_ERROR;
@@ -232,30 +288,14 @@ static void test_ignored_requests(void) {
          COMMAND_PROCESSOR_IGNORED);
 
   assert(fake_set_calls == 0U);
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
 
   request.type = PROTOCOL_TYPE_REQUEST;
 
-  /* A zero-length SET_OUTPUTS payload is invalid. */
-  request.payload_length = 0U;
-
-  assert(command_processor_process(&context, &request, &response) ==
-         COMMAND_PROCESSOR_IGNORED);
-
-  assert(fake_set_calls == 0U);
-
-  /* A two-byte SET_OUTPUTS payload is also invalid. */
-  request.payload_length = 2U;
-
-  assert(command_processor_process(&context, &request, &response) ==
-         COMMAND_PROCESSOR_IGNORED);
-
-  assert(fake_set_calls == 0U);
-
-  request.payload_length = 1U;
-
   /*
    * An uncommissioned device cannot execute
-   * addressed SET_OUTPUTS commands.
+   * addressed SET_OUTPUTS commands or generate
+   * an error response for such traffic.
    */
   context.device_address = 0xFFU;
 
@@ -264,13 +304,34 @@ static void test_ignored_requests(void) {
 
   assert(fake_set_calls == 0U);
   assert(fake_output_mask == 0U);
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
 
+  /*
+   * Neither reserved address may act as an ordinary
+   * commissioned device address.
+   */
+  context.device_address = 0x00U;
+
+  assert(command_processor_process(&context, &request, &response) ==
+         COMMAND_PROCESSOR_IGNORED);
+
+  assert(fake_set_calls == 0U);
   assert(memcmp(&response, &original, sizeof(response)) == 0);
 }
 
 /*
- * Verify malformed read-only requests do not produce
- * a response or modify GPIO state.
+ * Verify BAD_LENGTH for malformed read-only requests.
+ *
+ * WHAT:
+ * Test both zero-length commands with an unexpected
+ * payload byte.
+ *
+ * WHY:
+ * A packet may have a valid CRC but still violate
+ * its command-specific request format.
+ *
+ * These requests must receive an error response
+ * without attempting any GPIO modification.
  */
 static void test_invalid_read_lengths(void) {
   const command_processor_context_t context = make_context();
@@ -280,23 +341,170 @@ static void test_invalid_read_lengths(void) {
 
   output_driver_init();
 
-  for (size_t i = 0U; i < sizeof(commands); ++i) {
+  for (size_t i = 0U; i < sizeof(commands) / sizeof(commands[0]); ++i) {
+
     protocol_packet_t request = make_request(commands[i]);
-
     request.payload_length = 1U;
+    request.payload[0] = 0xA5U;
 
-    protocol_packet_t response;
-    memset(&response, 0xA5, sizeof(response));
-
-    const protocol_packet_t original = response;
+    protocol_packet_t response = {0};
 
     assert(command_processor_process(&context, &request, &response) ==
-           COMMAND_PROCESSOR_IGNORED);
+           COMMAND_PROCESSOR_RESPONSE_READY);
 
-    assert(memcmp(&response, &original, sizeof(response)) == 0);
+    assert_error_response(&request, &response, COMMAND_ERROR_BAD_LENGTH);
 
     assert(fake_set_calls == 0U);
+    assert(fake_output_mask == 0U);
   }
+}
+
+/*
+ * Verify malformed SET_OUTPUTS requests cannot
+ * change logical or physical output state.
+ *
+ * WHAT:
+ * Exercise both missing and excess payload bytes.
+ *
+ * WHY:
+ * An invalid output command must return BAD_LENGTH
+ * before output_driver_set() can be called.
+ */
+static void test_invalid_set_outputs_lengths(void) {
+  const command_processor_context_t context = make_context();
+
+  output_driver_init();
+  fake_output_mask = 0x55U;
+
+  const uint8_t invalid_lengths[] = {0U, 2U, 24U};
+
+  for (size_t i = 0U; i < sizeof(invalid_lengths) / sizeof(invalid_lengths[0]);
+       ++i) {
+
+    protocol_packet_t request = make_request(DISPATCHER_COMMAND_SET_OUTPUTS);
+
+    request.payload_length = invalid_lengths[i];
+    request.payload[0] = 0xFFU;
+
+    protocol_packet_t response = {0};
+
+    assert(command_processor_process(&context, &request, &response) ==
+           COMMAND_PROCESSOR_RESPONSE_READY);
+
+    assert_error_response(&request, &response, COMMAND_ERROR_BAD_LENGTH);
+
+    assert(fake_set_calls == 0U);
+    assert(fake_output_mask == 0x55U);
+  }
+}
+
+/*
+ * Verify UNKNOWN_COMMAND for identifiers not
+ * defined by the protocol.
+ *
+ * These are correctly addressed, validated
+ * unicast requests.
+ *
+ * Unknown commands must never modify outputs.
+ */
+static void test_unknown_commands(void) {
+  const command_processor_context_t context = make_context();
+
+  const uint8_t unknown_commands[] = {0x00U, 0x03U, 0x12U, 0x31U, 0xEEU, 0xFFU};
+
+  output_driver_init();
+
+  for (size_t i = 0U;
+       i < sizeof(unknown_commands) / sizeof(unknown_commands[0]); ++i) {
+
+    protocol_packet_t request = make_request(unknown_commands[i]);
+
+    protocol_packet_t response = {0};
+
+    assert(command_processor_process(&context, &request, &response) ==
+           COMMAND_PROCESSOR_RESPONSE_READY);
+
+    assert_error_response(&request, &response, COMMAND_ERROR_UNKNOWN_COMMAND);
+
+    assert(fake_set_calls == 0U);
+    assert(fake_output_mask == 0U);
+  }
+}
+
+/*
+ * Verify that defined but unavailable commands
+ * return UNSUPPORTED rather than UNKNOWN_COMMAND.
+ *
+ * WHAT:
+ * Cover the remaining protocol v1 commands, including
+ * unicast ASSIGN_UID, which is not an allowed form
+ * of the broadcast commissioning request.
+ *
+ * WHY:
+ * The master must be able to distinguish unsupported
+ * functionality from undefined command identifiers.
+ */
+static void test_unsupported_commands(void) {
+  const command_processor_context_t context = make_context();
+
+  const uint8_t unsupported_commands[] = {
+      0x02U, /* GET_STATUS */
+      0x20U, /* GET_CONFIG */
+      0x21U, /* SET_CONFIG */
+      0x30U, /* ASSIGN_UID */
+      0x40U  /* RESET */
+  };
+
+  output_driver_init();
+  fake_output_mask = 0x81U;
+
+  for (size_t i = 0U;
+       i < sizeof(unsupported_commands) / sizeof(unsupported_commands[0]);
+       ++i) {
+
+    protocol_packet_t request = make_request(unsupported_commands[i]);
+
+    protocol_packet_t response = {0};
+
+    assert(command_processor_process(&context, &request, &response) ==
+           COMMAND_PROCESSOR_RESPONSE_READY);
+
+    assert_error_response(&request, &response, COMMAND_ERROR_UNSUPPORTED);
+
+    assert(fake_set_calls == 0U);
+    assert(fake_output_mask == 0x81U);
+  }
+}
+
+/*
+ * Verify that an unknown command sent to the wrong
+ * device does not cause any error transmission.
+ *
+ * WHY:
+ * Error replies are only permitted after successful
+ * unicast address filtering.
+ *
+ * If multiple devices answered the same unrelated
+ * request, they could collide on the shared RS-485 bus.
+ */
+static void test_unknown_command_wrong_address(void) {
+  const command_processor_context_t context = make_context();
+
+  protocol_packet_t request = make_request(0xEEU);
+  request.destination = 0x18U;
+
+  protocol_packet_t response;
+  memset(&response, 0xA5, sizeof(response));
+
+  const protocol_packet_t original = response;
+
+  output_driver_init();
+
+  assert(command_processor_process(&context, &request, &response) ==
+         COMMAND_PROCESSOR_IGNORED);
+
+  assert(fake_set_calls == 0U);
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
 }
 
 /*
@@ -333,19 +541,27 @@ static void test_invalid_arguments(void) {
 }
 
 /*
- * Unknown commands must never execute as SET_OUTPUTS.
+ * Verify an impossible in-memory payload length is
+ * rejected defensively without generating a reply.
  *
- * The final protocol dispatcher will construct an
- * appropriate error response for valid addressed
- * unknown commands. This preliminary processor does
- * not yet implement protocol error frames.
+ * WHY:
+ * protocol_decode() normally rejects such packets
+ * before they reach this function.
+ *
+ * This test exercises the additional protection for
+ * accidental misuse by a future internal caller.
  */
-static void test_unknown_command(void) {
+static void test_oversized_internal_length(void) {
   const command_processor_context_t context = make_context();
 
-  const protocol_packet_t request = make_request(0xEEU);
+  protocol_packet_t request = make_request(DISPATCHER_COMMAND_SET_OUTPUTS);
 
-  protocol_packet_t response = {0};
+  request.payload_length = (uint8_t)(PROTOCOL_MAX_PAYLOAD + 1U);
+
+  protocol_packet_t response;
+  memset(&response, 0xA5, sizeof(response));
+
+  const protocol_packet_t original = response;
 
   output_driver_init();
 
@@ -353,6 +569,7 @@ static void test_unknown_command(void) {
          COMMAND_PROCESSOR_IGNORED);
 
   assert(fake_set_calls == 0U);
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
 }
 
 /*
@@ -360,15 +577,28 @@ static void test_unknown_command(void) {
  *
  * Each test uses assertions so CTest detects failures.
  * The host-debug build also enables ASan and UBSan.
+ *
+ * The tests verify both:
+ *
+ * - Positive behavior for permitted commands.
+ * - Negative behavior preventing unsafe output changes
+ *   or unexpected replies on a shared RS-485 bus.
  */
 int main(void) {
   test_ping();
   test_get_outputs();
   test_set_outputs_all_masks();
+
   test_ignored_requests();
   test_invalid_read_lengths();
+  test_invalid_set_outputs_lengths();
+
+  test_unknown_commands();
+  test_unsupported_commands();
+  test_unknown_command_wrong_address();
+
   test_invalid_arguments();
-  test_unknown_command();
+  test_oversized_internal_length();
 
   return 0;
 }

@@ -25,6 +25,7 @@ if(CMAKE_CROSSCOMPILING)
     src/output_driver.c
     src/output_state.c
     src/command_processor.c
+    src/response_tx.c
     src/startup.S)
 
   # Prevent GCC from recognizing the loops inside our memory
@@ -304,5 +305,41 @@ else()
     COMMAND output_expander_command_processor_test)
 
   set_tests_properties(command_processor PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+    # Test the foreground RS-485 response transmission boundary.
+  #
+  # WHAT:
+  # Compile the production response transmitter and link it
+  # against the existing portable protocol implementation.
+  #
+  # The test provides a simulated usart_write_response().
+  #
+  # WHY:
+  # Verify complete CRC-protected COBS serialization without
+  # accessing CH32V003 registers or driving the RS-485 bus.
+  #
+  # A separate executable prevents the host from needing
+  # the hardware USART implementation.
+  add_executable(output_expander_response_tx_test
+    tests/unit/test_response_tx.c
+    src/response_tx.c)
+
+  target_include_directories(output_expander_response_tx_test
+    PRIVATE src)
+
+  target_link_libraries(output_expander_response_tx_test
+    PRIVATE output_expander_core)
+
+  # Preserve the project's strict warning policy,
+  # AddressSanitizer and UndefinedBehaviorSanitizer.
+  output_expander_warnings(output_expander_response_tx_test)
+  output_expander_sanitizers(output_expander_response_tx_test)
+
+  add_test(
+    NAME response_tx
+    COMMAND output_expander_response_tx_test)
+
+  set_tests_properties(response_tx PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()
