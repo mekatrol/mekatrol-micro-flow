@@ -33,6 +33,17 @@
  */
 #define RCC_AFIOEN (UINT32_C(1) << 0)
 
+/*
+ * RCC_CFGR0 HPRE[3:0] occupies bits 7:4.
+ *
+ * These bits divide the selected system clock
+ * before distributing HCLK to the CPU and
+ * peripherals.
+ *
+ * HPRE = 0000 selects division by 1.
+ */
+#define RCC_HPRE_MASK (UINT32_C(0xF) << 4)
+
 /* Flash needs one wait state when the CPU runs above 24 MHz; without it,
  * instruction reads can fail after switching the system clock to 48 MHz. */
 #define FLASH_ACTLR REG32(UINT32_C(0x40022000))

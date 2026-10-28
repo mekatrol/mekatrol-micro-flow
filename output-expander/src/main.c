@@ -85,24 +85,7 @@ int main(void) {
    * after all software and hardware state
    * has been initialized.
    */
-  // usart_enable_rx_interrupts();
-
-  /*
-   * Diagnostic transmission pattern.
-   *
-   * Sending repeated 'U' characters (0x55) produces
-   * alternating HIGH and LOW UART bits.
-   *
-   * WHY:
-   * This makes baud-rate and bit-timing errors easier
-   * to identify than a string of different characters.
-   *
-   * Use only on an isolated RS-485 test bus.
-   */
-  static const uint8_t test_message[] = {'U', 'U', 'U', 'U',
-                                         'U', 'U', 'U', 'U'};
-
-  usart_write_response(test_message, sizeof(test_message));
+  usart_enable_rx_interrupts();
 
   /*
    * Preserve the original output-1 blink
@@ -165,6 +148,39 @@ int main(void) {
        */
       debug_last_rx_byte = event.value;
       debug_rx_count++;
+
+      /*
+       * Temporary interrupt-driven RS-485 echo test.
+       *
+       * WHAT:
+       * Return the received byte to the USB-RS485
+       * master using the existing USART TX driver.
+       *
+       * WHY:
+       * This verifies the entire communication path:
+       *
+       *   RS-485 transceiver RO
+       *       -> USART1 RX (PD6)
+       *       -> USART1 interrupt
+       *       -> RX ring buffer
+       *       -> foreground main loop
+       *       -> USART1 TX (PD5)
+       *       -> RS-485 transceiver DI
+       *
+       * The transmit function enables PC6 (DE),
+       * sends the byte, waits for TC, and releases
+       * the RS-485 bus.
+       *
+       * Transmission is performed here, never
+       * inside the interrupt handler.
+       *
+       * This diagnostic must only run on an isolated
+       * test bus. Remove it before implementing the
+       * production request/response protocol.
+       */
+      const uint8_t echo_byte = event.value;
+
+      usart_write_response(&echo_byte, 1U);
     }
 
     /*

@@ -66,10 +66,38 @@ void hal_init(uint8_t active_low_mask) {
    * opposite order could make the next instruction fetch unreliable. */
   FLASH_ACTLR = (FLASH_ACTLR & ~UINT32_C(3)) | UINT32_C(1);
 
-  /* Select the calibrated 24 MHz internal HSI as the PLL input. The
-   * CH32V003 PLL multiplier is fixed at x2, producing a 48 MHz system clock
-   * without depending on an external crystal. */
-  RCC_CFGR0 &= ~(UINT32_C(3) << 16);
+  /*
+   * Configure the AHB prescaler to divide by 1.
+   *
+   * WHAT:
+   * Clear HPRE[3:0] in RCC_CFGR0.
+   *
+   * WHY:
+   * The PLL produces 48 MHz, but HCLK may be
+   * divided by the AHB prescaler.
+   *
+   * Our USART baud-rate calculation and SysTick
+   * delays both assume a 48 MHz peripheral/CPU
+   * clock. Explicitly configuring HPRE prevents
+   * us from inheriting an unexpected divider.
+   */
+  RCC_CFGR0 &= ~RCC_HPRE_MASK;
+
+  /*
+   * Select the internal 24 MHz HSI as PLL input.
+   *
+   * PLLSRC is bit 16. Clearing it selects HSI.
+   * The PLL multiplier is fixed at two, producing
+   * a nominal 48 MHz system clock.
+   */
+  RCC_CFGR0 &= ~(UINT32_C(1) << 16);
+
+  /*
+   * Enable the PLL.
+   *
+   * The existing initialization waits for PLLRDY
+   * before selecting PLL as the system clock.
+   */
   RCC_CTLR |= RCC_PLLON;
 
   /* The PLL must lock before it can clock the CPU. There is deliberately no
