@@ -3,24 +3,48 @@
 
 #include "protocol.h"
 
+#include <stdbool.h>
 #include <stdint.h>
+
+/*
+ * Protocol v1 command identifiers implemented by this module.
+ *
+ * PING returns the physical MCU UID and firmware version.
+ * GET_OUTPUTS returns the logical state of all eight outputs.
+ * ASSIGN_UID is recognized for routing only; UID matching and
+ * persistent address assignment are not implemented here.
+ */
+#define DISPATCHER_COMMAND_PING 0x01U
+#define DISPATCHER_COMMAND_GET_OUTPUTS 0x11U
+#define DISPATCHER_COMMAND_ASSIGN_UID 0x30U
+
+/*
+ * Fixed response payload sizes from protocol version 1.
+ *
+ * PING contains a 12-byte UID followed by two firmware
+ * version bytes. GET_OUTPUTS contains one logical output mask.
+ *
+ * Both fit within PROTOCOL_MAX_PAYLOAD (24 bytes).
+ */
+#define DISPATCHER_UID_SIZE 12U
+#define DISPATCHER_PING_RESPONSE_SIZE 14U
+#define DISPATCHER_GET_OUTPUTS_RESPONSE_SIZE 1U
 
 /*
  * Results of the first command-dispatch stage.
  *
  * WHAT:
- * Classifies a fully decoded protocol packet according to
- * its packet type and destination address.
+ * Classify an already decoded packet according to its
+ * type, destination and command.
  *
  * WHY:
- * Every device on an RS-485 multidrop bus receives the
- * same electrical traffic. Only the addressed device
- * may process a unicast request.
+ * Every device on a multidrop RS-485 bus can receive the
+ * same traffic. Only the addressed device may process
+ * a unicast request.
  *
- * Broadcast commissioning is handled separately because
- * it requires UID matching and must never generate a reply.
- *
- * This stage does not execute commands or access hardware.
+ * Broadcast ASSIGN_UID must be distinguished from unicast
+ * requests because commissioning requires full UID matching
+ * and must never generate a response.
  */
 typedef enum {
   DISPATCHER_IGNORE = 0,
@@ -29,67 +53,44 @@ typedef enum {
 } dispatcher_route_t;
 
 /*
- * Determine whether a decoded request is intended
- * for this device.
+ * Determine whether a request belongs to this device.
  *
- * WHAT:
- * Examines the request type, destination and the device's
- * currently assigned address.
- *
- * WHY:
- * Address filtering must occur before command execution
- * to prevent unrelated RS-485 traffic from changing
- * device state or producing unwanted responses.
- *
- * The caller must supply a packet that has already passed
- * COBS decoding, packet validation and CRC verification.
+ * The packet must already have passed COBS decoding,
+ * packet structure validation and CRC verification.
  *
  * device_address == 0xFF indicates an uncommissioned device.
  *
- * This function has no hardware side effects.
+ * This function does not execute commands, access hardware
+ * or transmit RS-485 data.
  */
 dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
                                             uint8_t device_address);
 
 /*
- * Protocol v1 PING command.
- *
- * A successful response contains the MCU's 96-bit
- * unique identifier followed by two firmware
- * version bytes.
- *
- * The UID must always contain exactly 12 bytes.
- */
-#define DISPATCHER_COMMAND_PING 0x01U
-#define DISPATCHER_UID_SIZE 12U
-#define DISPATCHER_PING_RESPONSE_SIZE 14U
-
-/*
- * Construct a PING response without accessing hardware.
+ * Construct a successful PING response.
  *
  * WHAT:
- * Validate the request's routing, command and payload
- * length, then construct the complete response packet.
+ * Validate a unicast PING request and construct a response
+ * containing the MCU UID and firmware version.
  *
  * WHY:
- * Keeping response construction separate from USART
- * transmission lets host tests verify protocol behavior
- * without requiring CH32V003 hardware.
+ * Separating response construction from hardware access
+ * allows the protocol behavior to be tested on the host.
  *
- * The caller provides the device UID in the agreed wire
- * byte order. Reading the MCU UID registers is handled
- * by a separate hardware module later.
+ * The caller supplies the UID in the protocol's required
+ * byte order. Reading CH32V003 UID registers is the
+ * responsibility of a future hardware-specific layer.
  *
- * The firmware version is supplied explicitly so this
- * portable module does not depend on target build settings.
+ * The response preserves destination, sequence and command
+ * so the master can match it with its outstanding request.
  *
- * Returns true only when the response is valid.
- * On failure, the response structure is unchanged.
+ * Returns true on success.
+ * Returns false for invalid arguments or requests.
  *
- * Request and response storage must not overlap.
- * Passing the same packet for both is unsupported.
+ * On failure, *response remains unchanged.
+ * Request and response must not overlap.
  *
- * This function never transmits or modifies GPIO.
+ * This function does not transmit or modify GPIO.
  */
 bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
                                       uint8_t device_address,
@@ -97,5 +98,41 @@ bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
                                       uint8_t firmware_major,
                                       uint8_t firmware_minor,
                                       protocol_packet_t *response);
+
+/*
+ * Construct a successful GET_OUTPUTS response.
+ *
+ * WHAT:
+ * Validate a unicast GET_OUTPUTS request and construct
+ * a response containing the current logical output mask.
+ *
+ * WHY:
+ * The dispatcher must remain independent of the physical
+ * GPIO mapping and active-low output polarity.
+ *
+ * output_mask:
+ *   Bit 0 = output channel 1
+ *   Bit 7 = output channel 8
+ *   1 = logically ON
+ *   0 = logically OFF
+ *
+ * For active-low hardware, logical ON corresponds to
+ * a LOW electrical output level.
+ *
+ * The caller supplies the actual current logical state.
+ *
+ * Returns true on success.
+ * Returns false for invalid arguments or requests.
+ *
+ * On failure, *response remains unchanged.
+ * Request and response must not overlap.
+ *
+ * This function does not access GPIO, modify outputs
+ * or transmit RS-485 data.
+ */
+bool dispatcher_prepare_get_outputs_response(const protocol_packet_t *request,
+                                             uint8_t device_address,
+                                             uint8_t output_mask,
+                                             protocol_packet_t *response);
 
 #endif

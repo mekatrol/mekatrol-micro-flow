@@ -6,50 +6,40 @@
 #include <string.h>
 
 /*
- * Verify that a commissioned device accepts only
- * unicast requests addressed to itself.
+ * Verify RS-485 unicast address filtering.
  *
  * WHAT:
- * Check matching addresses, other device addresses,
- * and both reserved address values.
+ * Test matching, mismatched, reserved and uncommissioned
+ * addresses, including the highest valid address.
  *
  * WHY:
- * Every receiver on a multidrop RS-485 bus sees the
- * same traffic. Incorrect address filtering could
- * allow multiple expanders to execute one command
- * or transmit simultaneously, causing bus contention.
+ * All devices on a shared bus receive the same traffic.
+ * Only the device addressed by the master may process
+ * a unicast command.
  */
 static void test_unicast_routing(void) {
   protocol_packet_t packet = {0};
 
   packet.type = PROTOCOL_TYPE_REQUEST;
   packet.destination = 0x17U;
-  packet.command = 0x01U;
+  packet.command = DISPATCHER_COMMAND_PING;
 
-  /* A correctly addressed request must be accepted. */
   assert(dispatcher_route_request(&packet, 0x17U) ==
          DISPATCHER_UNICAST_REQUEST);
 
-  /* A request for another device must be ignored. */
   assert(dispatcher_route_request(&packet, 0x18U) == DISPATCHER_IGNORE);
 
   /*
-   * An uncommissioned device must not process
-   * ordinary unicast commands before receiving
-   * its assigned address.
+   * Uncommissioned devices cannot accept ordinary
+   * unicast requests before address assignment.
    */
   assert(dispatcher_route_request(&packet, 0xFFU) == DISPATCHER_IGNORE);
 
-  /*
-   * The broadcast address is not a valid
-   * commissioned device address.
-   */
   assert(dispatcher_route_request(&packet, 0x00U) == DISPATCHER_IGNORE);
 
   /*
-   * Destination 0xFF is reserved for the internal
-   * uncommissioned state. It is never a valid
-   * unicast destination.
+   * Destination 0xFF is reserved and must never be
+   * treated as a valid unicast destination.
    */
   packet.destination = 0xFFU;
 
@@ -58,8 +48,8 @@ static void test_unicast_routing(void) {
   assert(dispatcher_route_request(&packet, 0xFFU) == DISPATCHER_IGNORE);
 
   /*
-   * Check the highest valid commissioned address
-   * to catch an accidental exclusion of 0xFE.
+   * 0xFE is the highest legal commissioned address.
+   * Test this boundary explicitly.
    */
   packet.destination = 0xFEU;
 
@@ -68,23 +58,18 @@ static void test_unicast_routing(void) {
 }
 
 /*
- * Verify the protocol's special broadcast rules.
+ * Verify the special broadcast commissioning route.
  *
  * WHAT:
- * Permit ASSIGN_UID on destination 0x00, while
- * rejecting every other tested broadcast command.
+ * Accept broadcast ASSIGN_UID for both commissioned and
+ * uncommissioned devices while rejecting other commands.
  *
  * WHY:
- * An uncommissioned device must be reachable for
- * UID-based commissioning without first knowing
- * its individual bus address.
+ * ASSIGN_UID must reach devices without known addresses.
+ * No broadcast may produce an RS-485 response.
  *
- * Broadcast requests must never produce replies;
- * the dispatcher therefore returns a distinct route
- * rather than treating broadcast as ordinary unicast.
- *
- * UID validation and address persistence are NOT
- * performed by this routing function.
+ * Routing eligibility does not mean UID matching or
+ * persistent address assignment has succeeded.
  */
 static void test_broadcast_routing(void) {
   protocol_packet_t packet = {0};
@@ -92,20 +77,27 @@ static void test_broadcast_routing(void) {
   packet.type = PROTOCOL_TYPE_REQUEST;
   packet.destination = 0x00U;
 
-  /* PING is not permitted as a broadcast command. */
-  packet.command = 0x01U;
+  packet.command = DISPATCHER_COMMAND_PING;
 
   assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
 
   assert(dispatcher_route_request(&packet, 0xFFU) == DISPATCHER_IGNORE);
 
-  /* SET_OUTPUTS must never operate through broadcast. */
+  packet.command = DISPATCHER_COMMAND_GET_OUTPUTS;
+
+  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+
   packet.command = 0x10U;
 
   assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
 
-  /* ASSIGN_UID is explicitly broadcast-capable. */
-  packet.command = 0x30U;
+  /*
+   * ASSIGN_UID is broadcast-capable.
+   *
+   * The device must still validate the complete UID
+   * and new address before changing persistent state.
+   */
+  packet.command = DISPATCHER_COMMAND_ASSIGN_UID;
 
   assert(dispatcher_route_request(&packet, 0xFFU) ==
          DISPATCHER_BROADCAST_ASSIGN_UID);
@@ -115,21 +107,17 @@ static void test_broadcast_routing(void) {
 }
 
 /*
- * Verify that device firmware ignores packets
- * that are not requests from the bus master.
+ * Verify that only request packets are eligible.
  *
  * WHY:
- * Responses and error packets may be visible to
- * every device on the shared RS-485 bus.
- *
- * They must never be interpreted as commands,
- * even if their destination address matches.
+ * Responses and errors may be visible on the multidrop
+ * bus but must never be executed as device commands.
  */
 static void test_packet_types(void) {
   protocol_packet_t packet = {0};
 
   packet.destination = 0x17U;
-  packet.command = 0x01U;
+  packet.command = DISPATCHER_COMMAND_PING;
 
   packet.type = PROTOCOL_TYPE_RESPONSE;
 
@@ -140,44 +128,37 @@ static void test_packet_types(void) {
   assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
 
   /*
-   * Repeat the check for broadcast commissioning.
-   * Packet type filtering must take priority over
-   * command and destination matching.
+   * Even broadcast ASSIGN_UID must have request type.
+   * Matching destination and command is not sufficient.
    */
   packet.destination = 0x00U;
-  packet.command = 0x30U;
+  packet.command = DISPATCHER_COMMAND_ASSIGN_UID;
+
+  assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
+
+  packet.type = PROTOCOL_TYPE_RESPONSE;
 
   assert(dispatcher_route_request(&packet, 0x17U) == DISPATCHER_IGNORE);
 }
 
 /*
- * A null packet pointer must be rejected before
- * any packet fields are accessed.
- *
- * WHY:
- * This gives the portable dispatcher a defined
- * failure result for an invalid caller argument,
- * rather than dereferencing an invalid pointer.
+ * Verify NULL packet handling before dereferencing data.
  */
 static void test_null_packet(void) {
   assert(dispatcher_route_request(NULL, 0x17U) == DISPATCHER_IGNORE);
 }
 
 /*
- * Verify construction of a successful PING response.
+ * Verify a successful PING response.
  *
  * WHAT:
- * Supply a valid unicast PING request, a known 12-byte
- * UID and explicit firmware version numbers.
+ * Check copied request metadata, all 12 UID bytes,
+ * the exact payload length and firmware version.
  *
  * WHY:
- * A deterministic UID allows every response byte to
- * be checked on the host, independently of CH32V003
- * UID registers or actual RS-485 hardware.
- *
- * The response must preserve the request's destination,
- * sequence and command so the master can identify the
- * transaction to which the response belongs.
+ * The master identifies the replying physical MCU
+ * by its full UID and associates the reply with the
+ * outstanding transaction using its sequence number.
  */
 static void test_ping_response(void) {
   const uint8_t uid[DISPATCHER_UID_SIZE] = {0x10U, 0x20U, 0x30U, 0x40U,
@@ -195,58 +176,34 @@ static void test_ping_response(void) {
   assert(dispatcher_prepare_ping_response(&request, 0x17U, uid, 2U, 5U,
                                           &response));
 
-  /*
-   * A successful PING is a response packet, not
-   * another request or a protocol error packet.
-   */
-  assert(response.type == PROTOCOL_TYPE_RESPONSE);
-
-  /*
-   * Preserve the fields identifying the transaction.
-   * The master uses SEQ to match this response to
-   * the request that it transmitted.
-   */
   assert(response.destination == request.destination);
   assert(response.sequence == request.sequence);
+  assert(response.type == PROTOCOL_TYPE_RESPONSE);
   assert(response.command == DISPATCHER_COMMAND_PING);
 
-  /*
-   * Protocol v1 requires exactly 14 response bytes:
-   * 12 UID bytes followed by firmware major and minor.
-   */
   assert(response.payload_length == DISPATCHER_PING_RESPONSE_SIZE);
 
   /*
-   * Compare all 12 UID bytes, including zero if present.
-   * memcmp() checks binary data rather than treating the
-   * UID as a null-terminated character string.
+   * Compare binary UID bytes, not a C string.
+   * The UID can contain arbitrary byte values.
    */
   assert(memcmp(response.payload, uid, DISPATCHER_UID_SIZE) == 0);
 
-  /*
-   * Firmware version is encoded as two separate bytes.
-   * There is no 16-bit endianness conversion.
-   */
   assert(response.payload[12] == 2U);
   assert(response.payload[13] == 5U);
 }
 
 /*
- * Verify that rejected PING requests leave the caller's
- * response packet unchanged.
+ * Verify that invalid PING requests never modify
+ * the response packet.
  *
  * WHAT:
- * Exercise wrong addresses, invalid packet types,
- * incorrect commands, nonempty PING payloads and
- * reserved addresses.
+ * Fill response storage with a sentinel pattern and
+ * compare the complete object after every rejection.
  *
  * WHY:
- * A malformed or unrelated request must never produce
- * a usable response packet.
- *
- * Preserving output storage on failure prevents callers
- * from accidentally treating a partially constructed
- * packet as a successful result.
+ * An invalid request must not leave a partially prepared
+ * packet that could accidentally be transmitted.
  */
 static void test_ping_rejected_requests(void) {
   const uint8_t uid[DISPATCHER_UID_SIZE] = {0};
@@ -257,19 +214,12 @@ static void test_ping_rejected_requests(void) {
                                .command = DISPATCHER_COMMAND_PING,
                                .payload_length = 0U};
 
-  /*
-   * Initialize the entire output packet to a known
-   * byte pattern, including unused payload storage.
-   *
-   * This detects accidental writes even when the
-   * visible response header appears unchanged.
-   */
   protocol_packet_t response;
   memset(&response, 0xA5, sizeof(response));
 
   const protocol_packet_t original = response;
 
-  /* A request for another device must remain silent. */
+  /* Wrong destination. */
   request.destination = 0x18U;
 
   assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
@@ -277,11 +227,7 @@ static void test_ping_rejected_requests(void) {
 
   assert(memcmp(&response, &original, sizeof(response)) == 0);
 
-  /*
-   * Broadcast PING is forbidden. Multiple devices
-   * replying to one broadcast could drive the shared
-   * RS-485 bus simultaneously.
-   */
+  /* Broadcast PING is prohibited. */
   request.destination = 0x00U;
 
   assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
@@ -289,10 +235,9 @@ static void test_ping_rejected_requests(void) {
 
   assert(memcmp(&response, &original, sizeof(response)) == 0);
 
-  /* Restore the valid unicast destination. */
   request.destination = 0x17U;
 
-  /* Response packets must not execute as requests. */
+  /* Responses must not execute as requests. */
   request.type = PROTOCOL_TYPE_RESPONSE;
 
   assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
@@ -310,7 +255,7 @@ static void test_ping_rejected_requests(void) {
 
   request.type = PROTOCOL_TYPE_REQUEST;
 
-  /* Another command must not be treated as PING. */
+  /* Incorrect command. */
   request.command = 0x10U;
 
   assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
@@ -320,10 +265,7 @@ static void test_ping_rejected_requests(void) {
 
   request.command = DISPATCHER_COMMAND_PING;
 
-  /*
-   * PING requires LEN=0. A CRC-valid packet can still
-   * contain a command-specific invalid payload length.
-   */
+  /* PING requests must contain zero payload bytes. */
   request.payload_length = 1U;
 
   assert(!dispatcher_prepare_ping_response(&request, 0x17U, uid, 1U, 0U,
@@ -333,10 +275,7 @@ static void test_ping_rejected_requests(void) {
 
   request.payload_length = 0U;
 
-  /*
-   * An uncommissioned device must not answer PING.
-   * UID-based address assignment is handled separately.
-   */
+  /* Uncommissioned devices cannot respond to PING. */
   assert(!dispatcher_prepare_ping_response(&request, 0xFFU, uid, 1U, 0U,
                                            &response));
 
@@ -344,15 +283,12 @@ static void test_ping_rejected_requests(void) {
 }
 
 /*
- * Verify defensive argument validation.
+ * Verify invalid PING function arguments.
  *
  * WHY:
- * Null pointers cannot provide valid packet or UID
- * storage. Rejecting them avoids undefined behavior.
- *
- * Request and response must also be separate objects,
- * because constructing the response in request storage
- * could overwrite fields still required for validation.
+ * NULL inputs must not cause pointer dereferences.
+ * Request and response objects must remain separate
+ * to prevent in-place overwriting of incoming fields.
  */
 static void test_ping_invalid_arguments(void) {
   const uint8_t uid[DISPATCHER_UID_SIZE] = {0};
@@ -378,22 +314,18 @@ static void test_ping_invalid_arguments(void) {
 }
 
 /*
- * Verify that a constructed PING response survives
- * the complete protocol encode/decode round trip.
+ * Verify a complete PING response encode/decode cycle.
  *
  * WHAT:
- * Build a response, encode it with CRC and COBS,
- * then decode the resulting frame into another packet.
+ * Build a PING response, serialize it through the
+ * production protocol encoder and decode the result.
  *
  * WHY:
- * Testing only the in-memory response structure would
- * not verify that its fields and payload are compatible
- * with the existing protocol encoder and decoder.
+ * Checking only the in-memory packet would not verify
+ * compatibility with the CRC and COBS wire encoding.
  *
- * The wire buffer includes a trailing zero delimiter.
- * protocol_decode() expects the COBS body without it,
- * because the frame receiver normally removes that
- * delimiter before calling the decoder.
+ * The UID includes zero bytes to exercise COBS handling
+ * of binary payload data.
  */
 static void test_ping_wire_round_trip(void) {
   const uint8_t uid[DISPATCHER_UID_SIZE] = {0x00U, 0x01U, 0x02U, 0x00U,
@@ -412,11 +344,8 @@ static void test_ping_wire_round_trip(void) {
                                           &response));
 
   /*
-   * The protocol encoder adds the version byte,
-   * CRC-16/CCITT-FALSE and COBS framing.
-   *
-   * The 34-byte buffer covers the largest permitted
-   * protocol frame without dynamic allocation.
+   * The encoder includes the protocol version, CRC,
+   * COBS encoding and final 0x00 frame delimiter.
    */
   uint8_t wire[PROTOCOL_MAX_ENCODED_SIZE];
   size_t wire_length = 0U;
@@ -429,8 +358,8 @@ static void test_ping_wire_round_trip(void) {
   assert(wire[wire_length - 1U] == 0U);
 
   /*
-   * COBS guarantees that the frame delimiter appears
-   * only at the end of the encoded frame.
+   * A COBS-encoded body contains no zero bytes.
+   * The only zero is the final frame delimiter.
    */
   for (size_t i = 0U; i < wire_length - 1U; ++i) {
     assert(wire[i] != 0U);
@@ -438,19 +367,18 @@ static void test_ping_wire_round_trip(void) {
 
   protocol_packet_t decoded = {0};
 
+  /*
+   * The decoder accepts the encoded COBS body
+   * without the delimiter, matching frame_receiver.
+   */
   assert(protocol_decode(wire, wire_length - 1U, &decoded) == PROTOCOL_OK);
 
-  assert(decoded.destination == response.destination);
-  assert(decoded.sequence == response.sequence);
+  assert(decoded.destination == request.destination);
+  assert(decoded.sequence == request.sequence);
   assert(decoded.type == PROTOCOL_TYPE_RESPONSE);
   assert(decoded.command == DISPATCHER_COMMAND_PING);
   assert(decoded.payload_length == DISPATCHER_PING_RESPONSE_SIZE);
 
-  /*
-   * The UID deliberately contains embedded zero bytes.
-   * This verifies that COBS correctly preserves binary
-   * payload data containing the frame delimiter value.
-   */
   assert(memcmp(decoded.payload, uid, DISPATCHER_UID_SIZE) == 0);
 
   assert(decoded.payload[12] == 1U);
@@ -458,32 +386,259 @@ static void test_ping_wire_round_trip(void) {
 }
 
 /*
- * Run routing and PING response tests.
+ * Verify successful GET_OUTPUTS response construction.
  *
  * WHAT:
- * Execute each test function and allow its assertions
- * to report failures to the host test runner.
+ * Test all-off, all-on and mixed logical output masks.
  *
  * WHY:
- * Static test functions are not executed automatically.
- * Calling them explicitly ensures the PING implementation
- * is tested and avoids unused-function warnings with -Werror.
+ * The entire eight-channel state is represented in one
+ * byte. Testing bit patterns helps detect accidental
+ * inversion or incorrect bit mapping.
  *
- * AddressSanitizer and UndefinedBehaviorSanitizer provide
- * additional runtime checks during the host test execution.
+ * The tests use logical states, not physical GPIO levels.
+ */
+static void test_get_outputs_response(void) {
+  const protocol_packet_t request = {.destination = 0x17U,
+                                     .sequence = 0x63U,
+                                     .type = PROTOCOL_TYPE_REQUEST,
+                                     .command = DISPATCHER_COMMAND_GET_OUTPUTS,
+                                     .payload_length = 0U};
+
+  protocol_packet_t response = {0};
+
+  /* All channels OFF. */
+  assert(dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x00U,
+                                                 &response));
+
+  assert(response.destination == request.destination);
+  assert(response.sequence == request.sequence);
+  assert(response.type == PROTOCOL_TYPE_RESPONSE);
+  assert(response.command == DISPATCHER_COMMAND_GET_OUTPUTS);
+  assert(response.payload_length == DISPATCHER_GET_OUTPUTS_RESPONSE_SIZE);
+  assert(response.payload[0] == 0x00U);
+
+  /* All channels ON. */
+  assert(dispatcher_prepare_get_outputs_response(&request, 0x17U, 0xFFU,
+                                                 &response));
+
+  assert(response.payload[0] == 0xFFU);
+
+  /*
+   * Mixed output state:
+   * 0x85 = binary 10000101.
+   *
+   * Channels 1, 3 and 8 are logically ON.
+   */
+  assert(dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+                                                 &response));
+
+  assert(response.payload[0] == 0x85U);
+}
+
+/*
+ * Verify invalid GET_OUTPUTS requests are rejected
+ * without changing the caller's response packet.
+ *
+ * WHY:
+ * Wrong-address packets, broadcasts, incorrect commands
+ * and invalid payload lengths must not produce replies.
+ */
+static void test_get_outputs_rejected_requests(void) {
+  protocol_packet_t request = {.destination = 0x17U,
+                               .sequence = 0x63U,
+                               .type = PROTOCOL_TYPE_REQUEST,
+                               .command = DISPATCHER_COMMAND_GET_OUTPUTS,
+                               .payload_length = 0U};
+
+  protocol_packet_t response;
+  memset(&response, 0xA5, sizeof(response));
+
+  const protocol_packet_t original = response;
+
+  /* Wrong device address. */
+  request.destination = 0x18U;
+
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+                                                  &response));
+
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
+
+  /* Broadcast GET_OUTPUTS is forbidden. */
+  request.destination = 0x00U;
+
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+                                                  &response));
+
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
+
+  request.destination = 0x17U;
+
+  /* A response is not an executable request. */
+  request.type = PROTOCOL_TYPE_RESPONSE;
+
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+                                                  &response));
+
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
+
+  /* Error packets must also be ignored. */
+  request.type = PROTOCOL_TYPE_ERROR;
+
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+                                                  &response));
+
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
+
+  request.type = PROTOCOL_TYPE_REQUEST;
+
+  /* Another command must not be interpreted as GET_OUTPUTS. */
+  request.command = DISPATCHER_COMMAND_PING;
+
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+                                                  &response));
+
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
+
+  request.command = DISPATCHER_COMMAND_GET_OUTPUTS;
+
+  /* GET_OUTPUTS request payload must be empty. */
+  request.payload_length = 1U;
+
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+                                                  &response));
+
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
+
+  request.payload_length = 0U;
+
+  /* An uncommissioned device cannot answer unicast. */
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0xFFU, 0x85U,
+                                                  &response));
+
+  assert(memcmp(&response, &original, sizeof(response)) == 0);
+}
+
+/*
+ * Verify defensive argument validation for GET_OUTPUTS.
+ *
+ * No output packet may be generated when the request
+ * or response pointer is invalid.
+ */
+static void test_get_outputs_invalid_arguments(void) {
+  protocol_packet_t request = {.destination = 0x17U,
+                               .sequence = 0x63U,
+                               .type = PROTOCOL_TYPE_REQUEST,
+                               .command = DISPATCHER_COMMAND_GET_OUTPUTS,
+                               .payload_length = 0U};
+
+  protocol_packet_t response = {0};
+
+  assert(
+      !dispatcher_prepare_get_outputs_response(NULL, 0x17U, 0x85U, &response));
+
+  assert(
+      !dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U, NULL));
+
+  assert(!dispatcher_prepare_get_outputs_response(&request, 0x17U, 0x85U,
+                                                  &request));
+}
+
+/*
+ * Verify GET_OUTPUTS compatibility with the wire protocol.
+ *
+ * WHAT:
+ * Construct, encode and decode a one-byte output mask.
+ *
+ * WHY:
+ * The complete wire path must preserve the logical mask,
+ * request sequence and response type across CRC and COBS.
+ */
+static void test_get_outputs_wire_round_trip(void) {
+  const protocol_packet_t request = {.destination = 0x17U,
+                                     .sequence = 0x77U,
+                                     .type = PROTOCOL_TYPE_REQUEST,
+                                     .command = DISPATCHER_COMMAND_GET_OUTPUTS,
+                                     .payload_length = 0U};
+
+  /*
+   * Test a zero mask as well as a mixed mask.
+   *
+   * A zero payload byte must survive COBS encoding,
+   * even though zero is also the wire frame delimiter.
+   */
+  const uint8_t masks[] = {0x00U, 0x85U, 0xFFU};
+
+  for (size_t i = 0U; i < sizeof(masks); ++i) {
+    protocol_packet_t response = {0};
+
+    assert(dispatcher_prepare_get_outputs_response(&request, 0x17U, masks[i],
+                                                   &response));
+
+    uint8_t wire[PROTOCOL_MAX_ENCODED_SIZE];
+    size_t wire_length = 0U;
+
+    assert(protocol_encode(&response, wire, sizeof(wire), &wire_length) ==
+           PROTOCOL_OK);
+
+    assert(wire_length >= 2U);
+    assert(wire_length <= sizeof(wire));
+    assert(wire[wire_length - 1U] == 0U);
+
+    /*
+     * COBS must remove all embedded zero bytes from
+     * the encoded body, regardless of output mask.
+     */
+    for (size_t j = 0U; j < wire_length - 1U; ++j) {
+      assert(wire[j] != 0U);
+    }
+
+    protocol_packet_t decoded = {0};
+
+    assert(protocol_decode(wire, wire_length - 1U, &decoded) == PROTOCOL_OK);
+
+    assert(decoded.destination == request.destination);
+    assert(decoded.sequence == request.sequence);
+    assert(decoded.type == PROTOCOL_TYPE_RESPONSE);
+    assert(decoded.command == DISPATCHER_COMMAND_GET_OUTPUTS);
+    assert(decoded.payload_length == DISPATCHER_GET_OUTPUTS_RESPONSE_SIZE);
+
+    assert(decoded.payload[0] == masks[i]);
+  }
+}
+
+/*
+ * Run all dispatcher tests.
+ *
+ * WHAT:
+ * Execute every routing, PING and GET_OUTPUTS test.
+ *
+ * WHY:
+ * Static test functions do not run automatically.
+ * Calling them here allows assert() failures to terminate
+ * the executable and be reported through CTest.
+ *
+ * The host-debug configuration also enables AddressSanitizer
+ * and UndefinedBehaviorSanitizer.
  */
 int main(void) {
-  /* Verify packet-type filtering and RS-485 addressing rules. */
+  /* Request routing and address filtering. */
   test_unicast_routing();
   test_broadcast_routing();
   test_packet_types();
   test_null_packet();
 
-  /* Verify PING response construction and protocol compatibility. */
+  /* PING response construction and wire compatibility. */
   test_ping_response();
   test_ping_rejected_requests();
   test_ping_invalid_arguments();
   test_ping_wire_round_trip();
+
+  /* GET_OUTPUTS response construction and wire compatibility. */
+  test_get_outputs_response();
+  test_get_outputs_rejected_requests();
+  test_get_outputs_invalid_arguments();
+  test_get_outputs_wire_round_trip();
 
   return 0;
 }
