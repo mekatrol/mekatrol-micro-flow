@@ -40,6 +40,12 @@ python3 tools/device_tool.py --port /dev/ttyUSB0 set-address \
 
 The assigned address is verified with `PING`, but is not persistent.
 
+The status LED pulses green while idle, shows blue for 300 ms after a valid
+command, and flashes red after a malformed frame, UART error, or receive
+overflow. Receive faults are latched until the next reset. The
+`simulate-error` command sends an invalid-CRC frame to exercise the red fault
+indication without eliciting a protocol response.
+
 See [docs/BUILD.md](docs/BUILD.md) for prerequisites, wiring, artifacts, and
 recovery instructions. See [docs/protocol.md](docs/protocol.md) for the full
 protocol contract and its current implementation status.

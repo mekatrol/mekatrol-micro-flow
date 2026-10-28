@@ -13,8 +13,12 @@ int main(void) {
                    (rgb_t){0U, 0U, 32U}));
   assert(rgb_equal(status_led_pattern(0U, 32U, true, true, 10U),
                    (rgb_t){0U, 0U, 32U}));
-  assert(rgb_equal(status_led_pattern(300U, 32U, true, true, 100U),
+  assert(rgb_equal(status_led_pattern(300U, 32U, true, true,
+                                      STATUS_LED_COMMAND_DURATION_MS),
                    (rgb_t){0U, 0U, 0U}));
+  assert(rgb_equal(status_led_pattern(299U, 32U, false, true,
+                                      STATUS_LED_COMMAND_DURATION_MS - 1U),
+                   (rgb_t){0U, 0U, 32U}));
   assert(rgb_equal(status_led_pattern(600U, 32U, true, false, 0U),
                    (rgb_t){32U, 0U, 0U}));
   assert(rgb_equal(status_led_color(STATUS_LED_UNCONFIGURED, 30U),

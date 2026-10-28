@@ -17,6 +17,11 @@ void frame_receiver_init(frame_receiver_t *receiver) {
   /* No need to clear body: only body[0..length) is ever decoded. */
   receiver->length = 0U;
   receiver->discarding = false;
+  receiver->fault_count = 0U;
+}
+
+uint32_t frame_receiver_fault_count(const frame_receiver_t *receiver) {
+  return receiver == NULL ? 0U : receiver->fault_count;
 }
 
 bool frame_receiver_poll(frame_receiver_t *receiver,
@@ -43,6 +48,7 @@ bool frame_receiver_poll(frame_receiver_t *receiver,
        */
       receiver->length = 0U;
       receiver->discarding = true;
+      receiver->fault_count++;
       continue;
     }
 
@@ -50,6 +56,7 @@ bool frame_receiver_poll(frame_receiver_t *receiver,
       /* Defensive handling if another queue result is introduced. */
       receiver->length = 0U;
       receiver->discarding = true;
+      receiver->fault_count++;
       continue;
     }
 
@@ -70,6 +77,8 @@ bool frame_receiver_poll(frame_receiver_t *receiver,
         if (decoded == PROTOCOL_OK) {
           return true;
         }
+
+        receiver->fault_count++;
       } else {
         receiver->length = 0U;
       }
@@ -87,6 +96,7 @@ bool frame_receiver_poll(frame_receiver_t *receiver,
        */
       receiver->length = 0U;
       receiver->discarding = true;
+      receiver->fault_count++;
       continue;
     }
 

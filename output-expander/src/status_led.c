@@ -30,7 +30,8 @@ rgb_t status_led_color(status_led_status_t status, uint8_t brightness) {
 rgb_t status_led_pattern(uint32_t now_ms, uint8_t brightness,
                          bool error_present, bool command_active,
                          uint32_t command_elapsed_ms) {
-  if (command_active && command_elapsed_ms < UINT32_C(100)) {
+  if (command_active &&
+      command_elapsed_ms < STATUS_LED_COMMAND_DURATION_MS) {
     return (rgb_t){0U, 0U, brightness};
   }
   if (error_present) {

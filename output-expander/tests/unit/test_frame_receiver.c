@@ -23,6 +23,7 @@ static const protocol_packet_t request = {.destination = 0x17U,
 static void reset(void) {
   irq_rx_init();
   frame_receiver_init(&receiver);
+  assert(frame_receiver_fault_count(&receiver) == 0U);
 }
 
 static void push(uint8_t type, uint8_t value) {
@@ -132,6 +133,7 @@ static void test_bad_frames(void) {
 
   assert(!feed(malformed, sizeof(malformed), &out));
   assert(out.sequence == 0xEEU);
+  assert(frame_receiver_fault_count(&receiver) == 1U);
 
   /*
    * Modify an encoded byte without recomputing the CRC.
@@ -141,6 +143,7 @@ static void test_bad_frames(void) {
 
   assert(!feed(wire, length, &out));
   assert(out.sequence == 0xEEU);
+  assert(frame_receiver_fault_count(&receiver) == 2U);
 
   const uint8_t empty[] = {0U};
   assert(!feed(empty, sizeof(empty), &out));
@@ -171,6 +174,7 @@ static void test_oversize(void) {
   assert(!frame_receiver_poll(&receiver, &out));
   assert(!receiver.discarding);
   assert(out.sequence == 0xEEU);
+  assert(frame_receiver_fault_count(&receiver) == 1U);
 
   uint8_t wire[PROTOCOL_MAX_ENCODED_SIZE];
   const size_t length = encoded(wire);
@@ -194,6 +198,7 @@ static void test_uart_error(void) {
 
   push(IRQ_RX_EVENT_ERROR, 0U);
   assert(!frame_receiver_poll(&receiver, &out));
+  assert(frame_receiver_fault_count(&receiver) == 1U);
 
   assert(!feed(&wire[3], length - 3U, &out));
 
@@ -227,6 +232,7 @@ static void test_overflow(void) {
 
   assert(!frame_receiver_poll(&receiver, &out));
   assert(receiver.discarding);
+  assert(frame_receiver_fault_count(&receiver) == 1U);
 
   byte(0U);
   assert(!frame_receiver_poll(&receiver, &out));

@@ -26,6 +26,10 @@ typedef struct {
   // whether synchronization has been lost and bytes must be ignored until the
   // next delimiter.
   bool discarding;
+
+  // Number of malformed frames, UART errors, or queue/length overflows seen.
+  // This is diagnostic state only: invalid traffic still receives no reply.
+  uint32_t fault_count;
 } frame_receiver_t;
 
 /* Call after irq_rx_init(), before polling for received packets. */
@@ -46,5 +50,8 @@ void frame_receiver_init(frame_receiver_t *receiver);
  * Only foreground code may call this function.
  */
 bool frame_receiver_poll(frame_receiver_t *receiver, protocol_packet_t *packet);
+
+/* Monotonic receive-fault count for diagnostics and status indication. */
+uint32_t frame_receiver_fault_count(const frame_receiver_t *receiver);
 
 #endif

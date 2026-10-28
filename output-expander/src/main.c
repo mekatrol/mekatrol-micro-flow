@@ -27,6 +27,7 @@ volatile uint32_t debug_response_count;
 volatile uint32_t debug_address_change_count;
 volatile uint32_t debug_transmit_failure_count;
 volatile uint32_t debug_reset_request_count;
+volatile uint32_t debug_receive_fault_count;
 
 volatile uint8_t debug_device_address;
 volatile uint8_t debug_last_destination;
@@ -136,6 +137,7 @@ int main(void) {
   debug_address_change_count = 0U;
   debug_transmit_failure_count = 0U;
   debug_reset_request_count = 0U;
+  debug_receive_fault_count = 0U;
 
   debug_device_address = comms_app_address(&app);
   debug_last_destination = 0U;
@@ -223,14 +225,20 @@ int main(void) {
     /* Status policy and LED servicing are bounded foreground work. Timer/DMA
      * continue the 30 us waveform independently while USART IRQs run. */
     const uint32_t now_ticks = hal_ticks();
+    debug_receive_fault_count = frame_receiver_fault_count(&receiver);
     const uint32_t now_ms = now_ticks / UINT32_C(48000);
     const uint32_t command_elapsed_ticks =
         (uint32_t)(now_ticks - command_activity_started);
     const bool command_active =
-        command_activity_valid && command_elapsed_ticks < UINT32_C(4800000);
-    ws2812_set_color(&status_led, status_led_pattern(
-                                      now_ms, 16U, false, command_active,
-                                      command_elapsed_ticks / UINT32_C(48000)));
+        command_activity_valid &&
+        command_elapsed_ticks <
+            STATUS_LED_COMMAND_DURATION_MS * UINT32_C(48000);
+    const bool receive_fault = debug_receive_fault_count != 0U;
+    ws2812_set_color(
+        &status_led,
+        status_led_pattern(now_ms, STATUS_LED_BRIGHTNESS, receive_fault,
+                           command_active,
+                           command_elapsed_ticks / UINT32_C(48000)));
     ws2812_service(&status_led, now_ticks);
 
     /*

@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Human-visible status policy shared by main and the pure policy tests. */
+#define STATUS_LED_BRIGHTNESS 16U
+#define STATUS_LED_COMMAND_DURATION_MS UINT32_C(300)
+
 typedef struct {
   uint8_t red;
   uint8_t green;
