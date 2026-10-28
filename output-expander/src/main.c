@@ -174,6 +174,10 @@ int main(void) {
      * and protocol validation complete.
      */
     while (frame_receiver_poll(&receiver, &request)) {
+      /* A valid decoded message clears a previously latched receive fault.
+       * The command indication below takes priority for its visible window. */
+      frame_receiver_clear_fault(&receiver);
+
       /*
        * Record request metadata before dispatch.
        */
@@ -233,7 +237,7 @@ int main(void) {
         command_activity_valid &&
         command_elapsed_ticks <
             STATUS_LED_COMMAND_DURATION_MS * UINT32_C(48000);
-    const bool receive_fault = debug_receive_fault_count != 0U;
+    const bool receive_fault = frame_receiver_fault_active(&receiver);
     ws2812_set_color(
         &status_led,
         status_led_pattern(now_ms, STATUS_LED_BRIGHTNESS, receive_fault,

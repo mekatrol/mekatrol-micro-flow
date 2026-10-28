@@ -6,6 +6,7 @@
 
 /* Human-visible status policy shared by main and the pure policy tests. */
 #define STATUS_LED_BRIGHTNESS 16U
+#define STATUS_LED_COMMAND_BRIGHTNESS 64U
 #define STATUS_LED_COMMAND_DURATION_MS UINT32_C(300)
 
 typedef struct {

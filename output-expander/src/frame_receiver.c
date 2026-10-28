@@ -9,6 +9,11 @@
 _Static_assert(FRAME_RECEIVER_BODY_CAPACITY <= UINT8_MAX,
                "Frame length must fit in uint8_t");
 
+static void record_fault(frame_receiver_t *receiver) {
+  receiver->fault_count++;
+  receiver->fault_active = true;
+}
+
 void frame_receiver_init(frame_receiver_t *receiver) {
   if (receiver == NULL) {
     return;
@@ -18,10 +23,21 @@ void frame_receiver_init(frame_receiver_t *receiver) {
   receiver->length = 0U;
   receiver->discarding = false;
   receiver->fault_count = 0U;
+  receiver->fault_active = false;
 }
 
 uint32_t frame_receiver_fault_count(const frame_receiver_t *receiver) {
   return receiver == NULL ? 0U : receiver->fault_count;
+}
+
+bool frame_receiver_fault_active(const frame_receiver_t *receiver) {
+  return receiver != NULL && receiver->fault_active;
+}
+
+void frame_receiver_clear_fault(frame_receiver_t *receiver) {
+  if (receiver != NULL) {
+    receiver->fault_active = false;
+  }
 }
 
 bool frame_receiver_poll(frame_receiver_t *receiver,
@@ -48,7 +64,7 @@ bool frame_receiver_poll(frame_receiver_t *receiver,
        */
       receiver->length = 0U;
       receiver->discarding = true;
-      receiver->fault_count++;
+      record_fault(receiver);
       continue;
     }
 
@@ -56,7 +72,7 @@ bool frame_receiver_poll(frame_receiver_t *receiver,
       /* Defensive handling if another queue result is introduced. */
       receiver->length = 0U;
       receiver->discarding = true;
-      receiver->fault_count++;
+      record_fault(receiver);
       continue;
     }
 
@@ -78,7 +94,7 @@ bool frame_receiver_poll(frame_receiver_t *receiver,
           return true;
         }
 
-        receiver->fault_count++;
+        record_fault(receiver);
       } else {
         receiver->length = 0U;
       }
@@ -96,7 +112,7 @@ bool frame_receiver_poll(frame_receiver_t *receiver,
        */
       receiver->length = 0U;
       receiver->discarding = true;
-      receiver->fault_count++;
+      record_fault(receiver);
       continue;
     }
 

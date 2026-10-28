@@ -42,7 +42,8 @@ The assigned address is verified with `PING`, but is not persistent.
 
 The status LED pulses green while idle, shows blue for 300 ms after a valid
 command, and flashes red after a malformed frame, UART error, or receive
-overflow. Receive faults are latched until the next reset. The
+overflow. A subsequent valid message clears the receive fault and shows the
+blue command indication, matching the Rust reference behavior. The
 `simulate-error` command sends an invalid-CRC frame to exercise the red fault
 indication without eliciting a protocol response.
 

@@ -24,6 +24,7 @@ static void reset(void) {
   irq_rx_init();
   frame_receiver_init(&receiver);
   assert(frame_receiver_fault_count(&receiver) == 0U);
+  assert(!frame_receiver_fault_active(&receiver));
 }
 
 static void push(uint8_t type, uint8_t value) {
@@ -143,6 +144,11 @@ static void test_bad_frames(void) {
 
   assert(!feed(wire, length, &out));
   assert(out.sequence == 0xEEU);
+  assert(frame_receiver_fault_count(&receiver) == 2U);
+  assert(frame_receiver_fault_active(&receiver));
+
+  frame_receiver_clear_fault(&receiver);
+  assert(!frame_receiver_fault_active(&receiver));
   assert(frame_receiver_fault_count(&receiver) == 2U);
 
   const uint8_t empty[] = {0U};

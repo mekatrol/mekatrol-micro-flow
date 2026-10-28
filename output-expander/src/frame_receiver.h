@@ -30,6 +30,9 @@ typedef struct {
   // Number of malformed frames, UART errors, or queue/length overflows seen.
   // This is diagnostic state only: invalid traffic still receives no reply.
   uint32_t fault_count;
+
+  // Latched receive-fault indication, cleared after a valid message.
+  bool fault_active;
 } frame_receiver_t;
 
 /* Call after irq_rx_init(), before polling for received packets. */
@@ -53,5 +56,8 @@ bool frame_receiver_poll(frame_receiver_t *receiver, protocol_packet_t *packet);
 
 /* Monotonic receive-fault count for diagnostics and status indication. */
 uint32_t frame_receiver_fault_count(const frame_receiver_t *receiver);
+
+bool frame_receiver_fault_active(const frame_receiver_t *receiver);
+void frame_receiver_clear_fault(frame_receiver_t *receiver);
 
 #endif

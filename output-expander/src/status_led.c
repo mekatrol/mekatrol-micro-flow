@@ -32,7 +32,7 @@ rgb_t status_led_pattern(uint32_t now_ms, uint8_t brightness,
                          uint32_t command_elapsed_ms) {
   if (command_active &&
       command_elapsed_ms < STATUS_LED_COMMAND_DURATION_MS) {
-    return (rgb_t){0U, 0U, brightness};
+    return (rgb_t){0U, 0U, STATUS_LED_COMMAND_BRIGHTNESS};
   }
   if (error_present) {
     return (((now_ms / UINT32_C(300)) & UINT32_C(1)) == 0U)
