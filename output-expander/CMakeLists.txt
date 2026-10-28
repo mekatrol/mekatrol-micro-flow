@@ -27,6 +27,7 @@ if(CMAKE_CROSSCOMPILING)
     src/command_processor.c
     src/response_tx.c
     src/commissioning.c
+    src/config_fields.c    
     src/startup.S)
 
   # Prevent GCC from recognizing the loops inside our memory
@@ -377,5 +378,31 @@ else()
 
   set_tests_properties(commissioning PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
-    
+
+    # Test the portable configuration-field codec.
+  #
+  # WHAT:
+  # Compile production configuration serialization
+  # and validation logic without hardware dependencies.
+  #
+  # WHY:
+  # Validate exact protocol byte order and field sizes
+  # before implementing persistent configuration.
+  add_executable(output_expander_config_fields_test
+    tests/unit/test_config_fields.c
+    src/config_fields.c)
+
+  target_include_directories(output_expander_config_fields_test
+    PRIVATE src)
+
+  # Preserve strict compiler diagnostics and sanitizers.
+  output_expander_warnings(output_expander_config_fields_test)
+  output_expander_sanitizers(output_expander_config_fields_test)
+
+  add_test(
+    NAME config_fields
+    COMMAND output_expander_config_fields_test)
+
+  set_tests_properties(config_fields PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()
