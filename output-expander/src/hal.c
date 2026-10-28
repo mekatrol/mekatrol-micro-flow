@@ -1,20 +1,68 @@
-#include "registers.h"
 #include "hal.h"
+#include "registers.h"
 
 #include <stdint.h>
 
+/* Keep the board's output polarity in the HAL so applications select logical
+ * ON/OFF states without knowing whether a particular GPIO must be HIGH or LOW.
+ * Each bit corresponds to one of the eight logical outputs (bit 0 = output 1).
+ * hal_init() sets this before any output-level operation is performed. */
+static uint8_t hal_active_low_mask;
+
 static void gpio_config_output(volatile uint32_t *config, uint32_t pin) {
-  /* A pin occupies one four-bit field: MODE is the low two bits and CNF is
-   * the high two. Writing 0001 selects a 10 MHz general-purpose push-pull
-   * output. Ten megahertz is ample for relay/LED control and causes less
-   * switching noise than the fastest 50 MHz mode. */
+  /* Each GPIO pin has a four-bit configuration field: MODE in the low two
+   * bits and CNF in the high two bits. The 0001 setting configures a 10 MHz
+   * general-purpose push-pull output. This speed is sufficient for LEDs and
+   * relays and avoids selecting the fastest available output drive mode. */
   const uint32_t shift = pin * UINT32_C(4);
   *config =
       (*config & ~(UINT32_C(0xF) << shift)) | (GPIO_OUTPUT_10MHZ << shift);
 }
 
-void hal_init(void) {
-  /* Set the Flash latency before accelerating the CPU. Doing this in the
+static uint32_t output_port_c(uint8_t output_mask) {
+  /* Logical output bits 0-3 map to PC0, PC3, PC4 and PC5 respectively.
+   * Keep bit 0 in place and shift bits 1-3 up by two positions. Masking
+   * first ensures that outputs on port D cannot affect unrelated PC pins. */
+  return ((uint32_t)(output_mask & 0x01U)) |
+         ((uint32_t)(output_mask & 0x0EU) << 2);
+}
+
+static uint32_t output_port_d(uint8_t output_mask) {
+  /* Logical output bits 4-7 map to PD0, PD2, PD3 and PD4 respectively.
+   * Move bit 4 down to bit 0 and bits 5-7 down to bits 2-4. In particular,
+   * PD1 is never selected because it is the SWIO programming/debug pin. */
+  return ((uint32_t)(output_mask & 0x10U) >> 4) |
+         ((uint32_t)(output_mask & 0xE0U) >> 3);
+}
+
+static void hal_output_write(uint8_t output_mask, uint8_t on) {
+  /* Select the GPIO level required for each chosen logical output:
+   *   ON:  active-high -> HIGH, active-low -> LOW.
+   *   OFF: active-high -> LOW,  active-low -> HIGH.
+   * Only outputs selected in output_mask are included; all others must
+   * retain their current electrical state. */
+  const uint8_t high_mask =
+      on ? (uint8_t)(output_mask & (uint8_t)~hal_active_low_mask)
+         : (uint8_t)(output_mask & hal_active_low_mask);
+
+  /* Every selected output that is not driven HIGH must be driven LOW.
+   * XOR is safe because high_mask is always a subset of output_mask. */
+  const uint8_t low_mask = (uint8_t)(output_mask ^ high_mask);
+
+  /* CH32V003 GPIOx_BSHR is write-only set/reset control: bits 0-7 drive
+   * pins HIGH and bits 16-23 drive pins LOW; writing zero has no effect.
+   * Combining the two masks gives a single atomic write per port, without
+   * read-modify-write races or disturbing unselected GPIO pins (e.g. PC6). */
+  GPIOC_BSHR = output_port_c(high_mask) | (output_port_c(low_mask) << 16);
+  GPIOD_BSHR = output_port_d(high_mask) | (output_port_d(low_mask) << 16);
+}
+
+void hal_init(uint8_t active_low_mask) {
+  /* Save the output polarity before setting startup levels. The same mask
+   * is used by all later ON/OFF operations, so polarity remains consistent. */
+  hal_active_low_mask = active_low_mask;
+
+  /* Set Flash latency before accelerating the CPU. Doing this in the
    * opposite order could make the next instruction fetch unreliable. */
   FLASH_ACTLR = (FLASH_ACTLR & ~UINT32_C(3)) | UINT32_C(1);
 
@@ -40,22 +88,22 @@ void hal_init(void) {
    * so enable ports C and D before establishing output levels and modes. */
   RCC_APB2PCENR |= RCC_IOPCEN | RCC_IOPDEN;
 
-  /* Preload all eight active-low outputs HIGH while the pins are still
-   * inputs. When each pin becomes an output it therefore starts OFF without
-   * a momentary LOW pulse that could energize a relay or load. */
-  GPIOC_BSHR = (UINT32_C(1) << 0) | (UINT32_C(1) << 3) | (UINT32_C(1) << 4) |
-               (UINT32_C(1) << 5);
-  GPIOD_BSHR = (UINT32_C(1) << 0) | (UINT32_C(1) << 2) | (UINT32_C(1) << 3) |
-               (UINT32_C(1) << 4);
+  /* Preload the OFF level for all eight outputs while the pins are still
+   * inputs. Active-low pins are driven HIGH and active-high pins are driven
+   * LOW. When output mode is subsequently enabled, the GPIO output latch
+   * already contains the correct inactive level, avoiding an unwanted pulse.
+   * This does not control pin voltage during hardware reset itself. */
+  hal_output_off(UINT8_MAX);
+
   /* PC6 controls tied RS-485 DE and active-low /RE. Preload it LOW before
    * enabling output mode so the transceiver remains receive-safe and never
-   * drives the shared bus during startup. */
+   * drives the shared bus during startup. The eight-output masks omit PC6. */
   GPIOC_BCR = UINT32_C(1) << 6;
 
-  /* Configure the fixed board mapping. PC0/3/4/5 and PD0/2/3/4 are the eight
-   * active-low outputs; PC6 is the RS-485 direction signal. PD1 is
-   * intentionally untouched because it is the one-wire SWIO programming
-   * pin needed to reflash and recover the device. */
+  /* Configure the fixed board mapping. PC0/3/4/5 and PD0/2/3/4 are the
+   * eight logical outputs; their electrical ON/OFF polarity comes from
+   * active_low_mask. PC6 is the RS-485 direction signal. PD1 is deliberately
+   * untouched because it is the SWIO pin needed to reflash/recover the MCU. */
   gpio_config_output(&GPIOC_CFGLR, 0U);
   gpio_config_output(&GPIOC_CFGLR, 3U);
   gpio_config_output(&GPIOC_CFGLR, 4U);
@@ -75,33 +123,21 @@ void hal_init(void) {
 
 void hal_delay_half_second(void) {
   /* Unsigned subtraction remains correct when the 32-bit counter wraps, as
-   * long as the requested interval is less than one full counter period. */
+   * long as the requested interval is less than one full counter period.
+   * Busy-waiting is intentional in this minimal, interrupt-free test image. */
   const uint32_t start = SYSTICK_CNT;
   while ((uint32_t)(SYSTICK_CNT - start) < UINT32_C(24000000)) {
   }
 }
 
-void hal_toggle_outputs(void) {
-  /* All eight outputs are active-low and initially HIGH/OFF. */
-  static uint32_t output_is_high = UINT32_C(1);
+void hal_output_off(uint8_t output_mask) {
+  /* Apply the configured polarity to selected outputs only. Passing OFF
+   * drives active-low GPIO pins HIGH and active-high GPIO pins LOW. */
+  hal_output_write(output_mask, 0U);
+}
 
-  /* PC0, PC3, PC4, PC5 */
-  const uint32_t port_c_mask = (UINT32_C(1) << 0) | (UINT32_C(1) << 3) |
-                               (UINT32_C(1) << 4) | (UINT32_C(1) << 5);
-
-  /* PD0, PD2, PD3, PD4 */
-  const uint32_t port_d_mask = (UINT32_C(1) << 0) | (UINT32_C(1) << 2) |
-                               (UINT32_C(1) << 3) | (UINT32_C(1) << 4);
-
-  if (output_is_high != 0U) {
-    /* LOW = all eight outputs ON */
-    GPIOC_BCR = port_c_mask;
-    GPIOD_BCR = port_d_mask;
-    output_is_high = 0U;
-  } else {
-    /* HIGH = all eight outputs OFF */
-    GPIOC_BSHR = port_c_mask;
-    GPIOD_BSHR = port_d_mask;
-    output_is_high = UINT32_C(1);
-  }
+void hal_output_on(uint8_t output_mask) {
+  /* Apply the configured polarity to selected outputs only. Passing ON
+   * drives active-low GPIO pins LOW and active-high GPIO pins HIGH. */
+  hal_output_write(output_mask, 1U);
 }
