@@ -27,6 +27,38 @@
  * and DMA begins at the third value.
  */
 
+/*
+ * Register-layout and timing constants used below. Naming these values keeps
+ * the register expressions readable and records their derivation in one place.
+ */
+enum {
+  /* PC7 is pin number 7 within GPIO port C. GPIO bit-set/clear registers use
+   * one bit per pin, so its mask is 1 << 7 = 0x00000080. */
+  WS2812_GPIO_PIN = 7U,
+
+  /* GPIOC_CFGLR assigns four configuration bits to every pin: MODE[1:0] plus
+   * CNF[1:0]. PC7's field therefore begins at 7 * 4 = bit 28 and occupies
+   * bits 31:28. This is the source of the former unexplained shift by 28. */
+  GPIO_CONFIG_BITS_PER_PIN = 4U,
+  WS2812_GPIO_CONFIG_SHIFT = WS2812_GPIO_PIN * GPIO_CONFIG_BITS_PER_PIN,
+
+  /* The prescaler divides the timer clock by PSC+1. A register value of zero
+   * means divide by one, retaining the complete 48 MHz peripheral clock. */
+  WS2812_TIMER_PRESCALER = 0U,
+
+  /* WS2812 uses an 800 kHz serial bit rate. Dividing 48 MHz by 800 kHz gives
+   * 60 timer counts for each data-bit/PWM period. TIM1 counts from zero through
+   * ARR inclusive, so ARR must be 60-1 = 59. The resulting period is
+   * 60 / 48,000,000 s = 1.25 us. */
+  WS2812_TIMER_COUNTS_PER_BIT = 60U,
+  WS2812_TIMER_AUTO_RELOAD = WS2812_TIMER_COUNTS_PER_BIT - 1U,
+
+  /* duty[0] is loaded active by UG and duty[1] is placed in the preload
+   * register before the timer starts. DMA therefore begins after two staged
+   * entries, at duty[2]. */
+  WS2812_STAGED_DUTY_COUNT = 2U
+};
+
 void ws2812_hw_init(void) {
   /* RCC_AHBPCENR gates clocks to high-speed/AHB peripherals. RCC_DMA1EN sets
    * bit 0, enabling DMA1 register access and transfer operation. Read-modify-
@@ -49,16 +81,20 @@ void ws2812_hw_init(void) {
   /* GPIOC_BCR is the atomic bit-clear register. Writing bit 7 clears PC7's
    * output data latch without a read-modify-write race. Preloading LOW avoids
    * a spurious HIGH edge when ownership changes from GPIO to TIM1. */
-  GPIOC_BCR = UINT32_C(1) << 7;
+  GPIOC_BCR = UINT32_C(1) << WS2812_GPIO_PIN;
 
   /* GPIOC_CFGLR contains a four-bit configuration field for each pin 0..7;
-   * PC7 uses bits 31:28. Clear that field and write 0b1011:
+   * PC7 uses bits 31:28 because 7 pins * 4 bits/pin = a shift of 28. The
+   * GPIO_CONFIG_FIELD_MASK value is 0b1111 (0xF), which selects exactly one
+   * four-bit field before it is shifted to PC7's position. Clear that field,
+   * then write GPIO_AF_OUTPUT_50MHZ, whose value is 0b1011 (0xB):
    *   MODE7[1:0] = 11: output mode, maximum 50 MHz slew capability,
    *   CNF7[1:0]  = 10: alternate-function push-pull.
    * Push-pull is required because the WS2812 data input needs both actively
    * driven HIGH and actively driven LOW timing edges. */
-  GPIOC_CFGLR = (GPIOC_CFGLR & ~(GPIO_CONFIG_FIELD_MASK << 28)) |
-                (GPIO_AF_OUTPUT_50MHZ << 28);
+  GPIOC_CFGLR =
+      (GPIOC_CFGLR & ~(GPIO_CONFIG_FIELD_MASK << WS2812_GPIO_CONFIG_SHIFT)) |
+      (GPIO_AF_OUTPUT_50MHZ << WS2812_GPIO_CONFIG_SHIFT);
 
   /* Stop TIM1 and clear all CTLR1 modes before programming it. In particular,
    * CEN (bit 0) is zero, so the counter cannot run during setup. */
@@ -83,11 +119,19 @@ void ws2812_hw_init(void) {
 
   /* PSC divides the timer input clock by PSC+1. PSC=0 preserves the full
    * 48 MHz timer clock, giving one counter tick every 20.833 ns. */
-  TIM1_PSC = 0U;
+  TIM1_PSC = WS2812_TIMER_PRESCALER;
 
-  /* ATRLR is the auto-reload/period register (ARR). An up-counter visits zero
-   * through ARR inclusive, so ARR=59 produces exactly 60 clocks per period. */
-  TIM1_ATRLR = 59U;
+  /* ATRLR is the auto-reload/period register (ARR). This "period" is one
+   * complete WS2812 serial data bit and therefore one PWM cycle. With PSC=0,
+   * TIM1 receives the 48 MHz peripheral clock. The calculation is:
+   *
+   *     counts/bit = 48,000,000 clocks/s / 800,000 bits/s = 60 counts
+   *     ARR        = counts/bit - 1 = 59
+   *     bit period = 60 / 48,000,000 s = 1.25 us.
+   *
+   * The subtraction is required because an up-counter includes both CNT=0 and
+   * CNT=59 before rolling over, which is 60 distinct clock counts. */
+  TIM1_ATRLR = WS2812_TIMER_AUTO_RELOAD;
 
   /* RPTCR is TIM1's advanced-timer repetition counter. Zero requests an update
    * for every PWM period; a nonzero value would incorrectly hold duties for
@@ -169,13 +213,15 @@ void ws2812_hw_start(const ws2812_waveform_t *waveform) {
    * TIM1, so DMA starts at duty[2]. Memory increment advances two bytes after
    * each halfword and, because the structure is asserted contiguous, proceeds
    * from duty[23] directly into trailing_zero[0]. */
-  DMA1_CH3_MADDR = (uint32_t)(uintptr_t)&waveform->duty[2];
+  DMA1_CH3_MADDR =
+      (uint32_t)(uintptr_t)&waveform->duty[WS2812_STAGED_DUTY_COUNT];
 
   /* CNTR counts transfers, not bytes. There are 22 remaining data duties plus
    * 16 zero-tail duties, for 38 halfword transfers. The long tail ensures DMA
    * transfer-complete occurs well after every blue pulse has left TIM1's
    * active/preload pipeline. */
-  DMA1_CH3_CNTR = (WS2812_BIT_COUNT - 2U) + WS2812_TAIL_COUNT;
+  DMA1_CH3_CNTR =
+      (WS2812_BIT_COUNT - WS2812_STAGED_DUTY_COUNT) + WS2812_TAIL_COUNT;
 
   /* Configure DMA channel 3:
    *   DIR       (bit 4)  = 1: read memory, write peripheral,
@@ -234,7 +280,7 @@ void ws2812_hw_force_low(void) {
    * reset/latch time independent of residual timer state and gives a safe
    * starting point if a debugger inspects or restarts the peripheral. */
   TIM1_CH2CVR = 0U;
-  GPIOC_BCR = UINT32_C(1) << 7;
+  GPIOC_BCR = UINT32_C(1) << WS2812_GPIO_PIN;
 
   /* Clear timer status and every DMA channel-3 flag. The next frame also clears
    * DMA flags defensively before configuration, but cleaning up here documents

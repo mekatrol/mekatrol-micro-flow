@@ -43,8 +43,11 @@ static void encode(rgb_t color, uint16_t duty[WS2812_BIT_COUNT]) {
   const uint32_t word = status_led_grb_word(color);
 
   for (uint32_t bit = 0U; bit < WS2812_BIT_COUNT; ++bit) {
-    /* Walk from bit 23 down to bit 0 so every colour byte is MSB-first. */
-    const uint32_t mask = UINT32_C(1) << (23U - bit);
+    /* WS2812_BIT_COUNT-1 is 24-1=23, the highest valid bit index in a 24-bit
+     * word. Subtracting the loop index walks 23,22,...,0, making the entire GRB
+     * word—and consequently every eight-bit channel—most-significant-bit first.
+     */
+    const uint32_t mask = UINT32_C(1) << ((WS2812_BIT_COUNT - 1U) - bit);
 
     /* TIM1 counts 60 clocks per 1.25 us period. A zero uses 18 HIGH clocks
      * (375 ns) and a one uses 36 HIGH clocks (750 ns). PWM mode 1 drives the
@@ -75,8 +78,8 @@ static void start_pending(ws2812_t *driver) {
   driver->displayed_valid = true;
 
   /* ws2812_hw_start() stages the first two compare values and starts TIM1 and
-   * DMA. It returns immediately; the approximately 50 us data-plus-tail stream
-   * proceeds entirely in hardware. */
+   * DMA. It returns immediately. The hardware stream contains 24 data periods
+   * plus 16 tail periods: (24 + 16) * 1.25 us = 50 us total. */
   ws2812_hw_start(&driver->waveform);
   driver->state = WS2812_TRANSMITTING;
 }
