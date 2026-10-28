@@ -6,7 +6,7 @@
 static bool complete;
 static unsigned starts;
 static unsigned forced_low;
-static uint16_t captured[WS2812_BIT_COUNT + 2U];
+static uint16_t captured[WS2812_BIT_COUNT + WS2812_TAIL_COUNT];
 
 void ws2812_hw_init(void) {
   complete = false;
@@ -15,7 +15,7 @@ void ws2812_hw_init(void) {
 }
 
 void ws2812_hw_start(const ws2812_waveform_t *waveform) {
-  for (size_t i = 0U; i < WS2812_BIT_COUNT + 2U; ++i) {
+  for (size_t i = 0U; i < WS2812_BIT_COUNT + WS2812_TAIL_COUNT; ++i) {
     captured[i] = (i < WS2812_BIT_COUNT)
                       ? waveform->duty[i]
                       : waveform->trailing_zero[i - WS2812_BIT_COUNT];
@@ -41,8 +41,10 @@ int main(void) {
   assert(captured[8] == WS2812_DUTY_ZERO);
   assert(captured[9] == WS2812_DUTY_ONE);
   assert(captured[23] == WS2812_DUTY_ONE);
-  assert(captured[24] == 0U);
-  assert(captured[25] == 0U);
+  for (size_t i = WS2812_BIT_COUNT;
+       i < WS2812_BIT_COUNT + WS2812_TAIL_COUNT; ++i) {
+    assert(captured[i] == 0U);
+  }
 
   /* Requests in flight collapse to the latest value without touching DMA. */
   ws2812_set_color(&driver, (rgb_t){1U, 2U, 3U});
@@ -50,14 +52,9 @@ int main(void) {
   assert(starts == 1U);
   complete = true;
   ws2812_service(&driver, 100U);
-  assert(forced_low == 0U);
-  assert(ws2812_state(&driver) == WS2812_DRAINING);
-  ws2812_service(&driver, 100U + WS2812_DMA_DRAIN_TICKS - 1U);
-  assert(forced_low == 0U);
-  ws2812_service(&driver, 100U + WS2812_DMA_DRAIN_TICKS);
   assert(forced_low == 1U);
   assert(ws2812_state(&driver) == WS2812_RESET_LOW);
-  const uint32_t first_reset = 100U + WS2812_DMA_DRAIN_TICKS;
+  const uint32_t first_reset = 100U;
   ws2812_service(&driver, first_reset + WS2812_RESET_TICKS - 1U);
   assert(starts == 1U);
   ws2812_service(&driver, first_reset + WS2812_RESET_TICKS);
@@ -67,9 +64,7 @@ int main(void) {
   /* Re-requesting the currently displayed color produces no third frame. */
   complete = true;
   ws2812_service(&driver, 20000U);
-  ws2812_service(&driver, 20000U + WS2812_DMA_DRAIN_TICKS);
-  ws2812_service(&driver, 20000U + WS2812_DMA_DRAIN_TICKS +
-                              WS2812_RESET_TICKS);
+  ws2812_service(&driver, 20000U + WS2812_RESET_TICKS);
   ws2812_set_color(&driver, (rgb_t){4U, 5U, 6U});
   ws2812_service(&driver, 40000U);
   assert(starts == 2U);

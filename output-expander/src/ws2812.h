@@ -7,23 +7,22 @@
 #include <stdint.h>
 
 #define WS2812_BIT_COUNT 24U
+#define WS2812_TAIL_COUNT 16U
 #define WS2812_DUTY_ZERO 18U
 #define WS2812_DUTY_ONE 36U
-#define WS2812_DMA_DRAIN_TICKS UINT32_C(120)
 #define WS2812_RESET_TICKS UINT32_C(14400)
 
 typedef enum {
   WS2812_IDLE,
   WS2812_TRANSMITTING,
-  WS2812_DRAINING,
   WS2812_RESET_LOW
 } ws2812_state_t;
 
 typedef struct {
-  /* Two adjacent zeroes finish the update-phased DMA stream. The first is
-   * latched immediately after bit 24; the second produces DMA completion. */
+  /* A DMA-owned LOW tail keeps transfer-complete well beyond the final data
+   * bit, independent of the exact CCR preload/update ordering in TIM1. */
   uint16_t duty[WS2812_BIT_COUNT];
-  uint16_t trailing_zero[2];
+  uint16_t trailing_zero[WS2812_TAIL_COUNT];
 } ws2812_waveform_t;
 
 typedef struct {

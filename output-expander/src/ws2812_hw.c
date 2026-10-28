@@ -4,68 +4,241 @@
 
 #include <stdint.h>
 
+/*
+ * CH32V003 TIM1/DMA WS2812 backend
+ * --------------------------------
+ *
+ * TIM1 channel 2 produces an 800 kHz PWM waveform on PC7. At the 48 MHz
+ * peripheral clock, ARR=59 gives 60 counter clocks per PWM period:
+ *
+ *     48,000,000 / 60 = 800,000 periods/s = 1.25 us/period
+ *
+ * PWM mode 1 makes CH2 HIGH while TIM1_CNT is less than TIM1_CH2CVR (CCR2),
+ * then LOW until the counter rolls over. Compare values 18 and 36 therefore
+ * create the WS2812 zero and one HIGH times. DMA replaces CCR2 once per timer
+ * update, leaving the CPU free to service USART interrupts and foreground
+ * protocol work.
+ *
+ * CCR2 preload is central to the design. Software/DMA writes go to a shadow
+ * register while the active compare value controls the current PWM period.
+ * The next update event copies the shadow value into the active register.
+ * Consequently the first value must be made active with a software update,
+ * the second must be placed in the shadow register before the timer starts,
+ * and DMA begins at the third value.
+ */
+
 void ws2812_hw_init(void) {
+  /* RCC_AHBPCENR gates clocks to high-speed/AHB peripherals. RCC_DMA1EN sets
+   * bit 0, enabling DMA1 register access and transfer operation. Read-modify-
+   * write preserves the clock state of every unrelated AHB peripheral. */
   RCC_AHBPCENR |= RCC_DMA1EN;
+
+  /* RCC_APB2PCENR gates APB2 peripherals. Enable:
+   *   AFIOEN  (bit 0): alternate-function remapping,
+   *   IOPCEN  (bit 4): GPIO port C configuration/output registers,
+   *   TIM1EN  (bit 11): advanced timer 1.
+   * Other APB2 clocks are preserved. */
   RCC_APB2PCENR |= RCC_AFIOEN | RCC_TIM1EN | RCC_IOPCEN;
 
-  /* TIM1 remap group 1 places CH2 on PC7. Preserve every unrelated remap. */
+  /* AFIO_PCFR1 TIM1_RM[1:0] occupies bits 7:6 and selects the physical pins
+   * used by TIM1 channels. Clear only those two bits, then select remap group
+   * 1 (binary 01). On CH32V003 this routes TIM1_CH2 to PC7. Every unrelated
+   * USART, I2C, SPI, and debug remap field remains unchanged. */
   AFIO_PCFR1 = (AFIO_PCFR1 & ~AFIO_TIM1_RM_MASK) | AFIO_TIM1_RM_GROUP1;
 
-  /* Keep the output latch LOW while changing PC7 to TIM1 alternate output. */
+  /* GPIOC_BCR is the atomic bit-clear register. Writing bit 7 clears PC7's
+   * output data latch without a read-modify-write race. Preloading LOW avoids
+   * a spurious HIGH edge when ownership changes from GPIO to TIM1. */
   GPIOC_BCR = UINT32_C(1) << 7;
+
+  /* GPIOC_CFGLR contains a four-bit configuration field for each pin 0..7;
+   * PC7 uses bits 31:28. Clear that field and write 0b1011:
+   *   MODE7[1:0] = 11: output mode, maximum 50 MHz slew capability,
+   *   CNF7[1:0]  = 10: alternate-function push-pull.
+   * Push-pull is required because the WS2812 data input needs both actively
+   * driven HIGH and actively driven LOW timing edges. */
   GPIOC_CFGLR = (GPIOC_CFGLR & ~(GPIO_CONFIG_FIELD_MASK << 28)) |
                 (GPIO_AF_OUTPUT_50MHZ << 28);
 
+  /* Stop TIM1 and clear all CTLR1 modes before programming it. In particular,
+   * CEN (bit 0) is zero, so the counter cannot run during setup. */
   TIM1_CTLR1 = 0U;
+
+  /* TIM1_CTLR2.CCDS (bit 3) selects when capture/compare DMA requests occur.
+   * Setting it redirects the enabled CH2 DMA request to the timer update
+   * boundary instead of the within-period compare edge. This provides one DMA
+   * write per complete WS2812 bit period while still using TIM1_CH2's DMA1_CH3
+   * request route; it is not the separate TIM1_UP/DMA1_CH5 request. */
   TIM1_CTLR2 = TIM_CTLR2_CCDS;
+
+  /* TIM1_DMAINTENR controls timer interrupt and DMA request generation. Start
+   * with every source disabled. CC2DE (bit 10) is enabled only after DMA1_CH3
+   * has a valid address and count in ws2812_hw_start(). */
   TIM1_DMAINTENR = 0U;
+
+  /* TIM1_CCER controls whether each timer channel reaches its output pin and
+   * also controls polarity. Zero disables CH2 while retaining normal active-
+   * HIGH polarity for when CC2E is later set. */
   TIM1_CCER = 0U;
+
+  /* PSC divides the timer input clock by PSC+1. PSC=0 preserves the full
+   * 48 MHz timer clock, giving one counter tick every 20.833 ns. */
   TIM1_PSC = 0U;
+
+  /* ATRLR is the auto-reload/period register (ARR). An up-counter visits zero
+   * through ARR inclusive, so ARR=59 produces exactly 60 clocks per period. */
   TIM1_ATRLR = 59U;
+
+  /* RPTCR is TIM1's advanced-timer repetition counter. Zero requests an update
+   * for every PWM period; a nonzero value would incorrectly hold duties for
+   * multiple WS2812 bits before generating the next DMA request. */
   TIM1_RPTCR = 0U;
+
+  /* TIM1_CHCTLR1 holds the output-compare configuration for channels 1 and 2.
+   * For channel 2, OC2M[2:0] is bits 14:12 and value 110 selects PWM mode 1;
+   * OC2PE is bit 11 and enables CCR2 preload. All input-capture and fast-output
+   * options remain disabled. */
   TIM1_CHCTLR1 = TIM_CHCTLR1_OC2M_PWM1 | TIM_CHCTLR1_OC2PE;
+
+  /* A zero compare produces a continuously LOW PWM period. Use it as the safe
+   * initial value before any frame has been requested. */
   TIM1_CH2CVR = 0U;
+
+  /* TIM1 is an advanced timer, so channel enables alone are insufficient.
+   * BDTR.MOE (bit 15), the main-output enable, opens the final output gate.
+   * Break/dead-time/lock features remain disabled because this is a single
+   * logic waveform rather than a complementary motor-control output. */
   TIM1_BDTR = TIM_BDTR_MOE;
+
+  /* SWEVGR.UG (bit 0) generates a software update event. It loads PSC/ARR and
+   * the zero CCR2 preload into their active timer registers without waiting
+   * for a real counter overflow. UG also sets status flags, cleared below. */
   TIM1_SWEVGR = TIM_SWEVGR_UG;
+
+  /* Clear all timer status flags left by reset/setup/UG. This backend polls the
+   * DMA flag rather than timer flags, but stale flags complicate debugging and
+   * could become significant if interrupts are added later. */
   TIM1_INTFR = 0U;
 }
 
 void ws2812_hw_start(const ws2812_waveform_t *waveform) {
+  /* Re-establish a fully stopped, request-free baseline. These operations also
+   * make restart safe after the previous frame's reset interval:
+   *   CTLR1.CEN=0 stops counting,
+   *   DMAINTENR.CC2DE=0 stops new TIM1_CH2 DMA requests,
+   *   DMA_CFGR.EN=0 permits DMA address/count reconfiguration. */
   TIM1_CTLR1 &= ~TIM_CTLR1_CEN;
   TIM1_DMAINTENR &= ~TIM_DMAINTENR_CC2DE;
   DMA1_CH3_CFGR &= ~DMA_CFGR_EN;
+
+  /* DMA1_INTFCR is write-one-to-clear. Bits 11:8 clear channel 3's transfer
+   * error, half-transfer, transfer-complete, and global flags. Clearing TCIF3
+   * here prevents an old frame from appearing immediately complete. */
   DMA1_INTFCR = DMA_CH3_CLEAR_MASK;
 
+  /* Stage data bit zero. Because OC2PE is enabled, this write initially enters
+   * CCR2's preload/shadow register rather than changing an active period. */
   TIM1_CH2CVR = waveform->duty[0];
+
+  /* Keep one update per period and restart the counter at the beginning of a
+   * PWM cell. CNT=0 is important: enabling midway through a period would make
+   * the first WS2812 bit shorter than 1.25 us. */
   TIM1_RPTCR = 0U;
   TIM1_CNT = 0U;
+
+  /* UG transfers duty[0] from the CCR2 preload register to the active compare
+   * register and reloads the prescaler. TIM1 remains stopped, so no pulse is
+   * emitted by this software-generated update. */
   TIM1_SWEVGR = TIM_SWEVGR_UG;
+
+  /* UG sets UIF and may set other status state. Clear it before the real frame;
+   * DMA request generation is still disabled, so UG cannot consume a duty. */
   TIM1_INTFR = 0U;
+
+  /* With duty[0] active, this write leaves duty[1] in CCR2's preload register.
+   * The first real overflow will make duty[1] active. DMA can therefore begin
+   * at duty[2] without losing or duplicating either of the first two bits. */
   TIM1_CH2CVR = waveform->duty[1];
 
+  /* PADDR is DMA channel 3's fixed peripheral address. It points at TIM1 CCR2,
+   * represented here by TIM1_CH2CVR. Peripheral increment is not enabled, so
+   * every transfer writes another 16-bit duty to this same register. */
   DMA1_CH3_PADDR = (uint32_t)(uintptr_t)&TIM1_CH2CVR;
+
+  /* MADDR is the source address in SRAM. The first two values are already in
+   * TIM1, so DMA starts at duty[2]. Memory increment advances two bytes after
+   * each halfword and, because the structure is asserted contiguous, proceeds
+   * from duty[23] directly into trailing_zero[0]. */
   DMA1_CH3_MADDR = (uint32_t)(uintptr_t)&waveform->duty[2];
-  DMA1_CH3_CNTR = 24U;
+
+  /* CNTR counts transfers, not bytes. There are 22 remaining data duties plus
+   * 16 zero-tail duties, for 38 halfword transfers. The long tail ensures DMA
+   * transfer-complete occurs well after every blue pulse has left TIM1's
+   * active/preload pipeline. */
+  DMA1_CH3_CNTR = (WS2812_BIT_COUNT - 2U) + WS2812_TAIL_COUNT;
+
+  /* Configure DMA channel 3:
+   *   DIR       (bit 4)  = 1: read memory, write peripheral,
+   *   MINC      (bit 7)  = 1: advance the source after each duty,
+   *   PSIZE     (9:8)    = 01: 16-bit peripheral write,
+   *   MSIZE     (11:10)  = 01: 16-bit memory read,
+   *   PL        (13:12)  = 10: high arbitration priority.
+   * EN remains zero until the full configuration is committed. Circular mode,
+   * peripheral increment, memory-to-memory mode, and DMA interrupts are off. */
   DMA1_CH3_CFGR = DMA_CFGR_DIR | DMA_CFGR_MINC | DMA_CFGR_PSIZE_16 |
                   DMA_CFGR_MSIZE_16 | DMA_CFGR_PL_HIGH;
 
+  /* CCER.CC2E (bit 4) connects TIM1 channel 2 to the remapped PC7 output. The
+   * counter is still stopped, so enabling the channel cannot start a partial
+   * pulse. Normal polarity means PWM HIGH is a physical HIGH on PC7. */
   TIM1_CCER = TIM_CCER_CC2E;
+
+  /* Arm the consumer before its request source. DMA_CFGR.EN makes channel 3
+   * ready, then DMAINTENR.CC2DE permits TIM1 CH2 update-phased requests. This
+   * ordering prevents a timer request from arriving at a disabled channel. */
   DMA1_CH3_CFGR |= DMA_CFGR_EN;
   TIM1_DMAINTENR |= TIM_DMAINTENR_CC2DE;
+
+  /* Start TIM1 by setting CTLR1.CEN (bit 0). ARPE (bit 7) enables ARR preload,
+   * keeping the 60-clock period stable at update boundaries. Assignment is
+   * intentional: all other counting modes remain cleared (up-counting,
+   * edge-aligned, continuous operation, updates enabled). */
   TIM1_CTLR1 = TIM_CTLR1_ARPE | TIM_CTLR1_CEN;
 }
 
 bool ws2812_hw_complete(void) {
+  /* DMA1_INTFR.TCIF3 (bit 9) is set after CNTR reaches zero. It is a sticky
+   * hardware flag, so foreground polling cannot miss a short event. With the
+   * 16-period zero tail included in CNTR, true means every data duty and ample
+   * LOW padding have already been supplied to TIM1. */
   return (DMA1_INTFR & DMA_CH3_TCIF) != 0U;
 }
 
 void ws2812_hw_force_low(void) {
+  /* First stop additional timer requests, then disable DMA channel 3. This
+   * prevents a late request from racing peripheral shutdown. */
   TIM1_DMAINTENR &= ~TIM_DMAINTENR_CC2DE;
   DMA1_CH3_CFGR &= ~DMA_CFGR_EN;
+
+  /* Stop the counter before disconnecting the output. The DMA tail has held
+   * CCR2 at zero, so PC7 is already LOW and no active HIGH pulse is shortened.
+   */
   TIM1_CTLR1 &= ~TIM_CTLR1_CEN;
+
+  /* Clear CCER.CC2E to disconnect TIM1_CH2 from PC7. GPIOC remains configured
+   * for alternate-function push-pull, but its previously cleared output latch
+   * provides the safe LOW level once the timer channel is disabled. */
   TIM1_CCER &= ~TIM_CCER_CC2E;
+
+  /* Leave both the compare register and GPIO latch explicitly LOW. This makes
+   * reset/latch time independent of residual timer state and gives a safe
+   * starting point if a debugger inspects or restarts the peripheral. */
   TIM1_CH2CVR = 0U;
   GPIOC_BCR = UINT32_C(1) << 7;
+
+  /* Clear timer status and every DMA channel-3 flag. The next frame also clears
+   * DMA flags defensively before configuration, but cleaning up here documents
+   * and enforces the idle-state invariant. */
   TIM1_INTFR = 0U;
   DMA1_INTFCR = DMA_CH3_CLEAR_MASK;
 }
