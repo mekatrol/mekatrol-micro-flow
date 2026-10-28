@@ -1,0 +1,18 @@
+{
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.arguments": [
+    "--query-driver=**/riscv-none-elf-gcc"
+  ],
+  "clangd.fallbackFlags": [
+    "-xc",
+    "-std=c11",
+    "-I${workspaceFolder}/src"
+  ],
+  "cmake.configureOnOpen": true,
+  "cmake.sourceDirectory": "${workspaceFolder}",
+  "cmake.useCMakePresets": "always",
+  "editor.semanticHighlighting.enabled": true,
+  "files.associations": {
+    "*.h": "c"
+  }
+}

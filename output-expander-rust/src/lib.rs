@@ -59,6 +59,7 @@ pub mod status_led;
 pub mod uid;
 
 /// USART1 configuration and interrupt handling.
+#[cfg(target_arch = "riscv32")]
 pub mod usart;
 
 /// Progress checks that decide whether the watchdog may be fed.

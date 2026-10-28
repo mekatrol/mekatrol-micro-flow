@@ -1,8 +1,7 @@
 {
   "C_Cpp.intelliSenseEngine": "disabled",
   "clangd.arguments": [
-    "--compile-commands-dir=${workspaceFolder}/core-controller/build/host-debug",
-    "--query-driver=**/arm-none-eabi-gcc,**/riscv32-unknown-elf-gcc"
+    "--query-driver=**/arm-none-eabi-gcc,**/riscv32-unknown-elf-gcc,**/riscv-none-elf-gcc"
   ],
   "clangd.fallbackFlags": [
     "-xc",
@@ -22,7 +21,7 @@
     "*.h": "c"
   },
   "rust-analyzer.linkedProjects": [
-    "${workspaceFolder}/output-expander/Cargo.toml"
+    "${workspaceFolder}/output-expander-rust/Cargo.toml"
   ],
   "rust-analyzer.check.allTargets": false,
   "[rust]": {

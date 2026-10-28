@@ -1,0 +1,47 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "host-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/host-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "OUTPUT_EXPANDER_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "host-release",
+      "inherits": "host-debug",
+      "binaryDir": "${sourceDir}/build/host-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "OUTPUT_EXPANDER_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "ch32v003-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ch32v003-debug",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/xpack-riscv-none-elf-gcc.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "ch32v003-release",
+      "inherits": "ch32v003-debug",
+      "binaryDir": "${sourceDir}/build/ch32v003-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "MinSizeRel" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "host-debug", "configurePreset": "host-debug" },
+    { "name": "host-release", "configurePreset": "host-release" },
+    { "name": "ch32v003-debug", "configurePreset": "ch32v003-debug" },
+    { "name": "ch32v003-release", "configurePreset": "ch32v003-release" }
+  ],
+  "testPresets": [
+    { "name": "host-debug", "configurePreset": "host-debug", "output": { "outputOnFailure": true } },
+    { "name": "host-release", "configurePreset": "host-release", "output": { "outputOnFailure": true } }
+  ]
+}

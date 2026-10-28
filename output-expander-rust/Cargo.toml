@@ -8,6 +8,12 @@ description = "Firmware for CH32V003-based Mekatrol output expansion boards"
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "output-expander"
+path = "src/main.rs"
+test = false
+bench = false
+
 [target.'cfg(all(target_arch = "riscv32", target_os = "none"))'.dependencies]
 ch32-hal = { git = "https://github.com/ch32-rs/ch32-hal", features = [
     "ch32v003f4p6",

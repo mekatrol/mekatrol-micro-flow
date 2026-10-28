@@ -25,7 +25,7 @@ All C builds require:
 
 CH32V003 firmware builds additionally require:
 
-- **xPack GNU RISC-V Embedded GCC 14.3.0-1**;
+- ****xPack GNU RISC-V Embedded GCC 14.3.0-1****;
 - the `riscv-none-elf-*` programs from that distribution; and
 - a supported WCH-LinkE flashing backend selected and pinned by Phase 0 of the
   migration plan.
@@ -65,18 +65,108 @@ described below.
 
 ## Install the pinned RISC-V cross-compiler
 
-Download xPack GNU RISC-V Embedded GCC **14.3.0-1** for the host operating
-system and architecture from the official release page:
+The CH32V003 firmware requires **xPack GNU RISC-V Embedded GCC 14.3.0-1**. Do not substitute the ESP-IDF `riscv32-esp-elf-gcc`, Ubuntu's `riscv64-unknown-elf-gcc`, or an unpinned xPack release. Download the compiler separately from the common build tools.
 
-- <https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/tag/v14.3.0-1>
-- <https://xpack-dev-tools.github.io/riscv-none-elf-gcc-xpack/docs/install/>
+Official references:
 
-Download the portable archive, record its published checksum with the project
-dependency inventory, verify the download, and extract it into a versioned
-directory. Do not replace the directory contents in place when evaluating a
-new compiler.
+- https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/tag/v14.3.0-1
+- https://xpack-dev-tools.github.io/riscv-none-elf-gcc-xpack/docs/install/
 
-Suggested per-user locations are:
+### Linux x86-64: download, verify, and extract
+
+Run these commands in order. **Downloading the archive does not install the compiler; the `tar` extraction step is essential.** The resulting installation is kept in a versioned directory under `~/opt`, independent of other projects' tool environments.
+
+```sh
+mkdir -p "$HOME/opt" "$HOME/Downloads"
+cd "$HOME/Downloads"
+wget https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v14.3.0-1/xpack-riscv-none-elf-gcc-14.3.0-1-linux-x64.tar.gz
+```
+
+Before extracting, check the downloaded archive against the SHA-256 checksum published with the official release. Record the verified checksum in the project dependency inventory. For example, once you have copied the expected SHA-256 value from the release page:
+
+```sh
+sha256sum xpack-riscv-none-elf-gcc-14.3.0-1-linux-x64.tar.gz
+# Compare the printed hash with the official published SHA-256 value.
+```
+
+**Extract the archive** (this is a required step):
+
+```sh
+tar -xzf xpack-riscv-none-elf-gcc-14.3.0-1-linux-x64.tar.gz -C "$HOME/opt"
+```
+
+Confirm the executable was extracted to the expected location:
+
+```sh
+ls -l "$HOME/opt/xpack-riscv-none-elf-gcc-14.3.0-1/bin/riscv-none-elf-gcc"
+```
+
+If it is not there, inspect the actual extracted directory structure before changing `PATH`:
+
+```sh
+find "$HOME/opt" -type f -name 'riscv-none-elf-gcc' -print
+```
+
+### Linux: configure the shell PATH
+
+For the current terminal session:
+
+```sh
+export PATH="$HOME/opt/xpack-riscv-none-elf-gcc-14.3.0-1/bin:$PATH"
+```
+
+For a persistent Bash setup, add the entry **once** to `~/.bashrc` (do not append it repeatedly on every setup attempt):
+
+```sh
+cat >> "$HOME/.bashrc" <<'EOF'
+
+# CH32V003 firmware — xPack GNU RISC-V GCC 14.3.0-1
+case ":$PATH:" in
+  *":$HOME/opt/xpack-riscv-none-elf-gcc-14.3.0-1/bin:"*) ;;
+  *) export PATH="$HOME/opt/xpack-riscv-none-elf-gcc-14.3.0-1/bin:$PATH" ;;
+esac
+EOF
+source "$HOME/.bashrc"
+```
+
+If an entry for this toolchain already exists in `~/.bashrc`, update it instead of adding another block. Do not commit a developer-specific absolute path to `CMakePresets.json`.
+
+### Verify the cross-compiler and build tools
+
+Open a new terminal and run:
+
+```sh
+command -v cmake
+command -v ninja
+command -v riscv-none-elf-gcc
+riscv-none-elf-gcc --version
+riscv-none-elf-objcopy --version
+riscv-none-elf-objdump --version
+riscv-none-elf-size --version
+```
+
+`command -v riscv-none-elf-gcc` should point into `~/opt/xpack-riscv-none-elf-gcc-14.3.0-1/bin`, and GCC must report version 14.3.0. A directory being present in `PATH` does **not** prove the binary exists there. If `command -v` returns nothing, first check that the archive was extracted.
+
+Confirm the required architecture/ABI flags are accepted:
+
+```sh
+printf 'void probe(void) {}\n' | \
+  riscv-none-elf-gcc -x c -c -o /tmp/ch32v003-toolchain-probe.o - \
+    -march=rv32ec_zicsr -mabi=ilp32e -ffreestanding
+riscv-none-elf-objdump -f /tmp/ch32v003-toolchain-probe.o
+```
+
+Then, from `output-expander/`, discard any failed CMake configuration and build:
+
+```sh
+./tools/build.sh ch32v003-debug --clean
+```
+
+If CMake reports a missing `CMAKE_C_COMPILER`, first check the executable and `PATH`. A missing `CMAKE_ASM_COMPILER` may be a consequence of the missing C compiler. If CMake also reports that Ninja is missing, check `command -v ninja` and `ninja --version` separately; don't assume Ninja is absent solely from that CMake message.
+
+### Other platforms
+
+Suggested installation locations:
 
 ```text
 Linux:   $HOME/opt/xpack-riscv-none-elf-gcc-14.3.0-1
@@ -84,18 +174,7 @@ macOS:   $HOME/opt/xpack-riscv-none-elf-gcc-14.3.0-1
 Windows: %LOCALAPPDATA%\xPacks\riscv-none-elf-gcc\14.3.0-1
 ```
 
-Add that installation's `bin` directory to `PATH`. For a temporary Linux or
-macOS shell, for example:
-
-```sh
-export PATH="$HOME/opt/xpack-riscv-none-elf-gcc-14.3.0-1/bin:$PATH"
-```
-
-For a persistent installation, add the equivalent entry to the user's shell
-profile or operating-system environment. Do not commit a developer-specific
-absolute compiler path to `CMakePresets.json`.
-
-On Windows PowerShell, a temporary session can use:
+On macOS, download and extract the archive for the appropriate host architecture and configure the corresponding `bin` directory in the shell profile. On Windows PowerShell, after installing the matching archive in the suggested directory, a temporary session can use:
 
 ```powershell
 $toolchain = Join-Path $env:LOCALAPPDATA 'xPacks\riscv-none-elf-gcc\14.3.0-1\bin'
@@ -112,10 +191,7 @@ riscv-none-elf-size
 riscv-none-elf-nm
 ```
 
-It must check the compiler version and fail clearly if the selected compiler is
-not the pinned 14.3.0-1 distribution. The check should permit the platform-
-specific suffix text printed by xPack while verifying the GCC 14.3 series and
-the recorded xPack package version through a project toolchain manifest.
+It must check the compiler version and fail clearly if the selected compiler is not the pinned 14.3.0-1 distribution. The check should permit platform-specific suffix text printed by xPack while verifying GCC 14.3 and the xPack package version through the project toolchain manifest.
 
 ## CH32V003 compiler target
 
@@ -201,11 +277,11 @@ root-owned build artifacts and conceals incorrect device permissions.
 For the current CH32V003F4P6 board, verify the schematic and board revision
 before connecting:
 
-| WCH-LinkE | Target |
-|---|---|
-| SWDIO/SWIO | PD1/SWIO |
-| GND | GND |
-| 3V3 | Leave disconnected when the board is separately powered |
+\| WCH-LinkE | Target |
+\|---|---|
+\| SWDIO/SWIO | PD1/SWIO |
+\| GND | GND |
+\| 3V3 | Leave disconnected when the board is separately powered |
 
 Power the board through its intended supply and keep NRST/PD7 accessible for
 recovery. Phase 0 must document any board-revision differences rather than
@@ -233,7 +309,7 @@ without linking:
 
 ```sh
 printf 'void probe(void) {}\n' |
-  riscv-none-elf-gcc -x c -c -o /tmp/ch32v003-toolchain-probe.o - \
+  riscv-none-elf-gcc -x c -c -o /tmp/ch32v003-toolchain-probe.o - \\
     -march=rv32ec_zicsr -mabi=ilp32e -ffreestanding
 riscv-none-elf-objdump -f /tmp/ch32v003-toolchain-probe.o
 ```

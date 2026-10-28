@@ -56,7 +56,8 @@ dkms.conf
 
 # Project build output
 /core-controller/build/
-/output-expander/target/
+/output-expander-rust/target/
+/output-expander/build/
 
 # CMake and CTest output from non-standard or accidental in-source builds
 CMakeFiles/

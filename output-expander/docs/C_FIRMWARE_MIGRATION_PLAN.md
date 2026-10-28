@@ -111,12 +111,11 @@ output-expander/                # canonical C product
     toolchains/
     warnings.cmake
     sanitizers.cmake
-  include/output_expander/     # public portable C interfaces
   src/
-    app/                       # foreground orchestration and command behavior
-    core/                      # portable protocol/config/output logic
-    boards/ch32v003f4p6/       # board pin map and firmware entry point
-    soc/ch32v003/              # registers, drivers, IRQs, startup and linker
+    main.c                     # fixed-board firmware entry point
+    ch32v003.c, ch32v003.h     # registers, clock, GPIO and peripheral drivers
+    startup.S, ch32v003.ld     # reset/runtime initialization and memory layout
+    *.c, *.h                   # portable application and protocol modules
   tests/
     vectors/                   # language-neutral protocol/config vectors
     unit/                      # native host tests
@@ -136,6 +135,10 @@ output-expander-rust/           # legacy/reference and recovery firmware
   src/
   docs/                        # retained Rust-specific historical/build docs
 ```
+
+The C product targets one fixed CH32V003F4P6 board, so its production source
+directory is intentionally flat. Do not recreate generic `soc/`, `boards/`, or
+`core/` layers unless the product genuinely gains another hardware target.
 
 Use `output-expander/build/<preset>/` for all CMake output. Rust continues to
 use `output-expander-rust/target/`. This permits several C presets to coexist
@@ -200,6 +203,19 @@ port one cohesive feature at a time, add tests, build both implementations, and
 record evidence before proceeding.
 
 ### Phase 0 — Clean, build, flash, and test foundation
+
+**Implementation status (2026-10-28): software complete; physical evidence
+pending attached hardware.** The Rust project was moved intact to
+`output-expander-rust/`; the canonical C project now provides independent host
+and CH32V003 presets, pinned-toolchain enforcement, startup/linker/register
+ownership, memory limits, shell/PowerShell wrappers, sanitizer-backed host
+testing, and the safe PC0 1 Hz smoke image. Clean debug/release images and ELF
+layout/disassembly were verified. See [PHASE0_EVIDENCE.md](PHASE0_EVIDENCE.md)
+and [DEPENDENCIES.md](DEPENDENCIES.md). No WCH-LinkE was attached during this
+work, so the flash/reset/observed-heartbeat/Rust-recovery rows remain explicitly
+pending rather than being reported as passed. `tools/flash.sh` and
+`tools/flash.ps1` implement the complete explicit flash path for that final
+bench run.
 
 This is the first implementation step. It must be completed before translating
 application features.
