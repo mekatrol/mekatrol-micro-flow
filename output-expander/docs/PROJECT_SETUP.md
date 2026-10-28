@@ -258,6 +258,96 @@ During migration, retain the already proven Rust `wlink` setup with the legacy
 firmware so the known-good Rust image can be restored. The C project must not
 silently download a programmer or invoke Cargo during an ordinary C build.
 
+## CH32V003 hardware debugging
+
+The canonical C firmware uses the existing WCH-LinkE probe for hardware debugging through the CH32V003F4P6 PD1/SWIO connection.
+
+### Debugging tools
+
+The Linux development environment uses:
+
+- xPack RISC-V GDB 14.3.0-1, installed with the pinned cross-compiler.
+- WCH-compatible OpenOCD as the GDB server.
+- WCH-LinkE connected through PD1/SWIO and common ground.
+- The existing `ch32v003-debug` CMake configuration.
+
+The system OpenOCD executable `/usr/bin/openocd` must not be assumed compatible merely because it is installed. Verify that it supports the WCH-LinkE and CH32V003 single-wire debug interface.
+
+Check the available tools:
+
+```sh
+openocd --version
+openocd -c "adapter list" -c shutdown
+wlink --help
+riscv-none-elf-gdb --version
+```
+
+Use the existing `wlink` flashing setup until an alternative has been explicitly verified.
+
+### Debug build
+
+Build with:
+
+```sh
+./tools/build.sh ch32v003-debug
+```
+
+The debug configuration should retain the project's target architecture and ABI:
+
+```text
+-march=rv32ec_zicsr
+-mabi=ilp32e
+```
+
+For source-level debugging, use `-Og -g3` without removing the existing freestanding compilation settings, assembly startup, interrupt wrappers, or linker script.
+
+The debug ELF must contain symbol information so GDB can inspect source variables and functions.
+
+### GDB connection
+
+Once a compatible OpenOCD server has been verified and started, connect using:
+
+```sh
+riscv-none-elf-gdb build/ch32v003-debug/output-expander.elf
+```
+
+Typical GDB commands, after connecting to the server:
+
+```gdb
+target extended-remote localhost:3333
+monitor reset halt
+break frame_receiver_poll
+continue
+```
+
+Port 3333 is the conventional OpenOCD GDB port; confirm it in the running server's output.
+
+Do not assume the generic OpenOCD installation supports CH32V003 debugging.
+
+### Safety and hardware behavior
+
+- The target board remains separately powered.
+- The programmer's 3.3 V power output remains disconnected.
+- Keep the PD1/SWIO connection and common ground.
+- Debug breakpoints halt foreground execution and may also stop interrupt servicing.
+- Halted firmware cannot reliably service incoming RS-485 traffic.
+- Do not conduct receive-throughput or interrupt-latency measurements while halted.
+- Preserve the verified 48 MHz clock initialization, including the explicit AHB prescaler configuration.
+- Leave all eight active-low outputs OFF during initial debugging tests.
+
+### Initial debugging acceptance tests
+
+1. Connect OpenOCD to the WCH-LinkE and CH32V003.
+2. Attach RISC-V GDB to the running server.
+3. Halt and resume execution.
+4. Inspect `debug_valid_packet_count`.
+5. Send one valid packet over the USB-RS485 adapter.
+6. Verify the packet counter increments.
+7. Confirm corrupted packets do not increment the counter.
+8. Verify all outputs remain OFF.
+
+Hardware debugging is not considered configured until an actual GDB connection and target halt/resume have succeeded.
+
 ### Linux WCH-LinkE permissions
 
 WCH-LinkE normally identifies as USB vendor `1a86`, product `8010`. Confirm the
