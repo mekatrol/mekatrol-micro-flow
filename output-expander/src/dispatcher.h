@@ -51,4 +51,51 @@ typedef enum {
 dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
                                             uint8_t device_address);
 
+/*
+ * Protocol v1 PING command.
+ *
+ * A successful response contains the MCU's 96-bit
+ * unique identifier followed by two firmware
+ * version bytes.
+ *
+ * The UID must always contain exactly 12 bytes.
+ */
+#define DISPATCHER_COMMAND_PING 0x01U
+#define DISPATCHER_UID_SIZE 12U
+#define DISPATCHER_PING_RESPONSE_SIZE 14U
+
+/*
+ * Construct a PING response without accessing hardware.
+ *
+ * WHAT:
+ * Validate the request's routing, command and payload
+ * length, then construct the complete response packet.
+ *
+ * WHY:
+ * Keeping response construction separate from USART
+ * transmission lets host tests verify protocol behavior
+ * without requiring CH32V003 hardware.
+ *
+ * The caller provides the device UID in the agreed wire
+ * byte order. Reading the MCU UID registers is handled
+ * by a separate hardware module later.
+ *
+ * The firmware version is supplied explicitly so this
+ * portable module does not depend on target build settings.
+ *
+ * Returns true only when the response is valid.
+ * On failure, the response structure is unchanged.
+ *
+ * Request and response storage must not overlap.
+ * Passing the same packet for both is unsupported.
+ *
+ * This function never transmits or modifies GPIO.
+ */
+bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
+                                      uint8_t device_address,
+                                      const uint8_t uid[DISPATCHER_UID_SIZE],
+                                      uint8_t firmware_major,
+                                      uint8_t firmware_minor,
+                                      protocol_packet_t *response);
+
 #endif

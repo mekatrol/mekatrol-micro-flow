@@ -1,6 +1,7 @@
 #include "dispatcher.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 /*
  * Protocol v1 addressing constants.
@@ -85,4 +86,137 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
   }
 
   return DISPATCHER_IGNORE;
+}
+
+/*
+ * Construct a protocol v1 PING success response.
+ *
+ * WHAT:
+ * Create a response packet containing the device UID
+ * and firmware version, while preserving the request's
+ * destination, sequence number and command.
+ *
+ * WHY:
+ * The master uses these copied fields to associate a
+ * response with its outstanding transaction.
+ *
+ * The complete packet is constructed in temporary
+ * storage and published only after validation.
+ * An invalid request must not modify the caller's
+ * response structure.
+ */
+bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
+                                      uint8_t device_address,
+                                      const uint8_t uid[DISPATCHER_UID_SIZE],
+                                      uint8_t firmware_major,
+                                      uint8_t firmware_minor,
+                                      protocol_packet_t *response) {
+
+  /*
+   * Validate pointer arguments before reading any data.
+   *
+   * The UID is required because the v1 PING response
+   * identifies the physical MCU using all 12 UID bytes.
+   *
+   * Request and response must use different storage:
+   * writing the response must not destroy the request
+   * while its fields are still needed.
+   */
+  if (request == NULL || uid == NULL || response == NULL ||
+      request == response) {
+    return false;
+  }
+
+  /*
+   * Reuse the existing address-filtering function.
+   *
+   * Only an eligible unicast request may generate a
+   * response. Broadcasts, other device addresses,
+   * and response/error packets must remain silent.
+   *
+   * This is particularly important on a shared
+   * half-duplex RS-485 bus, where simultaneous
+   * transmissions cause electrical contention.
+   */
+  if (dispatcher_route_request(request, device_address) !=
+      DISPATCHER_UNICAST_REQUEST) {
+    return false;
+  }
+
+  /*
+   * PING uses command 0x01 and has no request payload.
+   *
+   * A nonzero payload length is invalid even when the
+   * packet has passed COBS decoding and CRC checking.
+   *
+   * Protocol framing validation does not replace
+   * command-specific payload validation.
+   */
+  if (request->command != DISPATCHER_COMMAND_PING ||
+      request->payload_length != 0U) {
+    return false;
+  }
+
+  /*
+   * Initialize the complete temporary packet.
+   *
+   * WHAT:
+   * Set unused payload bytes to zero and populate
+   * the response header.
+   *
+   * WHY:
+   * Avoid reading uninitialized structure contents
+   * in host tests or future protocol-processing code.
+   *
+   * This does not require heap allocation.
+   */
+  protocol_packet_t prepared = {0};
+
+  prepared.destination = request->destination;
+  prepared.sequence = request->sequence;
+  prepared.type = PROTOCOL_TYPE_RESPONSE;
+  prepared.command = request->command;
+  prepared.payload_length = DISPATCHER_PING_RESPONSE_SIZE;
+
+  /*
+   * Copy the physical device's 96-bit UID.
+   *
+   * The exact UID byte order is supplied by the
+   * hardware layer and must match the Rust protocol.
+   *
+   * Copying individual bytes avoids a dependency
+   * on libc's memcpy().
+   */
+  for (size_t i = 0U; i < DISPATCHER_UID_SIZE; ++i) {
+    prepared.payload[i] = uid[i];
+  }
+
+  /*
+   * Append firmware version bytes after the UID.
+   *
+   * Payload layout:
+   *
+   *   [0..11] = UID
+   *   [12]    = firmware major version
+   *   [13]    = firmware minor version
+   *
+   * These are separate u8 fields, not a 16-bit
+   * integer, so endianness conversion is unnecessary.
+   */
+  prepared.payload[DISPATCHER_UID_SIZE] = firmware_major;
+  prepared.payload[DISPATCHER_UID_SIZE + 1U] = firmware_minor;
+
+  /*
+   * Publish the completed response only after all
+   * request checks and payload construction succeed.
+   *
+   * The caller may subsequently encode this packet
+   * using protocol_encode(), which adds the version,
+   * CRC, COBS framing and final zero delimiter.
+   *
+   * No USART transmission occurs here.
+   */
+  *response = prepared;
+
+  return true;
 }
