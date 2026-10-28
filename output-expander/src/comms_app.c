@@ -12,16 +12,17 @@ void comms_app_init(comms_app_t *app, uint8_t boot_address,
                     const uint8_t uid[DISPATCHER_UID_SIZE],
                     uint8_t firmware_major, uint8_t firmware_minor) {
   /*
-   * Reject invalid arguments without changing the caller's state.
+   * Reject invalid initialization without modifying
+   * application state.
    *
-   * Broadcast 0x00 cannot identify an individual slave. Address 0xFF
-   * is allowed only as the internal uncommissioned state.
+   * A zero address is reserved for broadcast.
    */
   if (app == NULL || uid == NULL || boot_address == 0x00U) {
     return;
   }
 
   command_processor_context_t initial = {0};
+
   initial.device_address = boot_address;
   initial.firmware_major = firmware_major;
   initial.firmware_minor = firmware_minor;
@@ -31,17 +32,104 @@ void comms_app_init(comms_app_t *app, uint8_t boot_address,
   }
 
   /*
-   * Publish the complete context together. No interrupt handler
-   * accesses the structure, so no locking or atomic operation is needed.
+   * Only foreground code owns these fields.
+   *
+   * Clear reset_requested on initialization so normal
+   * watchdog feeding resumes following hardware reset.
    */
   app->command = initial;
+  app->reset_requested = false;
 }
 
 uint8_t comms_app_address(const comms_app_t *app) {
   if (app == NULL) {
     return 0xFFU;
   }
+
   return app->command.device_address;
+}
+
+bool comms_app_watchdog_feed_allowed(const comms_app_t *app) {
+  /*
+   * A missing application is not healthy foreground
+   * state and must not authorize watchdog feeding.
+   *
+   * Once reset_requested is true, normal processing
+   * cannot re-enable watchdog refreshes.
+   */
+  return app != NULL && !app->reset_requested;
+}
+
+/*
+ * Build and acknowledge a valid RESET command.
+ *
+ * WHAT:
+ * Construct an empty successful response and transmit
+ * it through the existing blocking RS-485 transmitter.
+ *
+ * WHY:
+ * Protocol v1 requires a valid response before reset.
+ *
+ * response_tx_send() encodes CRC/COBS and calls the
+ * USART driver, which waits for TC and releases DE.
+ *
+ * The reset flag must be set only after that function
+ * reports successful completion.
+ */
+static comms_app_result_t
+process_reset_request(comms_app_t *app, const protocol_packet_t *request) {
+  /*
+   * RESET accepts no request payload.
+   *
+   * Invalid length receives BAD_LENGTH, rather than
+   * silently resetting or returning a success response.
+   *
+   * A failed transmission leaves watchdog feeding
+   * enabled because no valid acknowledgment completed.
+   */
+  protocol_packet_t response = {0};
+
+  response.destination = request->destination;
+  response.sequence = request->sequence;
+  response.command = request->command;
+
+  if (request->payload_length != 0U) {
+    response.type = PROTOCOL_TYPE_ERROR;
+    response.payload_length = 1U;
+    response.payload[0] = 0x02U; /* BAD_LENGTH */
+
+    if (!response_tx_send(&response)) {
+      return COMMS_APP_TRANSMIT_FAILED;
+    }
+
+    return COMMS_APP_RESPONSE_SENT;
+  }
+
+  /*
+   * Successful RESET response has no payload.
+   *
+   * The packet's TYPE is RESPONSE, not ERROR.
+   * No additional fields or response bytes are needed.
+   */
+  response.type = PROTOCOL_TYPE_RESPONSE;
+  response.payload_length = 0U;
+
+  if (!response_tx_send(&response)) {
+    return COMMS_APP_TRANSMIT_FAILED;
+  }
+
+  /*
+   * Critical ordering requirement:
+   *
+   * The blocking sender has now finished USART TC
+   * handling and released RS-485 DE.
+   *
+   * Only now may the foreground stop refreshing IWDG.
+   * The MCU will reset when the watchdog expires.
+   */
+  app->reset_requested = true;
+
+  return COMMS_APP_RESPONSE_SENT;
 }
 
 comms_app_result_t comms_app_process(comms_app_t *app,
@@ -51,10 +139,36 @@ comms_app_result_t comms_app_process(comms_app_t *app,
   }
 
   /*
-   * Classify the request before executing commands or transmitting.
+   * Never execute another command after a successful
+   * RESET acknowledgment.
    *
-   * Wrong-address packets and non-request packets remain completely
-   * silent on the shared RS-485 bus.
+   * This prevents fresh SET_OUTPUTS requests from
+   * changing loads while waiting for watchdog expiry.
+   *
+   * The foreground main loop also stops processing
+   * additional queued frames after reset_requested.
+   */
+  if (app->reset_requested) {
+    return COMMS_APP_IGNORED;
+  }
+
+  /*
+   * Protect against malformed in-memory packet objects.
+   *
+   * Real wire packets already pass protocol_decode(),
+   * which enforces the 24-byte maximum before dispatch.
+   *
+   * No oversized packet may cause a command execution.
+   */
+  if (request->payload_length > PROTOCOL_MAX_PAYLOAD) {
+    return COMMS_APP_IGNORED;
+  }
+
+  /*
+   * Route the packet before any command execution.
+   *
+   * Non-request packets and traffic for another device
+   * must remain silent.
    */
   const dispatcher_route_t route =
       dispatcher_route_request(request, app->command.device_address);
@@ -63,28 +177,17 @@ comms_app_result_t comms_app_process(comms_app_t *app,
     uint8_t proposed_address = 0xFFU;
 
     /*
-     * All twelve UID bytes, the 13-byte payload length and the
-     * new address range are validated by the existing commissioning
-     * module. A mismatch leaves the current address unchanged.
+     * Accept only complete UID matches with a valid
+     * commissioned address.
+     *
+     * This remains RAM-only until EEPROM is installed.
+     * Broadcast requests do not produce responses.
      */
     if (!commissioning_validate_assign_uid(request, app->command.uid,
                                            &proposed_address)) {
       return COMMS_APP_IGNORED;
     }
 
-    /*
-     * TEMPORARY DEVIATION FROM PROTOCOL v1:
-     *
-     * Normally the new address is activated only after a successful
-     * EEPROM write and readback. EEPROM is not installed yet.
-     *
-     * Apply the address to RAM instead, solely for development.
-     * It will revert to COMMS_BOOT_ADDRESS at the next MCU reset.
-     *
-     * The command remains silent because all broadcast transactions
-     * forbid responses. The master confirms the assignment using
-     * unicast PING at the newly selected address.
-     */
     if (app->command.device_address != proposed_address) {
       app->command.device_address = proposed_address;
     }
@@ -97,13 +200,23 @@ comms_app_result_t comms_app_process(comms_app_t *app,
   }
 
   /*
-   * Construct the response separately from the received request.
+   * RESET is handled at the application layer because
+   * it changes foreground watchdog policy.
    *
-   * The command processor validates command-specific lengths before
-   * changing outputs. It also constructs defined protocol errors.
+   * The command processor remains responsible for all
+   * previously implemented normal commands.
    *
-   * The structure is zero-initialized to avoid exposing unused stack
-   * bytes in any future response-building changes.
+   * The established command processor currently marks
+   * RESET unsupported; intercepting it here ensures
+   * precisely one successful RESET execution pathway.
+   */
+  if (request->command == COMMS_COMMAND_RESET) {
+    return process_reset_request(app, request);
+  }
+
+  /*
+   * Preserve existing PING, GET_OUTPUTS, SET_OUTPUTS
+   * and protocol-error behavior without modification.
    */
   protocol_packet_t response = {0};
 
@@ -113,14 +226,8 @@ comms_app_result_t comms_app_process(comms_app_t *app,
   }
 
   /*
-   * response_tx_send() performs final packet eligibility checks,
-   * COBS and CRC encoding, and the blocking USART transmission.
-   *
-   * The USART driver must wait for TC before releasing RS-485 DE.
-   * No other foreground code may transmit concurrently.
-   *
-   * Never retry automatically here: a master owns transaction retries
-   * and repeated side-effect commands must retain their SEQ semantics.
+   * The blocking sender controls RS-485 direction,
+   * frame encoding and USART transmission completion.
    */
   if (!response_tx_send(&response)) {
     return COMMS_APP_TRANSMIT_FAILED;

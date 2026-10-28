@@ -27,9 +27,10 @@ if(CMAKE_CROSSCOMPILING)
     src/command_processor.c
     src/response_tx.c
     src/commissioning.c
-    src/config_fields.c    
+    src/config_fields.c
     src/device_uid.c
-    src/comms_app.c    
+    src/comms_app.c
+    src/watchdog.c
     src/startup.S)
 
   # Prevent GCC from recognizing the loops inside our memory

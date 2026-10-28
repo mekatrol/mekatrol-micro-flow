@@ -7,32 +7,24 @@
 #include "output_driver.h"
 #include "rs485.h"
 #include "usart.h"
+#include "watchdog.h"
 
 #include <stdint.h>
 
 /*
- * Foreground communication diagnostics.
+ * Debugger-visible foreground diagnostics.
  *
- * WHAT:
- * Expose packet and communication activity to the debugger.
+ * All writes occur in main context. No ISR accesses
+ * these variables, so no atomic synchronization is needed.
  *
- * WHY:
- * These counters allow GDB to distinguish received valid frames,
- * successful responses, accepted commissioning and transmission
- * rejection without introducing unsolicited RS-485 traffic.
- *
- * Volatile ensures debugger-visible memory accesses are not
- * eliminated by compiler optimization.
- *
- * All writes occur in foreground code. The USART ISR never
- * modifies these variables.
- *
- * Counters naturally wrap modulo 2^32.
+ * Volatile retains actual memory writes for GDB.
+ * It does not make a compound operation atomic.
  */
 volatile uint32_t debug_valid_packet_count;
 volatile uint32_t debug_response_count;
 volatile uint32_t debug_address_change_count;
 volatile uint32_t debug_transmit_failure_count;
+volatile uint32_t debug_reset_request_count;
 
 volatile uint8_t debug_device_address;
 volatile uint8_t debug_last_destination;
@@ -42,63 +34,55 @@ volatile uint8_t debug_last_command;
 volatile uint8_t debug_last_payload_length;
 
 /*
- * Expose the actual hardware UID for GDB inspection.
- *
- * The compiler must preserve these bytes because debugger visibility
- * is part of the development diagnostics.
- *
- * The foreground copies the UID before enabling USART interrupts.
+ * The actual 12-byte silicon UID remains available
+ * to the debugger in protocol byte order.
  */
 volatile uint8_t debug_device_uid[DEVICE_UID_SIZE];
 
 int main(void) {
   /*
-   * Initialize the verified 48 MHz HSI + PLL configuration and
-   * all eight active-low output pins.
+   * Establish the verified 48 MHz clock and safe GPIO
+   * initialization before starting the watchdog.
    *
-   * All channels must begin logically OFF.
+   * All eight active-low outputs initialize OFF.
    *
-   * Do not change hal.c's explicit RCC_HPRE correction; the
-   * existing baud-rate verification depends on that setting.
+   * Do not change the existing RCC_HPRE correction.
    */
   hal_init(0xFFU);
 
   /*
-   * Synchronize the logical output driver with the inactive GPIO
-   * states already established by hal_init().
+   * Synchronize the output driver's logical mask
+   * with the physical OFF states configured by HAL.
    *
-   * No output is energized during this operation.
+   * No output should energize during initialization.
    */
   output_driver_init();
 
   /*
-   * Disable the RS-485 line driver before configuring USART1.
+   * PC6 controls tied RS-485 DE and /RE.
+   * LOW selects receive mode.
    *
-   * PC6 LOW means receive mode for the connected DE and /RE pins.
+   * Start in receive mode before USART initialization.
    */
   rs485_receive();
 
   /*
-   * Prepare the ISR-to-foreground queue before enabling any USART
-   * receive interrupts. The ISR must never encounter an uninitialized
-   * queue.
+   * Initialize the interrupt queue before enabling
+   * USART receive/error interrupts.
+   *
+   * The ISR only collects bounded RX events.
+   * Foreground code owns decoding and execution.
    */
   irq_rx_init();
 
-  /*
-   * Initialize the delimiter-driven COBS frame receiver.
-   *
-   * Protocol parsing occurs only in the foreground. The ISR performs
-   * bounded byte and error event collection without decoding packets.
-   */
   frame_receiver_t receiver;
   frame_receiver_init(&receiver);
 
   /*
-   * Read the three factory electronic-signature registers once.
+   * Read the factory-programmed 96-bit UID once.
    *
-   * The UID is used by PING and UID-directed commissioning.
-   * It is not an EEPROM address and does not change on reset.
+   * It identifies the device during PING and
+   * broadcast UID-directed commissioning.
    */
   uint8_t uid[DEVICE_UID_SIZE];
   device_uid_read(uid);
@@ -108,42 +92,43 @@ int main(void) {
   }
 
   /*
-   * Initialize the full foreground communications application.
+   * Set the temporary development address and
+   * foreground application identity.
    *
-   * COMMS_BOOT_ADDRESS defaults to 0x17 for testing. It can be
-   * overridden to 0xFF for an initially uncommissioned device.
-   *
-   * All subsequent ASSIGN_UID changes remain in RAM only.
-   * Firmware version numbers are independent of the protocol version.
+   * Address assignment remains RAM-only until
+   * EEPROM storage becomes available.
    */
   comms_app_t app;
+
   comms_app_init(&app, COMMS_BOOT_ADDRESS, uid, COMMS_FIRMWARE_MAJOR,
                  COMMS_FIRMWARE_MINOR);
 
   /*
-   * The decoded request owns its payload bytes independently of the
-   * receive queue. It may safely be passed to foreground execution.
+   * The request packet owns fixed-capacity storage,
+   * independent of the ISR RX queue.
    */
   protocol_packet_t request;
 
   /*
-   * Initialize USART1 at 19,200 baud, 8N1:
+   * Configure USART1:
    *
    * PD5: TX
    * PD6: RX
+   * 19,200 baud, 8N1
    *
-   * usart_init() configures the peripheral without enabling
-   * global interrupts or driving RS-485 DE.
+   * Interrupts are enabled separately below.
    */
   usart_init();
 
   /*
-   * Initialize debugger-visible counters before interrupts.
+   * Clear all debugger-visible state before
+   * enabling receive interrupts or watchdog.
    */
   debug_valid_packet_count = 0U;
   debug_response_count = 0U;
   debug_address_change_count = 0U;
   debug_transmit_failure_count = 0U;
+  debug_reset_request_count = 0U;
 
   debug_device_address = comms_app_address(&app);
   debug_last_destination = 0U;
@@ -153,27 +138,35 @@ int main(void) {
   debug_last_payload_length = 0U;
 
   /*
-   * Enable USART RX and receive-error interrupts only after the
-   * entire application, queue and frame receiver are initialized.
+   * Enable USART receive/error interrupts only after
+   * queue, receiver and application initialization.
    */
   usart_enable_rx_interrupts();
 
+  /*
+   * Start IWDG LAST, following the original Rust firmware.
+   *
+   * The watchdog is independent of HSI and PLL.
+   * It resets the MCU if normal foreground work stalls
+   * long enough to prevent watchdog refreshes.
+   *
+   * Once started, it cannot be disabled by software.
+   */
+  watchdog_start();
+
   for (;;) {
     /*
-     * Drain queued bytes until the receiver has no complete valid
-     * packet remaining.
+     * Process every available, fully decoded packet.
      *
-     * Malformed COBS, unsupported versions, CRC failures and UART
-     * receive errors are handled by the previously tested receiver.
+     * Framing, COBS, CRC and receive-error recovery
+     * remain in the previously verified receiver.
      *
-     * Invalid packets never advance to command execution.
+     * The packet is published only after decoding
+     * and protocol validation complete.
      */
     while (frame_receiver_poll(&receiver, &request)) {
       /*
-       * Record metadata before executing the request.
-       *
-       * A debugger can inspect the latest command even if that command
-       * is subsequently rejected by address filtering.
+       * Record request metadata before dispatch.
        */
       debug_last_destination = request.destination;
       debug_last_sequence = request.sequence;
@@ -184,14 +177,14 @@ int main(void) {
       debug_valid_packet_count++;
 
       /*
-       * Process the request entirely in foreground context.
+       * Execute decoded commands in foreground context.
        *
-       * Valid SET_OUTPUTS requests can now change GPIO outputs.
-       * Matching ASSIGN_UID broadcasts change only the RAM address.
-       * Valid addressed unicast requests can generate RS-485 replies.
+       * SET_OUTPUTS may change physical active-low GPIO.
+       * ASSIGN_UID may change the RAM-only address.
+       * RESET may acknowledge and latch watchdog expiry.
        *
-       * The existing USART TX driver performs blocking transmission
-       * and waits for final TC before disabling DE.
+       * The USART transmit driver waits for TC before
+       * releasing DE on any successful response.
        */
       const comms_app_result_t result = comms_app_process(&app, &request);
 
@@ -203,23 +196,38 @@ int main(void) {
         debug_transmit_failure_count++;
       }
 
-      /*
-       * Publish the current effective RAM address after every packet.
-       *
-       * This allows debugger verification that a UID-directed broadcast
-       * did or did not update the device's active address.
-       */
       debug_device_address = comms_app_address(&app);
+
+      /*
+       * A valid RESET acknowledgement has already
+       * completed transmission before this becomes false.
+       *
+       * Once reset is pending, stop processing the queue
+       * so no additional commands can change GPIO state.
+       */
+      if (!comms_app_watchdog_feed_allowed(&app)) {
+        debug_reset_request_count++;
+        break;
+      }
     }
 
     /*
-     * Do not introduce arbitrary foreground delays.
+     * Feed the watchdog ONLY at the end of normal
+     * foreground processing.
      *
-     * The RX interrupt queue is small, and delaying foreground service
-     * unnecessarily increases the risk of queue overflow.
+     * WHY:
+     * Moving this into the USART ISR would allow a
+     * stuck foreground to remain alive indefinitely.
      *
-     * The only intentional blocking occurs during outgoing response
-     * transmission, as implemented by the existing USART driver.
+     * Once RESET is acknowledged, the flag remains
+     * false, so the watchdog will expire naturally.
+     *
+     * The foreground continues looping rather than
+     * issuing another software reset. This matches
+     * the watchdog-based reset mechanism in Rust.
      */
+    if (comms_app_watchdog_feed_allowed(&app)) {
+      watchdog_feed();
+    }
   }
 }
