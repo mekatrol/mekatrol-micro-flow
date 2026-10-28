@@ -26,6 +26,7 @@ if(CMAKE_CROSSCOMPILING)
     src/output_state.c
     src/command_processor.c
     src/response_tx.c
+    src/commissioning.c
     src/startup.S)
 
   # Prevent GCC from recognizing the loops inside our memory
@@ -342,4 +343,39 @@ else()
 
   set_tests_properties(response_tx PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+    # Validate broadcast UID-directed commissioning requests.
+  #
+  # WHAT:
+  # Build the production commissioning validator with
+  # the existing portable dispatcher and protocol code.
+  #
+  # WHY:
+  # UID comparison and address validation must be tested
+  # before connecting commissioning to EEPROM writes.
+  #
+  # No CH32V003 registers or hardware drivers are needed.
+  add_executable(output_expander_commissioning_test
+    tests/unit/test_commissioning.c
+    src/commissioning.c)
+
+  target_include_directories(output_expander_commissioning_test
+    PRIVATE src)
+
+  target_link_libraries(output_expander_commissioning_test
+    PRIVATE output_expander_core)
+
+  # Preserve the existing strict compiler diagnostics.
+  output_expander_warnings(output_expander_commissioning_test)
+
+  # Preserve AddressSanitizer and UndefinedBehaviorSanitizer.
+  output_expander_sanitizers(output_expander_commissioning_test)
+
+  add_test(
+    NAME commissioning
+    COMMAND output_expander_commissioning_test)
+
+  set_tests_properties(commissioning PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+    
 endif()
