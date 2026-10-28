@@ -2,6 +2,7 @@
 #include "frame_receiver.h"
 #include "hal.h"
 #include "irq_rx.h"
+#include "output_driver.h"
 #include "rs485.h"
 #include "usart.h"
 
@@ -43,6 +44,24 @@ int main(void) {
    * correction. Do not change the clock setup.
    */
   hal_init(0xFFU);
+
+  /*
+   * Initialize the foreground-owned logical output state.
+   *
+   * WHAT:
+   * Record that all eight output channels are OFF.
+   *
+   * WHY:
+   * hal_init() has already preloaded the inactive GPIO
+   * levels and configured the physical output pins.
+   *
+   * The output driver must agree with those physical
+   * levels before future SET_OUTPUTS processing begins.
+   *
+   * This initialization does not write GPIO registers,
+   * turn on outputs or transmit any RS-485 data.
+   */
+  output_driver_init();
 
   /*
    * Explicitly hold the RS-485 transceiver

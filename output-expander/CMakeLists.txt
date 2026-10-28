@@ -22,6 +22,7 @@ if(CMAKE_CROSSCOMPILING)
     src/dispatcher.c
     src/frame_receiver.c
     src/freestanding.c
+    src/output_driver.c
     src/output_state.c
     src/startup.S)
 
@@ -242,5 +243,35 @@ else()
     COMMAND output_expander_output_state_test)
 
   set_tests_properties(output_state PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+    # Test the production output driver using a simulated HAL.
+  #
+  # WHAT:
+  # Compile the real output driver and portable state
+  # implementation with test-provided HAL functions.
+  #
+  # WHY:
+  # This verifies the GPIO masks and operation ordering
+  # without accessing CH32V003 memory-mapped registers.
+  #
+  # Keep this executable separate from the portable core
+  # library so the real hardware HAL is never required.
+  add_executable(output_expander_output_driver_test
+    tests/unit/test_output_driver.c
+    src/output_driver.c
+    src/output_state.c)
+
+  target_include_directories(output_expander_output_driver_test
+    PRIVATE src)
+
+  output_expander_warnings(output_expander_output_driver_test)
+  output_expander_sanitizers(output_expander_output_driver_test)
+
+  add_test(
+    NAME output_driver
+    COMMAND output_expander_output_driver_test)
+
+  set_tests_properties(output_driver PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()
