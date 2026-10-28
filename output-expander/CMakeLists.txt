@@ -47,7 +47,8 @@ else()
   add_library(output_expander_core
     src/smoke.c
     src/irq_rx.c
-    src/crc16.c)
+    src/crc16.c
+    src/cobs.c)
   target_include_directories(output_expander_core PUBLIC src)
   output_expander_warnings(output_expander_core)
   output_expander_sanitizers(output_expander_core)
@@ -96,5 +97,25 @@ else()
     COMMAND output_expander_crc16_test)
 
   set_tests_properties(crc16 PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+  # Verify COBS framing independently of the MCU.
+  #
+  # Both the firmware and host use the same
+  # protocol-defined maximum packet capacities.
+  add_executable(output_expander_cobs_test
+    tests/unit/test_cobs.c)
+
+  target_link_libraries(output_expander_cobs_test
+    PRIVATE output_expander_core)
+
+  output_expander_warnings(output_expander_cobs_test)
+  output_expander_sanitizers(output_expander_cobs_test)
+
+  add_test(
+    NAME cobs
+    COMMAND output_expander_cobs_test)
+
+  set_tests_properties(cobs PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()
