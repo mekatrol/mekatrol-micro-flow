@@ -191,6 +191,16 @@ int main(void) {
       command_activity_started = hal_ticks();
       command_activity_valid = true;
 
+      /* Start the command indication at packet acceptance, before the
+       * blocking response transmitter runs. Merely selecting blue in the
+       * end-of-loop policy can delay its first WS2812 update behind response
+       * transmission and any waveform already in progress. The normal policy
+       * below keeps this colour selected for the complete visible window. */
+      ws2812_set_color(
+          &status_led,
+          (rgb_t){0U, 0U, STATUS_LED_COMMAND_BRIGHTNESS});
+      ws2812_service(&status_led, command_activity_started);
+
       /*
        * Execute decoded commands in foreground context.
        *

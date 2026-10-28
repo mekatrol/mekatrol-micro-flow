@@ -47,6 +47,9 @@ blue command indication, matching the Rust reference behavior. The
 `simulate-error` command sends an invalid-CRC frame to exercise the red fault
 indication without eliciting a protocol response.
 
+The WS2812 backend uses TIM1 and DMA so UART interrupts remain available while
+the 24-bit waveform is transmitted.
+
 See [docs/BUILD.md](docs/BUILD.md) for prerequisites, wiring, artifacts, and
 recovery instructions. See [docs/protocol.md](docs/protocol.md) for the full
 protocol contract and its current implementation status.

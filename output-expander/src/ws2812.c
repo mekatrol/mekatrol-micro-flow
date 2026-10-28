@@ -52,6 +52,16 @@ void ws2812_set_color(ws2812_t *driver, rgb_t color) {
 
 void ws2812_service(ws2812_t *driver, uint32_t now_ticks) {
   if (driver->state == WS2812_TRANSMITTING && ws2812_hw_complete()) {
+    /* DMA completion means the final compare values have been written, not
+     * necessarily that every preloaded PWM period has appeared on the pin.
+     * Keep TIM1 running for two complete bit periods so the final blue byte
+     * and trailing LOW compare drain through the timer before shutdown. */
+    driver->reset_started = now_ticks;
+    driver->state = WS2812_DRAINING;
+  }
+  if (driver->state == WS2812_DRAINING &&
+      (uint32_t)(now_ticks - driver->reset_started) >=
+          WS2812_DMA_DRAIN_TICKS) {
     ws2812_hw_force_low();
     driver->reset_started = now_ticks;
     driver->state = WS2812_RESET_LOW;

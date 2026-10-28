@@ -50,18 +50,26 @@ int main(void) {
   assert(starts == 1U);
   complete = true;
   ws2812_service(&driver, 100U);
+  assert(forced_low == 0U);
+  assert(ws2812_state(&driver) == WS2812_DRAINING);
+  ws2812_service(&driver, 100U + WS2812_DMA_DRAIN_TICKS - 1U);
+  assert(forced_low == 0U);
+  ws2812_service(&driver, 100U + WS2812_DMA_DRAIN_TICKS);
   assert(forced_low == 1U);
   assert(ws2812_state(&driver) == WS2812_RESET_LOW);
-  ws2812_service(&driver, 100U + WS2812_RESET_TICKS - 1U);
+  const uint32_t first_reset = 100U + WS2812_DMA_DRAIN_TICKS;
+  ws2812_service(&driver, first_reset + WS2812_RESET_TICKS - 1U);
   assert(starts == 1U);
-  ws2812_service(&driver, 100U + WS2812_RESET_TICKS);
+  ws2812_service(&driver, first_reset + WS2812_RESET_TICKS);
   assert(starts == 2U);
   assert(ws2812_state(&driver) == WS2812_TRANSMITTING);
 
   /* Re-requesting the currently displayed color produces no third frame. */
   complete = true;
   ws2812_service(&driver, 20000U);
-  ws2812_service(&driver, 20000U + WS2812_RESET_TICKS);
+  ws2812_service(&driver, 20000U + WS2812_DMA_DRAIN_TICKS);
+  ws2812_service(&driver, 20000U + WS2812_DMA_DRAIN_TICKS +
+                              WS2812_RESET_TICKS);
   ws2812_set_color(&driver, (rgb_t){4U, 5U, 6U});
   ws2812_service(&driver, 40000U);
   assert(starts == 2U);

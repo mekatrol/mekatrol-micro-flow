@@ -36,9 +36,6 @@ void ws2812_hw_start(const ws2812_waveform_t *waveform) {
   DMA1_CH3_CFGR &= ~DMA_CFGR_EN;
   DMA1_INTFCR = DMA_CH3_CLEAR_MASK;
 
-  /* UG makes bit zero active. Bit one is then placed in the preload register.
-   * With CCDS set, the CH2 request occurs on each update: that update latches
-   * the previous preload, then DMA supplies the following period. */
   TIM1_CH2CVR = waveform->duty[0];
   TIM1_RPTCR = 0U;
   TIM1_CNT = 0U;
@@ -59,8 +56,6 @@ void ws2812_hw_start(const ws2812_waveform_t *waveform) {
 }
 
 bool ws2812_hw_complete(void) {
-  /* DMA completes on the update after bit 24, after a zero compare has become
-   * active. Later foreground latency can only extend the required LOW time. */
   return (DMA1_INTFR & DMA_CH3_TCIF) != 0U;
 }
 

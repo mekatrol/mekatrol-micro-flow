@@ -23,5 +23,9 @@ int main(void) {
                    (rgb_t){32U, 0U, 0U}));
   assert(rgb_equal(status_led_color(STATUS_LED_UNCONFIGURED, 30U),
                    (rgb_t){30U, 10U, 0U}));
+  assert(rgb_equal(status_led_color(STATUS_LED_COMMAND, 30U),
+                   (rgb_t){0U, 0U, 30U}));
+  assert(rgb_equal(status_led_color(STATUS_LED_COMMS_TIMEOUT, 30U),
+                   (rgb_t){30U, 0U, 0U}));
   return 0;
 }
