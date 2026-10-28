@@ -19,6 +19,7 @@ if(CMAKE_CROSSCOMPILING)
     src/crc16.c
     src/cobs.c
     src/protocol.c
+    src/dispatcher.c
     src/frame_receiver.c
     src/freestanding.c
     src/startup.S)
@@ -68,10 +69,44 @@ else()
     src/crc16.c
     src/cobs.c
     src/protocol.c
+    src/dispatcher.c
     src/frame_receiver.c)
   target_include_directories(output_expander_core PUBLIC src)
   output_expander_warnings(output_expander_core)
   output_expander_sanitizers(output_expander_core)
+
+    # Test the portable RS-485 request routing logic.
+  #
+  # WHAT:
+  # Compile dispatcher routing tests as a host executable
+  # linked against the existing portable core library.
+  #
+  # WHY:
+  # Address filtering must be verified independently of
+  # USART, interrupts, GPIO, and the physical RS-485 bus.
+  # The same dispatcher implementation is used by the
+  # host tests and the CH32V003 firmware.
+  add_executable(output_expander_dispatcher_test
+    tests/unit/test_dispatcher.c)
+
+  target_link_libraries(output_expander_dispatcher_test
+    PRIVATE output_expander_core)
+
+  # Keep the project's strict compiler warnings and
+  # memory/undefined-behavior sanitizers enabled for
+  # this test, just like the existing portable tests.
+  output_expander_warnings(output_expander_dispatcher_test)
+  output_expander_sanitizers(output_expander_dispatcher_test)
+
+  add_test(
+    NAME dispatcher_route
+    COMMAND output_expander_dispatcher_test)
+
+  # Match the established sanitizer configuration.
+  # Leak detection is disabled for these tests, while
+  # AddressSanitizer's other checks remain enabled.
+  set_tests_properties(dispatcher_route PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 
   add_executable(output_expander_smoke_test tests/unit/test_smoke.c)
   target_link_libraries(output_expander_smoke_test PRIVATE output_expander_core)
