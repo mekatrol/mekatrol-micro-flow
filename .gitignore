@@ -82,3 +82,10 @@ CMakeUserPresets.json
 
 # Developer-local third-party dependencies
 /core-controller/third_party/
+
+# Python bytecode and cache directories
+*.py[cod]
+__pycache__/
+
+# Python virtual environments
+.venv/
