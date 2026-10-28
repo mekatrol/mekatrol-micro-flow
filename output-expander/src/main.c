@@ -1,39 +1,34 @@
+
+#include "frame_receiver.h"
 #include "hal.h"
 #include "irq_rx.h"
-#include "registers.h"
 #include "rs485.h"
 #include "usart.h"
 
 #include <stdint.h>
 
 /*
- * SysTick runs at 48 MHz using the CPU clock.
+ * Temporary protocol reception diagnostics.
  *
- * Dividing by 1000 gives the number of timer
- * ticks in one millisecond.
+ * WHAT:
+ * These variables are updated only by the foreground
+ * loop after a complete packet passes protocol_decode().
  *
- * A 500 ms interval therefore contains
- * 24,000,000 SysTick ticks.
+ * WHY:
+ * Volatile makes their current values available to
+ * a debugger even in an optimized firmware build.
+ *
+ * These are not application state and do not cause
+ * any RS-485 response or GPIO output change.
+ *
+ * Counters wrap naturally after UINT32_MAX.
  */
-#define SYSTICK_TICKS_PER_MS UINT32_C(48000)
-#define BLINK_INTERVAL_MS UINT32_C(500)
-
-#define BLINK_INTERVAL_TICKS (SYSTICK_TICKS_PER_MS * BLINK_INTERVAL_MS)
-
-/*
- * Temporary communication diagnostics.
- *
- * Volatile allows the debugger to observe values
- * changed by the foreground loop without the
- * compiler eliminating the updates.
- *
- * These are diagnostic variables, not the
- * production protocol's application state.
- */
-volatile uint32_t debug_rx_count;
-volatile uint32_t debug_error_count;
-volatile uint32_t debug_overflow_count;
-volatile uint8_t debug_last_rx_byte;
+volatile uint32_t debug_valid_packet_count;
+volatile uint8_t debug_last_destination;
+volatile uint8_t debug_last_sequence;
+volatile uint8_t debug_last_type;
+volatile uint8_t debug_last_command;
+volatile uint8_t debug_last_payload_length;
 
 int main(void) {
   /*
@@ -42,6 +37,10 @@ int main(void) {
    *
    * All eight output channels begin OFF.
    * PC6 also begins LOW (RS-485 receive mode).
+   *
+   * IMPORTANT:
+   * hal.c contains the verified AHB prescaler
+   * correction. Do not change the clock setup.
    */
   hal_init(0xFFU);
 
@@ -49,8 +48,8 @@ int main(void) {
    * Explicitly hold the RS-485 transceiver
    * in receive mode while starting USART1.
    *
-   * No device response may drive the shared
-   * bus until transmission is implemented.
+   * No device response drives the shared bus
+   * during this receive-only test.
    */
   rs485_receive();
 
@@ -64,6 +63,25 @@ int main(void) {
   irq_rx_init();
 
   /*
+   * The frame receiver belongs to the foreground.
+   *
+   * WHAT:
+   * It accumulates bytes until a COBS delimiter,
+   * validates packets, and handles lost data.
+   *
+   * WHY:
+   * Protocol decoding must not run inside the ISR.
+   */
+  frame_receiver_t receiver;
+  frame_receiver_init(&receiver);
+
+  /*
+   * This packet has its own payload storage.
+   * It remains valid after the RX buffer is reused.
+   */
+  protocol_packet_t packet;
+
+  /*
    * Configure USART1 for 19200 baud, 8N1
    * using PD5 as TX and PD6 as RX.
    *
@@ -72,13 +90,15 @@ int main(void) {
   usart_init();
 
   /*
-   * Initialize diagnostic counters before
-   * the USART interrupt can enqueue events.
+   * Initialize diagnostic values before enabling
+   * interrupts and entering the foreground loop.
    */
-  debug_rx_count = 0U;
-  debug_error_count = 0U;
-  debug_overflow_count = 0U;
-  debug_last_rx_byte = 0U;
+  debug_valid_packet_count = 0U;
+  debug_last_destination = 0U;
+  debug_last_sequence = 0U;
+  debug_last_type = 0U;
+  debug_last_command = 0U;
+  debug_last_payload_length = 0U;
 
   /*
    * Enable receive/error interrupts only
@@ -87,123 +107,51 @@ int main(void) {
    */
   usart_enable_rx_interrupts();
 
-  /*
-   * Preserve the original output-1 blink
-   * test without blocking the main loop.
-   *
-   * The unsigned difference works across
-   * SysTick's 32-bit wraparound for intervals
-   * smaller than one full counter period.
-   */
-  uint32_t last_blink = SYSTICK_CNT;
-  uint8_t output_on = 0U;
-
   for (;;) {
     /*
-     * Drain all currently queued events.
+     * Drain all currently available valid packets.
      *
-     * Doing this before optional foreground
-     * activity minimizes the chance of RX
-     * queue overflow during UART traffic.
+     * frame_receiver_poll() consumes RX queue events,
+     * including UART errors and overflow notifications.
+     *
+     * It returns true only for a fully decoded packet.
+     * Invalid or incomplete frames are not published.
+     *
+     * Calling it repeatedly prevents complete packets
+     * from remaining queued unnecessarily.
      */
-    irq_rx_event_t event;
-
-    for (;;) {
-      const irq_rx_read_result_t result = irq_rx_read_next(&event);
-
-      if (result == IRQ_RX_READ_EMPTY) {
-        break;
-      }
-
-      if (result == IRQ_RX_READ_OVERFLOW) {
-        /*
-         * At least one receive event was
-         * lost because the queue was full.
-         *
-         * A future COBS receiver will
-         * discard the affected frame.
-         */
-        debug_overflow_count++;
-        continue;
-      }
-
-      if (event.type == IRQ_RX_EVENT_ERROR) {
-        /*
-         * The USART reported an error.
-         *
-         * Never interpret this event as
-         * a valid protocol data byte.
-         */
-        debug_error_count++;
-        continue;
-      }
+    while (frame_receiver_poll(&receiver, &packet)) {
+      /*
+       * Record the validated packet metadata.
+       *
+       * No destination filtering or request dispatch
+       * occurs here yet. Those belong to later steps.
+       *
+       * In particular, do not turn outputs ON and do
+       * not transmit a response.
+       */
+      debug_last_destination = packet.destination;
+      debug_last_sequence = packet.sequence;
+      debug_last_type = packet.type;
+      debug_last_command = packet.command;
+      debug_last_payload_length = packet.payload_length;
 
       /*
-       * A valid USART character was captured
-       * by the interrupt and delivered to
-       * the foreground queue.
-       *
-       * Record it for initial debugging.
-       * COBS frame processing comes later.
+       * Increment last, so observing the new count
+       * indicates the packet metadata was updated.
        */
-      debug_last_rx_byte = event.value;
-      debug_rx_count++;
-
-      /*
-       * Temporary interrupt-driven RS-485 echo test.
-       *
-       * WHAT:
-       * Return the received byte to the USB-RS485
-       * master using the existing USART TX driver.
-       *
-       * WHY:
-       * This verifies the entire communication path:
-       *
-       *   RS-485 transceiver RO
-       *       -> USART1 RX (PD6)
-       *       -> USART1 interrupt
-       *       -> RX ring buffer
-       *       -> foreground main loop
-       *       -> USART1 TX (PD5)
-       *       -> RS-485 transceiver DI
-       *
-       * The transmit function enables PC6 (DE),
-       * sends the byte, waits for TC, and releases
-       * the RS-485 bus.
-       *
-       * Transmission is performed here, never
-       * inside the interrupt handler.
-       *
-       * This diagnostic must only run on an isolated
-       * test bus. Remove it before implementing the
-       * production request/response protocol.
-       */
-      const uint8_t echo_byte = event.value;
-
-      usart_write_response(&echo_byte, 1U);
+      debug_valid_packet_count++;
     }
 
     /*
-     * Blink output 1 every 500 ms.
+     * No blocking delay.
      *
-     * Unlike hal_delay_half_second(), this
-     * does not prevent the main loop from
-     * draining USART events while waiting
-     * for the next blink interval.
+     * The foreground immediately polls again so
+     * incoming bytes are removed from the small
+     * ISR RX queue as promptly as possible.
+     *
+     * A future command dispatcher will be called
+     * from this foreground context.
      */
-    const uint32_t now = SYSTICK_CNT;
-
-    if ((uint32_t)(now - last_blink) >= BLINK_INTERVAL_TICKS) {
-
-      last_blink = now;
-
-      if (output_on != 0U) {
-        hal_output_off(0x01U);
-        output_on = 0U;
-      } else {
-        hal_output_on(0x01U);
-        output_on = 1U;
-      }
-    }
   }
 }

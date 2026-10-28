@@ -6,7 +6,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 /*
  * Check that the packet and COBS modules agree on
@@ -53,13 +52,13 @@ protocol_result_t protocol_encode(const protocol_packet_t *packet,
   }
 
   /*
-   * Construct the unencoded packet in fixed
-   * stack storage.
+   * Every byte in the transmitted prefix is explicitly written
+   * below, so zero-initializing the entire buffer is unnecessary.
    *
-   * Only the prefix defined by decoded_len
-   * will be transmitted.
+   * WHY:
+   * Avoid an unnecessary memory clear on our bare-metal target.
    */
-  uint8_t decoded[PROTOCOL_MAX_DECODED_SIZE] = {0};
+  uint8_t decoded[PROTOCOL_MAX_DECODED_SIZE];
 
   const size_t payload_len = packet->payload_length;
 
@@ -74,12 +73,15 @@ protocol_result_t protocol_encode(const protocol_packet_t *packet,
   decoded[5] = packet->payload_length;
 
   /*
-   * Copy only valid payload bytes.
+   * Copy only the meaningful payload bytes.
    *
-   * Unused capacity in the packet structure
-   * must never appear on the wire.
+   * WHY:
+   * A bounded loop avoids requiring libc's memcpy().
+   * The maximum payload is 24 bytes.
    */
-  memcpy(&decoded[PROTOCOL_HEADER_SIZE], packet->payload, payload_len);
+  for (size_t i = 0U; i < payload_len; ++i) {
+    decoded[PROTOCOL_HEADER_SIZE + i] = packet->payload[i];
+  }
 
   /*
    * CRC-16 covers VERSION through the final
@@ -203,13 +205,15 @@ protocol_result_t protocol_decode(const uint8_t *encoded, size_t encoded_length,
   /*
    * All validations have succeeded.
    *
-   * Build a temporary packet and publish
-   * it only after every field is valid.
+   * Build a temporary packet and publish it only after
+   * every field has been populated.
    *
-   * Zero-initialization also makes unused
-   * payload bytes deterministic.
+   * WHY:
+   * Explicitly initializing the payload avoids both
+   * memset() and memcpy() dependencies. Unused payload
+   * bytes remain deterministically zero.
    */
-  protocol_packet_t verified = {0};
+  protocol_packet_t verified;
 
   verified.destination = decoded[1];
   verified.sequence = decoded[2];
@@ -217,8 +221,24 @@ protocol_result_t protocol_decode(const uint8_t *encoded, size_t encoded_length,
   verified.command = decoded[4];
   verified.payload_length = decoded[5];
 
-  memcpy(verified.payload, &decoded[PROTOCOL_HEADER_SIZE], payload_length);
+  /*
+   * Copy the received payload and zero unused positions.
+   *
+   * Each of the 24 bytes is initialized before the structure
+   * is assigned to the caller's output packet.
+   */
+  for (size_t i = 0U; i < PROTOCOL_MAX_PAYLOAD; ++i) {
+    if (i < payload_length) {
+      verified.payload[i] = decoded[PROTOCOL_HEADER_SIZE + i];
+    } else {
+      verified.payload[i] = 0U;
+    }
+  }
 
+  /*
+   * Publish only after successful validation.
+   * A malformed packet leaves the caller's data unchanged.
+   */
   *packet = verified;
 
   return PROTOCOL_OK;
