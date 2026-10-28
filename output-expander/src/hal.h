@@ -30,4 +30,7 @@ void hal_output_on(uint8_t output_mask);
  * Unselected outputs and unrelated GPIO pins remain unchanged. */
 void hal_output_off(uint8_t output_mask);
 
+/* Read the shared free-running 48 MHz monotonic counter. */
+uint32_t hal_ticks(void);
+
 #endif

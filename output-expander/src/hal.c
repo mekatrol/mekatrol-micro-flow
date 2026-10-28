@@ -169,3 +169,5 @@ void hal_output_on(uint8_t output_mask) {
    * drives active-low GPIO pins LOW and active-high GPIO pins HIGH. */
   hal_output_write(output_mask, 1U);
 }
+
+uint32_t hal_ticks(void) { return SYSTICK_CNT; }

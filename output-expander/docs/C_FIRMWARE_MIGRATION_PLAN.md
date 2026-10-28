@@ -372,6 +372,23 @@ behavior, with reset cause/status observable where supported.
 
 ### Phase 8 — WS2812 policy and timer/PWM/DMA driver
 
+**Implementation status (2026-10-28): software complete; scope validation
+pending attached production hardware.** The C firmware now has the ported
+status/color policy, a single-buffer latest-color-wins foreground state
+machine, and a PC7/TIM1_CH2-remap-group-1/DMA1_CH3 backend. TIM1 runs at 60
+clocks per bit with 18/36-clock compare values. Bits zero and one are primed;
+the TIM1_CH2 DMA request uses update phase (`CCDS=1`) to supply bits 2--23 and
+two trailing zeroes. The first zero becomes active immediately after period 24
+and the second completes DMA, leaving the output LOW. Foreground observes DMA
+completion only after hardware has established that LOW level
+and enforces 14,400 SysTick clocks (300 us) LOW before another frame. There is
+no LED interrupt or CPU waveform loop. Host tests cover policy, GRB/MSB-first
+encoding, duplicate suppression, wrap-safe reset timing, and pending-color
+replacement. Debug and release firmware builds pass with no executable
+`.data`; the release image uses 6,654 bytes Flash and 124 bytes static SRAM,
+with a reported 192-byte `main` stack frame. Logic-analyzer measurements and
+USART/watchdog fault coexistence remain required for the exit gate.
+
 Port the pure color/status policy from `status_led.rs`, then replace the current
 Rust CPU-driven `ws2812.rs` mechanism with the production architecture already
 required by the firmware plan: PC7/TIM1_CH2 remap group 1, DMA1_CH3 compare

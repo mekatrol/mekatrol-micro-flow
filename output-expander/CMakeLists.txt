@@ -31,6 +31,9 @@ if(CMAKE_CROSSCOMPILING)
     src/device_uid.c
     src/comms_app.c
     src/watchdog.c
+    src/status_led.c
+    src/ws2812.c
+    src/ws2812_hw.c
     src/startup.S)
 
   # Prevent GCC from recognizing the loops inside our memory
@@ -46,6 +49,9 @@ if(CMAKE_CROSSCOMPILING)
     COMPILE_OPTIONS "-fno-tree-loop-distribute-patterns")
 
   target_include_directories(output-expander PRIVATE src)
+  # RV32E has no hardware divide extension. GCC lowers the millisecond policy
+  # divisions to its pinned, freestanding compiler-runtime helpers.
+  target_link_libraries(output-expander PRIVATE gcc)
   output_expander_warnings(output-expander)
   target_compile_options(output-expander PRIVATE
     -ffreestanding -fno-builtin -ffunction-sections -fdata-sections
@@ -81,6 +87,7 @@ else()
     src/dispatcher.c
     src/output_state.c
     src/frame_receiver.c)
+  target_sources(output_expander_core PRIVATE src/status_led.c)
   target_include_directories(output_expander_core PUBLIC src)
   output_expander_warnings(output_expander_core)
   output_expander_sanitizers(output_expander_core)
@@ -446,4 +453,22 @@ else()
 
   set_tests_properties(comms_app PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+  add_executable(output_expander_status_led_test
+    tests/unit/test_status_led.c)
+  target_link_libraries(output_expander_status_led_test PRIVATE output_expander_core)
+  output_expander_warnings(output_expander_status_led_test)
+  output_expander_sanitizers(output_expander_status_led_test)
+  add_test(NAME status_led COMMAND output_expander_status_led_test)
+  set_tests_properties(status_led PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+  add_executable(output_expander_ws2812_test
+    tests/unit/test_ws2812.c
+    src/ws2812.c)
+  target_include_directories(output_expander_ws2812_test PRIVATE src)
+  target_link_libraries(output_expander_ws2812_test PRIVATE output_expander_core)
+  output_expander_warnings(output_expander_ws2812_test)
+  output_expander_sanitizers(output_expander_ws2812_test)
+  add_test(NAME ws2812 COMMAND output_expander_ws2812_test)
+  set_tests_properties(ws2812 PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()

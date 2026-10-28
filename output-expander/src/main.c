@@ -6,8 +6,10 @@
 #include "irq_rx.h"
 #include "output_driver.h"
 #include "rs485.h"
+#include "status_led.h"
 #include "usart.h"
 #include "watchdog.h"
+#include "ws2812.h"
 
 #include <stdint.h>
 
@@ -57,6 +59,11 @@ int main(void) {
    * No output should energize during initialization.
    */
   output_driver_init();
+
+  ws2812_t status_led;
+  ws2812_init(&status_led);
+  uint32_t command_activity_started = 0U;
+  bool command_activity_valid = false;
 
   /*
    * PC6 controls tied RS-485 DE and /RE.
@@ -175,6 +182,8 @@ int main(void) {
       debug_last_payload_length = request.payload_length;
 
       debug_valid_packet_count++;
+      command_activity_started = hal_ticks();
+      command_activity_valid = true;
 
       /*
        * Execute decoded commands in foreground context.
@@ -210,6 +219,19 @@ int main(void) {
         break;
       }
     }
+
+    /* Status policy and LED servicing are bounded foreground work. Timer/DMA
+     * continue the 30 us waveform independently while USART IRQs run. */
+    const uint32_t now_ticks = hal_ticks();
+    const uint32_t now_ms = now_ticks / UINT32_C(48000);
+    const uint32_t command_elapsed_ticks =
+        (uint32_t)(now_ticks - command_activity_started);
+    const bool command_active =
+        command_activity_valid && command_elapsed_ticks < UINT32_C(4800000);
+    ws2812_set_color(&status_led, status_led_pattern(
+                                      now_ms, 16U, false, command_active,
+                                      command_elapsed_ticks / UINT32_C(48000)));
+    ws2812_service(&status_led, now_ticks);
 
     /*
      * Feed the watchdog ONLY at the end of normal
