@@ -28,6 +28,8 @@ if(CMAKE_CROSSCOMPILING)
     src/response_tx.c
     src/commissioning.c
     src/config_fields.c    
+    src/device_uid.c
+    src/comms_app.c    
     src/startup.S)
 
   # Prevent GCC from recognizing the loops inside our memory
@@ -404,5 +406,43 @@ else()
     COMMAND output_expander_config_fields_test)
 
   set_tests_properties(config_fields PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
+    # Test the complete foreground communications application.
+  #
+  # WHAT:
+  # Exercise real request routing, command execution,
+  # UID commissioning and response decisions.
+  #
+  # WHY:
+  # The application must be tested as a whole before
+  # received RS-485 traffic is allowed to change GPIO.
+  #
+  # The test supplies simulated output-driver and
+  # response-transmitter functions. No MCU hardware,
+  # EEPROM or physical RS-485 adapter is needed.
+  add_executable(output_expander_comms_app_test
+    tests/unit/test_comms_app.c
+    src/comms_app.c
+    src/device_uid.c
+    src/command_processor.c
+    src/commissioning.c)
+
+  target_include_directories(output_expander_comms_app_test
+    PRIVATE src)
+
+  target_link_libraries(output_expander_comms_app_test
+    PRIVATE output_expander_core)
+
+  # Maintain the project's strict warning policy and
+  # host AddressSanitizer/UndefinedBehaviorSanitizer.
+  output_expander_warnings(output_expander_comms_app_test)
+  output_expander_sanitizers(output_expander_comms_app_test)
+
+  add_test(
+    NAME comms_app
+    COMMAND output_expander_comms_app_test)
+
+  set_tests_properties(comms_app PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()
