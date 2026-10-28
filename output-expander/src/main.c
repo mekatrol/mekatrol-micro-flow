@@ -63,6 +63,7 @@ int main(void) {
 
   ws2812_t status_led;
   ws2812_init(&status_led);
+
   uint32_t command_activity_started = 0U;
   bool command_activity_valid = false;
 
@@ -196,9 +197,8 @@ int main(void) {
        * end-of-loop policy can delay its first WS2812 update behind response
        * transmission and any waveform already in progress. The normal policy
        * below keeps this colour selected for the complete visible window. */
-      ws2812_set_color(
-          &status_led,
-          (rgb_t){0U, 0U, STATUS_LED_COMMAND_BRIGHTNESS});
+      ws2812_set_color(&status_led,
+                       (rgb_t){0U, 0U, STATUS_LED_COMMAND_BRIGHTNESS});
       ws2812_service(&status_led, command_activity_started);
 
       /*
@@ -248,11 +248,10 @@ int main(void) {
         command_elapsed_ticks <
             STATUS_LED_COMMAND_DURATION_MS * UINT32_C(48000);
     const bool receive_fault = frame_receiver_fault_active(&receiver);
-    ws2812_set_color(
-        &status_led,
-        status_led_pattern(now_ms, STATUS_LED_BRIGHTNESS, receive_fault,
-                           command_active,
-                           command_elapsed_ticks / UINT32_C(48000)));
+    ws2812_set_color(&status_led, status_led_pattern(
+                                      now_ms, STATUS_LED_BRIGHTNESS,
+                                      receive_fault, command_active,
+                                      command_elapsed_ticks / UINT32_C(48000)));
     ws2812_service(&status_led, now_ticks);
 
     /*
