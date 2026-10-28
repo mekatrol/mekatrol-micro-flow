@@ -22,6 +22,7 @@ if(CMAKE_CROSSCOMPILING)
     src/dispatcher.c
     src/frame_receiver.c
     src/freestanding.c
+    src/output_state.c
     src/startup.S)
 
   # Prevent GCC from recognizing the loops inside our memory
@@ -70,6 +71,7 @@ else()
     src/cobs.c
     src/protocol.c
     src/dispatcher.c
+    src/output_state.c
     src/frame_receiver.c)
   target_include_directories(output_expander_core PUBLIC src)
   output_expander_warnings(output_expander_core)
@@ -217,4 +219,28 @@ else()
   set_tests_properties(frame_receiver PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 
+  # Exercise portable output-state logic without GPIO hardware.
+  #
+  # WHAT:
+  # Compile the output-state tests against the shared
+  # portable implementation.
+  #
+  # WHY:
+  # Exhaustively verify all 65,536 logical transitions
+  # with sanitizers before connecting physical outputs.
+  add_executable(output_expander_output_state_test
+    tests/unit/test_output_state.c)
+
+  target_link_libraries(output_expander_output_state_test
+    PRIVATE output_expander_core)
+
+  output_expander_warnings(output_expander_output_state_test)
+  output_expander_sanitizers(output_expander_output_state_test)
+
+  add_test(
+    NAME output_state
+    COMMAND output_expander_output_state_test)
+
+  set_tests_properties(output_state PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 endif()
