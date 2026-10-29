@@ -9,7 +9,7 @@
 /*
  * Protocol version 1 wire-format limits.
  *
- * Keep these values identical to protocol.rs
+ * Keep these values identical to the protocol specification
  * and the Python host implementation.
  *
  * Fixed capacities avoid heap allocation and

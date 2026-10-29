@@ -21,13 +21,12 @@ ctest --preset host-debug
 
 Firmware for the independent eight-channel output expansion boards, using the
 WCH CH32V003 processor. Triac and FET hardware variants are supported by this
-Rust `no_std` project, which does not share code or build tooling with the core
-controller.
+C11 firmware project, built with CMake and the xPack GNU RISC-V toolchain.
 
 ```sh
 cd output-expander
-cargo test
-cargo test --lib --target x86_64-unknown-linux-gnu
+tools/test.sh host-debug
+tools/build.sh ch32v003-release
 ```
 
 Each project owns its source, documentation, tests, dependencies, and build

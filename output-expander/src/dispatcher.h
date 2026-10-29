@@ -11,7 +11,7 @@
  * Protocol version 1 command identifiers.
  *
  * Keep these values consistent with docs/protocol.md
- * and the working Rust implementation.
+ * and the protocol contract.
  *
  * ASSIGN_ADDRESS_BY_UID is recognized for routing only.
  * UID comparison and EEPROM persistence are not yet
@@ -75,7 +75,7 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
  * Construct a successful PING response.
  *
  * The UID must be supplied in the exact byte order
- * defined by the working Rust firmware.
+ * defined by the protocol contract.
  *
  * This portable function does not read MCU registers.
  *

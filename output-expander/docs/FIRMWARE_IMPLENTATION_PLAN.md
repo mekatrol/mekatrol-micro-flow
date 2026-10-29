@@ -4,11 +4,11 @@
 
 Build an open-source, eight-channel, active-low output expander for a RS-485 automation network. The device is controlled by the project's own hardware or a host gateway, with a documented client suitable for integration into automation systems. The target is the CH32V003F4P6 (16 KiB program Flash, 2 KiB SRAM), subject to verified resource and pin budgets before PCB release.
 
-This document specifies the agreed production design and the implementation work needed to reach it. The current repository baseline is included only where necessary to identify changes to implement. Peripheral mappings confirmed in the reference manual still require validation against the pinned HAL and physical hardware.
+This document specifies the agreed production design and the implementation work needed to reach it. The current repository baseline is included only where necessary to identify changes to implement. Peripheral mappings confirmed in the reference manual still require validation in the C peripheral implementation and physical hardware.
 
 ## 2. Current repository baseline
 
-The supplied firmware currently provides eight GPIO outputs, a WS2812 status LED, a half-duplex USART1/RS-485 driver, SysTick timing, an independent watchdog, interrupt-driven UART reception through a fixed-capacity ring buffer, COBS framing, CRC-16/CCITT-FALSE and a protocol-independent command dispatcher. Modbus register, server and RTU-silence modules have been removed. The firmware does not enable the `qingke-rt` `highcode` feature and has no `.highcode` section; `qingke-rt` remains a transitive dependency of the required `ch32-hal` `rt` feature. The existing WS2812 implementation is not part of the target architecture and must be removed when the mandatory timer/PWM/DMA driver below is integrated. External EEPROM persistence, production pin relocation and some target behavior below remain to be implemented and hardware-validated.
+The C firmware currently provides eight GPIO outputs, a WS2812 status LED, a half-duplex USART1/RS-485 driver, SysTick timing, an independent watchdog, interrupt-driven UART reception through a fixed-capacity ring buffer, COBS framing, CRC-16/CCITT-FALSE, and a protocol-independent command dispatcher. External EEPROM persistence, production pin relocation, and some target behavior below remain to be implemented and hardware-validated.
 
 ### Existing firmware wiring to migrate
 
@@ -57,7 +57,7 @@ The supplied firmware currently provides eight GPIO outputs, a WS2812 status LED
 - **HSI build:** Do not fit crystal or load capacitors. Leave PA1/PA2 unused. Configure the internal HSI clock; verify UART and WS2812 timing across supply and temperature.
 - **External-crystal build:** Fit a supported crystal and specified load capacitors between XI/XO and ground per the WCH reference design; select and validate the external-clock startup configuration. Do not fit any parts that connect oscillator nodes to the LED or EEPROM.
 
-**Required PCB validation:** Verify physical package pin numbers from the exact WCH datasheet; validate PC7 TIM1_CH2 remap group 1 against the pinned `ch32-hal` version and the DMA1_CH3 transfer implementation; confirm I2C1 default mapping on PC1/PC2; check PD0 use alongside the oscillator; ensure programming header includes GND, SWIO, NRST and appropriate target-voltage reference; validate safe-OFF levels during reset and programming. Do not release the PCB on the strength of pin-count arithmetic alone.
+**Required PCB validation:** Verify physical package pin numbers from the exact WCH datasheet; validate PC7 TIM1_CH2 remap group 1 in the C peripheral implementation and the DMA1_CH3 transfer implementation; confirm I2C1 default mapping on PC1/PC2; check PD0 use alongside the oscillator; ensure programming header includes GND, SWIO, NRST and appropriate target-voltage reference; validate safe-OFF levels during reset and programming. Do not release the PCB on the strength of pin-count arithmetic alone.
 
 ## 4. Persistent configuration: external EEPROM
 
@@ -79,7 +79,7 @@ Use the ordered **SOT-23-5 24C02-class I²C EEPROM**, nominal capacity 2 Kbit = 
 
 ### Record format and recovery
 
-Retain a fixed **64-byte versioned configuration record**, with magic, schema version, address, startup output mask, communications timeout, timeout output mask, LED brightness, sequence number and CRC-32. The existing `config.rs` codec can be adapted, but its field layout and reserved bytes must be reviewed before adding the sequence number. CRC-32 here protects stored records; message frames use CRC-16.
+Retain a fixed **64-byte versioned configuration record**, with magic, schema version, address, startup output mask, communications timeout, timeout output mask, LED brightness, sequence number and CRC-32. The existing `config_fields.c` codec can be adapted, but its field layout and reserved bytes must be reviewed before adding the sequence number. CRC-32 here protects stored records; message frames use CRC-16.
 
 | EEPROM byte range | Allocation |
 
@@ -93,7 +93,7 @@ Retain a fixed **64-byte versioned configuration record**, with magic, schema ve
 
 At startup, read both slots, validate magic/version/field bounds/CRC, and select the valid record with the newest sequence number (including defined wraparound handling). If neither is valid, use safe factory defaults and flag configuration as uncommissioned or invalid as appropriate. On save, write the **inactive** slot in EEPROM-page-sized chunks, poll completion, read back and validate the complete record before making it the preferred slot. Never erase or overwrite the sole valid slot first. Explicitly specify behavior for write failure, power loss, blank EEPROM and schema upgrades. Do not treat CRC as authentication.
 
-The device should not require a custom `memory.x`, Flash-reserved pages, RAM-resident Flash writer or Flash erase/program operations for configuration. Keep standard linker/build infrastructure only if needed independently by the HAL/toolchain. Verify whether `build.rs` and `memory.x` are needed for any other purpose before removing them.
+The device should not require a custom linker script, Flash-reserved pages, RAM-resident Flash writer or Flash erase/program operations for configuration. Keep standard linker/build infrastructure only if needed independently by the C peripheral layer/toolchain. Verify whether the startup assembly and linker script are needed for any other purpose before removing them.
 
 ## 5. Proprietary RS-485 protocol
 
@@ -123,7 +123,7 @@ The CH32V003F4P6 exposes two hardware timers which are otherwise unused by the c
 
 Use the following timer channels during development and production:
 
-| Board stage | LED pin | Timer output | HAL remap | Channel DMA |
+| Board stage | LED pin | Timer output | Timer remap | Channel DMA |
 
 |---|---|---|---:|---|
 
@@ -131,7 +131,7 @@ Use the following timer channels during development and production:
 
 | Production board | PC7 | TIM1_CH2 | `TIM1_RM=01` (remap group 1) | DMA1_CH3 (TIM1_CH2 compare request) |
 
-The production PC7/TIM1_CH2 remap group 1 and TIM1_CH2-to-DMA1_CH3 request are documented in the CH32V003 reference manual. Confirm the exact pinned `ch32-hal` APIs and DMA implementation separately; its `waveform_up()` helper may not be available. Confirm that the selected whole-timer remap does not move another timer function onto a pin used elsewhere. Reserve the selected timer channel and DMA channel in `board.rs` so later USART, I²C or other DMA work cannot allocate the same resource accidentally.
+The production PC7/TIM1_CH2 remap group 1 and TIM1_CH2-to-DMA1_CH3 request are documented in the CH32V003 reference manual. Confirm the exact C timer and DMA implementation separately; the required compare-triggered transfer must be verified. Confirm that the selected whole-timer remap does not move another timer function onto a pin used elsewhere. Reserve the selected timer channel and DMA channel in `registers.h` so later USART, I²C or other DMA work cannot allocate the same resource accidentally.
 
 At a 48 MHz timer clock, configure PWM for the WS2812 nominal 800 kHz bit rate:
 
@@ -147,7 +147,7 @@ At a 48 MHz timer clock, configure PWM for the WS2812 nominal 800 kHz bit rate:
 
 Verify the timer's auto-reload semantics when programming the registers: a 60-clock period commonly requires an ARR value of 59, while the compare values remain the number of clocks the output is high. Use PWM polarity that idles and resets LOW. Enable compare preload so a DMA write changes the following PWM period at a defined update boundary rather than altering a pulse already in progress.
 
-Convert each requested `Rgb` color to the WS2812's 24-bit GRB, most-significant-bit-first order. Build a 24-entry `u16` duty array in which each entry is 18 for a zero bit or 36 for a one bit. The duty array occupies 48 bytes. A second 24-entry buffer is permitted if double buffering materially simplifies ownership, but document the additional 48-byte SRAM cost and retain latest-color-wins behavior. Do not allocate these buffers on a heap.
+Convert each requested `Rgb` color to the WS2812's 24-bit GRB, most-significant-bit-first order. Build a 24-entry `uint16_t` duty array in which each entry is 18 for a zero bit or 36 for a one bit. The duty array occupies 48 bytes. A second 24-entry buffer is permitted if double buffering materially simplifies ownership, but document the additional 48-byte SRAM cost and retain latest-color-wins behavior. Do not allocate these buffers on a heap.
 
 For the production PC7/TIM1_CH2/DMA1_CH3 mapping, use the TIM1_CH2 compare DMA request, not TIM1 update: TIM1_UP is routed to DMA1_CH5. DMA writes the next duty value to TIM1_CCR2 with compare preload enabled. Verify exact compare-event phase, preload latch, initial CCR2, final bit and DMA completion behavior on hardware; a compare event occurs within a bit period, so DMA completion alone must not truncate the final HIGH pulse. An alternative update-triggered design would explicitly require DMA1_CH5 and separate ownership validation. The CPU must not receive an interrupt every 1.25 µs: an 800 kHz per-bit interrupt, or up to 1.6 MHz when interrupting on both edges, provides only 60 or approximately 30 CPU clocks between events at 48 MHz and would create unacceptable latency, Flash-fetch sensitivity and USART starvation. Timer PWM plus DMA makes high and low durations independent of foreground execution, Flash wait states and ordinary interrupt latency.
 
@@ -165,7 +165,7 @@ The public foreground API should express intent rather than waveform mechanics, 
 
 Use either a DMA transfer-complete interrupt or a provably bounded foreground completion check. If an interrupt is used, it must only acknowledge DMA status, disable PWM/DMA, force LOW, record the reset-start timestamp/state and return. It must not calculate colors, refill buffers, update status policy, transmit RS-485, access EEPROM or feed the watchdog. The main loop remains the sole owner of color policy and the only path that feeds the watchdog.
 
-Pay particular attention to the first and last PWM periods. Preload the first duty value before enabling output so no spurious leading pulse is generated. After the twenty-fourth bit, prevent the timer from repeating the final duty value; stop PWM and establish LOW before another period begins. Verify the exact DMA transfer count, compare-event ordering, compare preload behavior and completion flag timing against the pinned HAL and on a logic analyzer rather than assuming desktop tests prove waveform correctness.
+Pay particular attention to the first and last PWM periods. Preload the first duty value before enabling output so no spurious leading pulse is generated. After the twenty-fourth bit, prevent the timer from repeating the final duty value; stop PWM and establish LOW before another period begins. Verify the exact DMA transfer count, compare-event ordering, compare preload behavior and completion flag timing in the C peripheral implementation and on a logic analyzer rather than assuming desktop tests prove waveform correctness.
 
 Timer/DMA acceptance measurements on both the current and production pin mappings must include:
 
@@ -181,51 +181,33 @@ Timer/DMA acceptance measurements on both the current and production pin mapping
 
 - foreground stalls and deliberately delayed completion servicing, proving the hardware waveform remains valid and the watchdog is not fed by LED ISR activity;
 
-- release builds executing vectors, handlers and application routines from Flash with no `.highcode` section and no executable `.data` workaround remaining.
+- release builds executing vectors, handlers and application routines from Flash with no unexpected executable `.data` workaround remaining.
 
 ## 7. Firmware module structure
 
 | Module | Target responsibility |
-
 |---|---|
-
-| `board.rs` | Validated pin map, output polarity, baud and fixed capacities |
-
-| `main.rs` | HAL setup, safe GPIO startup, EEPROM load, protocol loop, lowest-priority LED service and watchdog feed |
-
-| `output_gpio.rs`, `outputs.rs` | Eight-channel logical/physical output control |
-
-| `serial.rs`, `rs485.rs` | USART1 and half-duplex transceiver direction |
-
-| `irq_rx.rs` | Minimal interrupt-safe receive transport and UART error reporting |
-
-| `protocol.rs` | COBS, CRC-16, header validation and packet encoding/decoding |
-
-| `dispatcher.rs` | Command execution and response generation, independent of framing |
-
-| `config.rs` | Versioned 64-byte record codec and validation |
-
-| `eeprom.rs` | I²C EEPROM byte/page operations, ACK polling and timeouts |
-
-| `config_store.rs` | Dual-slot selection, sequence handling, verified commits |
-
-| `uid.rs` | MCU UID acquisition and commissioning identity |
-
-| `monotonic.rs`, `watchdog.rs` | Timing and fault recovery |
-
-| `status_led.rs` | Foreground color policy, priority, brightness and latest requested state |
-
-| `ws2812.rs` | Non-blocking timer/PWM/DMA waveform driver, fixed duty buffer, transfer/reset state machine and minimal completion handling |
-
-| `tools/device_tool.py` | Python host CLI, discovery/commissioning/control |
+| `registers.h`, `hal.c` | MCU registers, clocks, timing, and low-level hardware setup |
+| `main.c` | Safe startup, protocol loop, low-priority LED service, and watchdog feed |
+| `output_driver.c`, `output_state.c` | Eight-channel logical and physical output control |
+| `usart.c`, `rs485.c`, `usart_irq.c` | USART1, receive interrupts, and half-duplex direction control |
+| `irq_rx.c` | Bounded interrupt-to-foreground receive transport |
+| `protocol.c`, `cobs.c`, `crc16.c` | Framing, validation, and packet encoding/decoding |
+| `dispatcher.c`, `command_processor.c` | Command execution and response generation |
+| `config_fields.c` | Configuration field validation and record support |
+| Planned `eeprom.c`, `config_store.c` | I²C EEPROM access and dual-slot persistence |
+| `device_uid.c`, `commissioning.c` | MCU UID acquisition and commissioning identity |
+| `watchdog.c` | Fault recovery and foreground health policy |
+| `status_led.c`, `ws2812.c`, `ws2812_hw.c` | LED policy and timer/PWM/DMA waveform generation |
+| `tools/device_tool.py` | Python host CLI for discovery, commissioning, and control |
 
 Modbus-specific modules, register abstractions, RTU timing and tooling have been removed after their protocol replacements were implemented and host-tested. Preserve reusable GPIO, serial and watchdog logic while completing EEPROM persistence, communications timeout behavior and the timer/PWM/DMA LED replacement described here.
 
 ## 8. Resource requirements
 
-The target has only 2 KiB SRAM. Do not enable the `qingke-rt` `highcode` feature or use `#[highcode]`; interrupt vectors, traps, handlers, the WS2812 control/state code and other application code must execute from Flash. The release ELF must contain no allocated `.highcode` section and no executable routine in `.data`. WS2812 waveform generation is exclusively the responsibility of timer/PWM/DMA hardware; CPU delay-loop waveform generation from either Flash or SRAM is not an alternative architecture.
+The target has only 2 KiB SRAM. Interrupt vectors, traps, handlers, the WS2812 control/state code, and all other application code must execute from Flash. The release ELF must contain no unexpected executable routine in `.data`. WS2812 waveform generation is exclusively the responsibility of timer/PWM/DMA hardware; CPU delay-loop waveform generation from either Flash or SRAM is not an alternative architecture.
 
-Budget at least 48 bytes of static SRAM for one 24-entry `u16` WS2812 duty buffer plus explicit driver state. If double buffering is selected, budget 96 bytes for duty arrays and justify why a single DMA-owned buffer plus one pending RGB value is insufficient. Include DMA/HAL state introduced by enabling the selected channel in the measured `.data` and `.bss` totals; source-level array sizes alone are not the complete cost.
+Budget at least 48 bytes of static SRAM for one 24-entry `uint16_t` WS2812 duty buffer plus explicit driver state. If double buffering is selected, budget 96 bytes for duty arrays and justify why a single DMA-owned buffer plus one pending RGB value is insufficient. Include DMA/driver state introduced by enabling the selected channel in the measured `.data` and `.bss` totals; source-level array sizes alone are not the complete cost.
 
 Measure `.data`, `.bss`, the `main` stack frame, nested calls and interrupt stack usage on every release build. A successful link is not proof of stack safety. Eliminate RAM-resident internal-Flash and WS2812 routines and avoid duplicated event/request/response buffers. Define a maximum decoded packet length of **32 bytes** and allocate bounded COBS message buffers; revise only with a documented command requirement. Use no heap.
 
@@ -237,9 +219,9 @@ Treat SRAM headroom as a hardware-selection gate. If the measured worst-case sta
 
 1. Verify the exact SOT-23-5 EEPROM datasheet and pinout, MCU package pinout, PC1/PC2 hardware-I²C mapping, PC7 TIM1_CH2 remap group 1 and DMA1_CH3 implementation, and external-crystal layout.
 
-2. Record the current transition baseline accurately: the release ELF must have no `.highcode` section and vectors, traps and interrupt handlers must execute from Flash. The direct `qingke-rt` dependency, its `highcode` feature and all `#[highcode]` annotations remain removed; the runtime remains transitively required by `ch32-hal`. Treat any legacy CPU-driven WS2812 waveform routine only as code to remove at P3, not as a release requirement to preserve, relocate or recalibrate.
+2. Record a clean C release baseline. Vectors, traps, and interrupt handlers must execute from Flash. Treat any CPU-driven WS2812 waveform routine only as code to remove at P3, not as a release requirement to preserve or recalibrate.
 
-3. Revert internal-Flash persistence experiments. Confirm whether custom `build.rs`/`memory.x` are required for unrelated build reasons; otherwise use the standard HAL memory layout.
+3. Revert internal-Flash persistence experiments. Keep the project-owned startup assembly and linker script focused on the C runtime and documented memory layout.
 
 4. Record a clean host-test and release-build baseline, Flash/SRAM section sizes and stack analysis.
 
@@ -283,7 +265,7 @@ Treat SRAM headroom as a hardware-selection gate. If the measured worst-case sta
 
 1. Freeze pin map, external-crystal footprint and load capacitors, clock-source assembly configurations, power supply, EEPROM footprint, pull-ups, RS-485 termination/biasing, SWIO/NRST programming header and safe output circuitry. Confirm the pin allocation and programming access.
 
-2. Verify the release ELF has no SRAM-allocated `.highcode` and no executable `.data` routine, and fits Flash and SRAM with measured worst-case stack margin and planned feature reserve.
+2. Verify the release ELF has no unexpected executable `.data` routine, and fits Flash and SRAM with measured worst-case stack margin and planned feature reserve.
 
 3. Complete Python interoperability, multi-device soak, electrical-noise and power-cycle tests.
 
@@ -294,15 +276,9 @@ Treat SRAM headroom as a hardware-selection gate. If the measured worst-case sta
 From the firmware project root:
 
 ```sh
-
-cargo test --lib --target x86_64-unknown-linux-gnu
-
-cargo firmware
-
-OBJDUMP="$(rustc +nightly --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-objdump"
-
-"$OBJDUMP" -h target/riscv32ec-unknown-none-elf/release/output-expander
-
+tools/test.sh host-debug
+tools/build.sh ch32v003-release
+riscv-none-elf-objdump -h build/ch32v003-release/output-expander.elf
 ```
 
 Do not flash unvalidated EEPROM pin assignments or enable persistent writes until the exact part datasheet and hardware have been checked. Maintain a release checklist covering GPIO safety, absence of SRAM-resident executable code, RAM/stack margin, CRC rejection, EEPROM recovery, multidrop operation, timer/PWM/DMA WS2812 timing and resource ownership, foreground-only watchdog feeding and watchdog recovery.
@@ -312,6 +288,6 @@ Do not flash unvalidated EEPROM pin assignments or enable persistent writes unti
 - CH32V003 reference manual TIM1 alternate-function remap table: `TIM1_RM=01` routes `TIM1_CH2` to **PC7**. `TIM1_RM=11` also routes CH2 to PC7, but use group **1** to avoid needless changes. Other TIM1 functions remain disabled; output GPIO ownership is unaffected when those alternate functions are not enabled.
 - Reference manual DMA request table: **TIM1_CH2 → DMA1_CH3**, **TIM1_UP → DMA1_CH5**. Do not describe a CH3-driven design as update-event-triggered.
 - Reference manual default I²C mapping: **PC2=SCL**, **PC1=SDA** (`I2C1_RM=00`). Default USART1 mapping: **PD5=TX**, **PD6=RX**.
-- **Firmware and bench verification still required:** Check `PwmPin::new_ch2::<1>(p.PC7)` or equivalent against the pinned HAL, configure DMA channel 3 to CCR2 correctly, and measure 24 complete pulses and the reset interval before releasing the PCB.
+- **Firmware and bench verification still required:** Check the PC7/TIM1_CH2 register configuration, configure DMA channel 3 to CCR2 correctly, and measure 24 complete pulses and the reset interval before releasing the PCB.
 
 References: CH32V003 reference manual https://ch32-riscv-ug.github.io/CH32V003/datasheet_en/CH32V003RM.PDF ; remap table https://www.makerwitawat.com/wp-content/uploads/2023/05/CH32V003RM-e_unlocked.pdf .

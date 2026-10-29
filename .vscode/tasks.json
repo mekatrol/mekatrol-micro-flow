@@ -36,10 +36,10 @@
       "group": "test"
     },
     {
-      "label": "Output Expander: Format Check",
+      "label": "Output Expander: Configure",
       "type": "process",
-      "command": "cargo",
-      "args": ["fmt", "--check"],
+      "command": "cmake",
+      "args": ["--preset", "host-debug"],
       "options": {
         "cwd": "${workspaceFolder}/output-expander"
       },
@@ -48,32 +48,31 @@
     {
       "label": "Output Expander: Test",
       "type": "process",
-      "command": "cargo",
-      "args": ["test"],
+      "command": "ctest",
+      "args": ["--preset", "host-debug"],
       "options": {
         "cwd": "${workspaceFolder}/output-expander"
       },
-      "problemMatcher": "$rustc",
+      "dependsOn": "Output Expander: Build",
+      "problemMatcher": [],
       "group": "test"
     },
     {
-      "label": "Output Expander: Clippy",
+      "label": "Output Expander: Build",
       "type": "process",
-      "command": "cargo",
-      "args": ["clippy", "--all-targets", "--", "-D", "warnings"],
+      "command": "cmake",
+      "args": ["--build", "--preset", "host-debug"],
       "options": {
         "cwd": "${workspaceFolder}/output-expander"
       },
-      "problemMatcher": "$rustc"
+      "dependsOn": "Output Expander: Configure",
+      "problemMatcher": "$gcc",
+      "group": "build"
     },
     {
       "label": "Output Expander: Check",
       "dependsOrder": "sequence",
-      "dependsOn": [
-        "Output Expander: Format Check",
-        "Output Expander: Test",
-        "Output Expander: Clippy"
-      ],
+      "dependsOn": ["Output Expander: Test"],
       "problemMatcher": []
     },
     {

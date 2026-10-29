@@ -9,7 +9,7 @@ static void test_reference_vector(void) {
   /*
    * Standard CRC-16/CCITT-FALSE test vector.
    *
-   * Both Rust and C must produce 0x29B1.
+   * The protocol implementation must produce 0x29B1.
    */
   static const uint8_t data[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
 

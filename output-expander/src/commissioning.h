@@ -22,7 +22,7 @@
  * destination because ASSIGN_ADDRESS_BY_UID uses broadcast 0x00.
  *
  * The UID byte order must be the same order used by
- * PING and by the working Rust implementation.
+ * PING and by the protocol contract.
  */
 #define COMMISSIONING_UID_SIZE DISPATCHER_UID_SIZE
 #define COMMISSIONING_ADDRESS_OFFSET COMMISSIONING_UID_SIZE

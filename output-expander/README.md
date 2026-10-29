@@ -1,7 +1,6 @@
 # Output Expander C firmware
 
-This is the canonical CH32V003F4P6 C firmware. The preserved Rust reference
-and recovery implementation is in `../output-expander-rust/`.
+This is the canonical CH32V003F4P6 C firmware.
 
 Because this product has one fixed MCU and board, production sources use a
 flat `src/` directory. Application, peripheral, startup, linker, and portable
@@ -46,7 +45,7 @@ The assigned address is verified with `PING`, but is not persistent.
 The status LED pulses green while idle, shows blue for 300 ms after a valid
 command, and flashes red after a malformed frame, UART error, or receive
 overflow. A subsequent valid message clears the receive fault and shows the
-blue command indication, matching the Rust reference behavior. The
+blue command indication. The
 `simulate-error` command sends an invalid-CRC frame to exercise the red fault
 indication without eliciting a protocol response.
 
@@ -54,5 +53,5 @@ The WS2812 backend uses TIM1 and DMA so UART interrupts remain available while
 the 24-bit waveform is transmitted.
 
 See [docs/BUILD.md](docs/BUILD.md) for prerequisites, wiring, artifacts, and
-recovery instructions. See [docs/protocol.md](docs/protocol.md) for the full
+flash instructions. See [docs/protocol.md](docs/protocol.md) for the full
 protocol contract and its current implementation status.

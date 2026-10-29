@@ -144,7 +144,7 @@ bool dispatcher_prepare_ping_response(const protocol_packet_t *request,
    * Copy the complete physical MCU UID.
    *
    * The hardware-specific layer must supply the same
-   * byte ordering as the working Rust implementation.
+   * byte ordering defined by the protocol contract.
    *
    * A bounded loop avoids requiring libc memcpy().
    */

@@ -70,7 +70,7 @@ static void assert_response_header(const protocol_packet_t *request,
  *
  * WHY:
  * A correct in-memory response must also survive the
- * existing Rust-compatible wire encoding.
+ * protocol-compatible wire encoding.
  *
  * The decoder receives the encoded body without the
  * trailing zero delimiter, as in frame_receiver_poll().

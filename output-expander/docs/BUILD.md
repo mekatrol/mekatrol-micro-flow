@@ -62,18 +62,3 @@ speed, power-cycle the target and probe, confirm common ground and PD1/SWIO,
 and hold NRST low while starting the command, then release it when attachment
 begins. Do not connect the probe's 3V3 output when the board is independently
 powered.
-
-## Rust recovery
-
-The known reference implementation remains independently buildable and its
-clean operation cannot touch this project's `build/` directory:
-
-```sh
-cd ../output-expander-rust
-cargo clean
-cargo firmware
-cargo flash
-```
-
-`cargo flash` invokes `wlink -v flash` for the Rust release ELF. Use this to
-restore the reference firmware after smoke-image validation.

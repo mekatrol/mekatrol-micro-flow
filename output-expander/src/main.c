@@ -103,7 +103,7 @@ int main(void) {
   usart_enable_rx_interrupts();
 
   /*
-   * Start IWDG LAST, following the original Rust firmware.
+   * Start IWDG LAST, after all fallible initialization.
    *
    * The watchdog is independent of HSI and PLL.
    * It resets the MCU if normal foreground work stalls
@@ -194,7 +194,7 @@ int main(void) {
      *
      * The foreground continues looping rather than
      * issuing another software reset. This matches
-     * the watchdog-based reset mechanism in Rust.
+     * the watchdog-based reset mechanism.
      */
     if (comms_app_watchdog_feed_allowed(&app)) {
       watchdog_feed();

@@ -2,6 +2,6 @@
   "recommendations": [
     "llvm-vs-code-extensions.vscode-clangd",
     "ms-vscode.cmake-tools",
-    "rust-lang.rust-analyzer"
+    "xaver.clang-format"
   ]
 }

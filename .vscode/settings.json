@@ -14,18 +14,17 @@
     "-I${workspaceFolder}/core-controller/src/boards/rpi/rp2350"
   ],
   "cmake.configureOnOpen": true,
-  "cmake.sourceDirectory": "${workspaceFolder}/core-controller",
+  "cmake.sourceDirectory": [
+    "${workspaceFolder}/core-controller",
+    "${workspaceFolder}/output-expander"
+  ],
   "cmake.useCMakePresets": "always",
   "editor.semanticHighlighting.enabled": true,
   "files.associations": {
     "*.h": "c"
   },
-  "rust-analyzer.linkedProjects": [
-    "${workspaceFolder}/output-expander-rust/Cargo.toml"
-  ],
-  "rust-analyzer.check.allTargets": false,
-  "[rust]": {
-    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+  "[c]": {
+    "editor.defaultFormatter": "xaver.clang-format",
     "editor.formatOnSave": true
   }
 }

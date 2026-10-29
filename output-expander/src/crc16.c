@@ -9,8 +9,7 @@
  * The polynomial determines how bits are mixed
  * into the checksum during processing.
  *
- * This must match both the Rust firmware and
- * the Python host implementation.
+ * This must match the Python host implementation.
  */
 #define CRC16_POLYNOMIAL UINT16_C(0x1021)
 #define CRC16_INITIAL UINT16_C(0xFFFF)

@@ -14,5 +14,9 @@
   "editor.semanticHighlighting.enabled": true,
   "files.associations": {
     "*.h": "c"
+  },
+  "[c]": {
+    "editor.defaultFormatter": "xaver.clang-format",
+    "editor.formatOnSave": true
   }
 }
