@@ -6,7 +6,7 @@ An independent host implementation verifies byte order, COBS encoding,
 CRC validation, and response matching without special libraries.
 
 The current firmware implements PING, GET_OUTPUTS, SET_OUTPUTS, RESET, and
-RAM-only UID-targeted address assignment. Persistent configuration and status
+UID-targeted address assignment. Persistent configuration and status
 commands remain part of protocol version one but are not exposed here until
 the firmware implements them.
 """
@@ -290,15 +290,31 @@ class OutputExpander:
         return payload[0]
 
     def set_outputs(self, addr: int, value: int) -> int:
-        """Replace all output bits and return the device-applied mask."""
+        """Replace the target mask and return the accepted target."""
 
         payload = self.request(addr, 0x10, bytes((value,)))
         if len(payload) != 1:
             raise ProtocolError("invalid SET_OUTPUTS response")
         return payload[0]
 
+    def output_delay(self, addr: int) -> int:
+        """Read the configured output activation spacing in milliseconds."""
+        payload = self.request(addr, 0x12)
+        if len(payload) != 1:
+            raise ProtocolError("invalid GET_OUTPUT_DELAY response")
+        return payload[0] * 100
+
+    def set_output_delay(self, addr: int, delay_ms: int) -> int:
+        """Set and return the output activation spacing."""
+        if delay_ms % 100 != 0:
+            raise ValueError("output delay must be a multiple of 100 ms")
+        payload = self.request(addr, 0x13, bytes((delay_ms // 100,)))
+        if len(payload) != 1:
+            raise ProtocolError("invalid SET_OUTPUT_DELAY response")
+        return payload[0] * 100
+
     def assign(self, uid: bytes, new_address: int) -> None:
-        """Assign a RAM-only address, then verify it by PING."""
+        """Assign a persistent address, then verify it by PING."""
 
         # Broadcasts intentionally have no reply. Advance the sequence after TX
         # and prove success by matching the complete UID at the new address.
@@ -351,6 +367,7 @@ def build_parser() -> argparse.ArgumentParser:
     command_help = {
         "info": "show UID, firmware version, and outputs",
         "outputs": "read or replace the complete output mask",
+        "output-delay": "read or set the output activation delay",
         "reset": "request an acknowledged watchdog reset",
         "simulate-error": "send a deliberately invalid-CRC PING",
     }
@@ -363,6 +380,10 @@ def build_parser() -> argparse.ArgumentParser:
         )
         if name == "outputs":
             command.add_argument("--set", type=mask)
+        if name == "output-delay":
+            command.add_argument(
+                "--set", type=int, choices=range(500, 10001, 100)
+            )
 
     one = commands.add_parser("output", help="change one output channel")
     one.add_argument("--address", required=True, type=address)
@@ -371,11 +392,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     assign = commands.add_parser(
         "set-address",
-        help="assign and verify a temporary address (lost on reset)",
+        help="assign and verify a persistent address",
         description=(
-            "Assign an address to the matching UID in RAM. The current firmware "
-            "does not persist it, so reset or power loss restores the configured "
-            "boot address (0xFF by default)."
+            "Assign an address to the matching UID and commit it to verified "
+            "persistent configuration storage."
         ),
     )
     assign.add_argument("--uid", required=True, type=parse_uid)
@@ -427,6 +447,13 @@ def run(args: argparse.Namespace) -> None:
                 else device.outputs(args.address)
             )
             show_outputs(value)
+        elif args.command == "output-delay":
+            value = (
+                device.set_output_delay(args.address, args.set)
+                if args.set is not None
+                else device.output_delay(args.address)
+            )
+            print(f"output activation delay: {value} ms")
         elif args.command == "output":
             # Read-modify-write preserves every channel except the requested one.
             value = device.outputs(args.address)
@@ -436,8 +463,7 @@ def run(args: argparse.Namespace) -> None:
         elif args.command == "set-address":
             device.assign(args.uid, args.new_address)
             print(
-                f"temporarily assigned {args.uid.hex()} to {args.new_address}; "
-                "reset or power loss restores the configured boot address"
+                f"assigned {args.uid.hex()} to {args.new_address}"
             )
         elif args.command == "reset":
             device.reset(args.address)

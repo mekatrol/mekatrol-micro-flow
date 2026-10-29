@@ -22,18 +22,34 @@
  */
 static uint8_t fake_output_mask;
 static unsigned int fake_set_calls;
+static uint8_t fake_delay_units;
 
 void output_driver_init(void) {
   fake_output_mask = 0U;
   fake_set_calls = 0U;
+  fake_delay_units = 5U;
 }
 
 uint8_t output_driver_get(void) { return fake_output_mask; }
 
-uint8_t output_driver_set(uint8_t requested_mask) {
+uint8_t output_driver_request(uint8_t requested_mask) {
   fake_output_mask = requested_mask;
   ++fake_set_calls;
   return fake_output_mask;
+}
+
+uint8_t output_driver_get_requested(void) { return fake_output_mask; }
+void output_driver_service(uint32_t now_ticks) { (void)now_ticks; }
+uint8_t output_driver_get_activation_delay_units(void) {
+  return fake_delay_units;
+}
+bool output_driver_set_activation_delay_units(uint8_t delay_units) {
+  if (delay_units < OUTPUT_DRIVER_MIN_ACTIVATION_DELAY_UNITS ||
+      delay_units > OUTPUT_DRIVER_MAX_ACTIVATION_DELAY_UNITS) {
+    return false;
+  }
+  fake_delay_units = delay_units;
+  return true;
 }
 
 /*
@@ -209,6 +225,48 @@ static void test_set_outputs_all_masks(void) {
     assert(response.payload_length == 1U);
     assert(response.payload[0] == (uint8_t)mask);
   }
+}
+
+/*
+ * Verify the dedicated delay messages after the output sequencer has
+ * already been covered independently. The wire representation is explicitly
+ * little-endian, unsafe values are rejected, and failed writes preserve the
+ * previous safe value.
+ */
+static void test_output_delay_commands(void) {
+  const command_processor_context_t context = make_context();
+  output_driver_init();
+
+  protocol_packet_t get =
+      make_request(DISPATCHER_COMMAND_GET_OUTPUT_DELAY);
+  protocol_packet_t response = {0};
+  assert(command_processor_process(&context, &get, &response) ==
+         COMMAND_PROCESSOR_RESPONSE_READY);
+  assert(response.type == PROTOCOL_TYPE_RESPONSE);
+  assert(response.payload_length == 1U);
+  assert(response.payload[0] == 5U); /* 5 * 100 ms = 500 ms */
+
+  protocol_packet_t set =
+      make_request(DISPATCHER_COMMAND_SET_OUTPUT_DELAY);
+  set.payload_length = 1U;
+  set.payload[0] = 100U; /* 100 * 100 ms = 10 seconds */
+  assert(command_processor_process(&context, &set, &response) ==
+         COMMAND_PROCESSOR_RESPONSE_READY);
+  assert(response.type == PROTOCOL_TYPE_RESPONSE);
+  assert(response.payload[0] == 100U);
+  assert(fake_delay_units == 100U);
+
+  set.payload[0] = 4U; /* 400 ms is below the hard safety minimum. */
+  assert(command_processor_process(&context, &set, &response) ==
+         COMMAND_PROCESSOR_RESPONSE_READY);
+  assert_error_response(&set, &response, COMMAND_ERROR_BAD_VALUE);
+  assert(fake_delay_units == 100U);
+
+  set.payload_length = 2U;
+  assert(command_processor_process(&context, &set, &response) ==
+         COMMAND_PROCESSOR_RESPONSE_READY);
+  assert_error_response(&set, &response, COMMAND_ERROR_BAD_LENGTH);
+  assert(fake_delay_units == 100U);
 }
 
 /*
@@ -410,7 +468,7 @@ static void test_invalid_set_outputs_lengths(void) {
 static void test_unknown_commands(void) {
   const command_processor_context_t context = make_context();
 
-  const uint8_t unknown_commands[] = {0x00U, 0x03U, 0x12U, 0x31U, 0xEEU, 0xFFU};
+  const uint8_t unknown_commands[] = {0x00U, 0x03U, 0x14U, 0x31U, 0xEEU, 0xFFU};
 
   output_driver_init();
 
@@ -588,6 +646,7 @@ int main(void) {
   test_ping();
   test_get_outputs();
   test_set_outputs_all_masks();
+  test_output_delay_commands();
 
   test_ignored_requests();
   test_invalid_read_lengths();

@@ -72,8 +72,7 @@ int main(void) {
    * Set the temporary development address and
    * foreground application identity.
    *
-   * Address assignment remains RAM-only until
-   * EEPROM storage becomes available.
+   * The persistent configuration layer supplies the commissioned address.
    */
   comms_app_t app;
 
@@ -120,6 +119,15 @@ int main(void) {
 
   for (;;) {
     /*
+     * Advance activation independently of protocol cadence. This operation is
+     * non-blocking and may energize at most one output. Servicing before frame
+     * draining prevents sustained bus traffic from starving the ramp.
+     */
+    if (!pvd_brownout_detected() &&
+        comms_app_watchdog_feed_allowed(&app)) {
+      output_driver_service(hal_ticks());
+    }
+    /*
      * Process every available, fully decoded packet.
      *
      * Framing, COBS, CRC and receive-error recovery
@@ -150,7 +158,7 @@ int main(void) {
        * Execute decoded commands in foreground context.
        *
        * SET_OUTPUTS may change physical active-low GPIO.
-       * ASSIGN_ADDRESS_BY_UID may change the RAM-only address.
+       * ASSIGN_ADDRESS_BY_UID may change the commissioned address.
        * RESET may acknowledge and latch watchdog expiry.
        *
        * The USART transmit driver waits for TC before
@@ -166,7 +174,18 @@ int main(void) {
        * so no additional commands can change GPIO state.
        */
       if (!comms_app_watchdog_feed_allowed(&app)) {
+        /* RESET waits for watchdog expiry, so remove all loads during the wait. */
+        (void)output_driver_request(0U);
         break;
+      }
+
+      /*
+       * Also service between received packets. Recheck PVD because its
+       * interrupt may have latched a brownout while the command response was
+       * being transmitted; no pending output may be re-energized afterward.
+       */
+      if (!pvd_brownout_detected()) {
+        output_driver_service(hal_ticks());
       }
     }
 

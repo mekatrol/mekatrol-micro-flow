@@ -19,19 +19,35 @@
  * access CH32V003 registers or drive physical loads.
  */
 static uint8_t fake_outputs;
+static uint8_t fake_delay_units;
 static unsigned int output_write_count;
 
 void output_driver_init(void) {
   fake_outputs = 0U;
+  fake_delay_units = 5U;
   output_write_count = 0U;
 }
 
 uint8_t output_driver_get(void) { return fake_outputs; }
 
-uint8_t output_driver_set(uint8_t requested_mask) {
+uint8_t output_driver_request(uint8_t requested_mask) {
   fake_outputs = requested_mask;
   ++output_write_count;
   return fake_outputs;
+}
+
+uint8_t output_driver_get_requested(void) { return fake_outputs; }
+void output_driver_service(uint32_t now_ticks) { (void)now_ticks; }
+uint8_t output_driver_get_activation_delay_units(void) {
+  return fake_delay_units;
+}
+bool output_driver_set_activation_delay_units(uint8_t delay_units) {
+  if (delay_units < OUTPUT_DRIVER_MIN_ACTIVATION_DELAY_UNITS ||
+      delay_units > OUTPUT_DRIVER_MAX_ACTIVATION_DELAY_UNITS) {
+    return false;
+  }
+  fake_delay_units = delay_units;
+  return true;
 }
 
 /*
@@ -182,7 +198,7 @@ static void test_output_round_trip(void) {
 }
 
 /*
- * Verify normal RAM-only UID commissioning.
+ * Verify normal UID commissioning behavior.
  *
  * It must not interfere with watchdog policy.
  */

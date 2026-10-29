@@ -181,7 +181,6 @@ comms_app_result_t comms_app_process(comms_app_t *app,
      * Accept only complete UID matches with a valid
      * commissioned address.
      *
-     * This remains RAM-only until EEPROM is installed.
      * Broadcast requests do not produce responses.
      */
     if (!commissioning_validate_assign_address_by_uid(

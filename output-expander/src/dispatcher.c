@@ -295,7 +295,7 @@ bool dispatcher_parse_set_outputs(const protocol_packet_t *request,
 
 bool dispatcher_prepare_set_outputs_response(const protocol_packet_t *request,
                                              uint8_t device_address,
-                                             uint8_t applied_mask,
+                                             uint8_t accepted_mask,
                                              protocol_packet_t *response) {
 
   /*
@@ -324,18 +324,11 @@ bool dispatcher_prepare_set_outputs_response(const protocol_packet_t *request,
   }
 
   /*
-   * A mismatch between the requested and applied mask
-   * means the requested operation was not fully applied.
-   *
-   * The current protocol success response is used only
-   * when the requested state has been achieved exactly.
-   *
-   * If hardware application fails, the foreground must
-   * handle that failure rather than claim success.
-   *
-   * No response is constructed in the mismatch case.
+   * A successful asynchronous request acknowledges the exact target stored by
+   * the sequencer. It is not compared with GPIO state because later channels
+   * may remain safely pending for several seconds.
    */
-  if (applied_mask != requested_mask) {
+  if (accepted_mask != requested_mask) {
     return false;
   }
 
@@ -360,7 +353,7 @@ bool dispatcher_prepare_set_outputs_response(const protocol_packet_t *request,
    * Active-low conversion remains the HAL's job.
    */
   prepared.payload_length = DISPATCHER_SET_OUTPUTS_RESPONSE_SIZE;
-  prepared.payload[0] = applied_mask;
+  prepared.payload[0] = accepted_mask;
 
   /*
    * Publish the completed response.

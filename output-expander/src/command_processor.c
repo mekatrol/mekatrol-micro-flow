@@ -34,6 +34,7 @@
 #define COMMAND_GET_CONFIG 0x20U
 #define COMMAND_SET_CONFIG 0x21U
 #define COMMAND_RESET 0x40U
+#define OUTPUT_DELAY_PAYLOAD_SIZE 1U
 
 /*
  * Build a protocol error response.
@@ -228,6 +229,49 @@ command_processor_process(const command_processor_context_t *context,
 
     return COMMAND_PROCESSOR_IGNORED;
 
+  case DISPATCHER_COMMAND_GET_OUTPUT_DELAY: {
+    if (request->payload_length != 0U) {
+      return prepare_error_response(request, COMMAND_ERROR_BAD_LENGTH,
+                                    response);
+    }
+
+    /* One byte represents the active interval in exact 100 ms units. */
+    const uint8_t delay_units = output_driver_get_activation_delay_units();
+    protocol_packet_t prepared = {0};
+    prepared.destination = request->destination;
+    prepared.sequence = request->sequence;
+    prepared.type = PROTOCOL_TYPE_RESPONSE;
+    prepared.command = request->command;
+    prepared.payload_length = OUTPUT_DELAY_PAYLOAD_SIZE;
+    prepared.payload[0] = delay_units;
+    *response = prepared;
+    return COMMAND_PROCESSOR_RESPONSE_READY;
+  }
+
+  case DISPATCHER_COMMAND_SET_OUTPUT_DELAY: {
+    if (request->payload_length != OUTPUT_DELAY_PAYLOAD_SIZE) {
+      return prepare_error_response(request, COMMAND_ERROR_BAD_LENGTH,
+                                    response);
+    }
+
+    const uint8_t delay_units = request->payload[0];
+
+    if (!output_driver_set_activation_delay_units(delay_units)) {
+      return prepare_error_response(request, COMMAND_ERROR_BAD_VALUE, response);
+    }
+
+    /* Echo only after the driver has validated and accepted the new value. */
+    protocol_packet_t prepared = {0};
+    prepared.destination = request->destination;
+    prepared.sequence = request->sequence;
+    prepared.type = PROTOCOL_TYPE_RESPONSE;
+    prepared.command = request->command;
+    prepared.payload_length = OUTPUT_DELAY_PAYLOAD_SIZE;
+    prepared.payload[0] = request->payload[0];
+    *response = prepared;
+    return COMMAND_PROCESSOR_RESPONSE_READY;
+  }
+
   case DISPATCHER_COMMAND_SET_OUTPUTS: {
     /*
      * SET_OUTPUTS requires exactly one byte.
@@ -258,40 +302,19 @@ command_processor_process(const command_processor_context_t *context,
     }
 
     /*
-     * Apply the requested logical mask.
-     *
-     * output_driver_set() calculates the necessary
-     * transitions and calls the existing HAL.
-     *
-     * The HAL handles physical GPIO pin mapping and
-     * active-low conversion.
-     *
-     * This operation changes volatile output state only.
-     * No EEPROM write takes place.
+     * Replace the sequencer's complete target mask. Any required OFF changes
+     * happen immediately, but ON changes remain pending for timed foreground
+     * service. This volatile operation never writes EEPROM.
      */
-    const uint8_t applied_mask = output_driver_set(requested_mask);
+    const uint8_t accepted_mask = output_driver_request(requested_mask);
 
     /*
-     * Construct acknowledgment only after the GPIO
-     * writes have been issued.
-     *
-     * The response contains the applied logical mask,
-     * not an electrical GPIO register value.
-     *
-     * The current HAL provides no external load feedback,
-     * so this confirms commanded GPIO state rather than
-     * physical relay operation.
-     *
-     * A requested/applied mismatch is not a success.
-     * The dispatcher refuses to construct a success reply
-     * in that case.
-     *
-     * No hardware-failure error code is defined by v1.
-     * Leave that condition silent rather than incorrectly
-     * claiming a STORAGE_ERROR or successful operation.
+     * Acknowledge the target accepted into RAM, not completion of the delayed
+     * activation ramp. Waiting for all channels would exceed the normal bus
+     * response deadline and invite retries. GET_OUTPUTS reports actual GPIO.
      */
     if (dispatcher_prepare_set_outputs_response(
-            request, context->device_address, applied_mask, response)) {
+            request, context->device_address, accepted_mask, response)) {
       return COMMAND_PROCESSOR_RESPONSE_READY;
     }
 

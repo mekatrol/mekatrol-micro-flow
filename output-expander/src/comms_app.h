@@ -92,7 +92,7 @@ void comms_app_init(comms_app_t *app, uint8_t boot_address,
 comms_app_result_t comms_app_process(comms_app_t *app,
                                      const protocol_packet_t *request);
 
-/* Current RAM-only commissioned address. */
+/* Current commissioned address. */
 uint8_t comms_app_address(const comms_app_t *app);
 
 /*

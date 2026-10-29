@@ -102,8 +102,9 @@ typedef enum {
  * Protocol decoding and command execution must remain
  * outside the USART interrupt handler.
  *
- * This function may change GPIO through output_driver_set()
- * when a valid addressed SET_OUTPUTS request is received.
+ * A valid SET_OUTPUTS may immediately de-energize outputs through
+ * output_driver_request(). New ON transitions are performed later by the
+ * foreground sequencer rather than synchronously in command processing.
  *
  * It never transmits RS-485 data or writes EEPROM.
  *

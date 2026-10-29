@@ -84,9 +84,41 @@ foreground transactions; neither consumes a DMA channel.
 ## Output subsystem
 
 The application uses an eight-bit logical mask: bit 0 is channel 1, bit 7 is
-channel 8, one is ON, and zero is OFF. `output_state.c` owns this portable
-state; `output_driver.c` converts it to active-low levels across GPIOC/GPIOD.
-All pins reach OFF before the persistent startup mask is applied.
+channel 8, one is ON, and zero is OFF. `output_driver.c` owns separate requested
+and applied masks and converts applied changes to active-low levels across
+GPIOC/GPIOD. All pins reach OFF before any startup mask is requested.
+
+### Output activation sequencing
+
+The output driver enforces the solenoid-transformer inrush-current constraint;
+it does not rely on controller message cadence. `SET_OUTPUTS` replaces the
+complete requested mask. Channels removed by the new mask are switched OFF
+immediately, while newly requested channels remain pending. A non-blocking
+foreground service compares the two masks and energizes at most one pending
+channel after the configured interval has elapsed since the preceding
+OFF-to-ON transition.
+
+The first channel after boot may energize immediately. Further channels are
+selected in round-robin order and are separated by the configured 500–10000 ms
+interval. The factory default is 500 ms. A delayed foreground iteration never
+"catches up" by enabling several overdue channels: every service call can issue
+at most one single-bit `hal_output_on()` operation and restarts the interval.
+This makes one command requesting eight channels, eight separate commands, and
+any mixture of partial-mask commands electrically equivalent.
+
+A newer requested mask cancels pending channels from older requests rather
+than queueing stale commands. `SET_OUTPUTS` acknowledges the accepted target
+mask promptly, while `GET_OUTPUTS` reports the mask actually applied to GPIO.
+This avoids holding an RS-485 transaction open for a ramp that may require
+several seconds. `GET_OUTPUT_DELAY` and `SET_OUTPUT_DELAY` read and update the
+persist the interval as one byte through the transactional EEPROM configuration
+mechanism. That byte counts 100 ms units, with valid values from 5 through 100;
+unsafe values below 5 are rejected before storage or activation. The driver
+expands the configured unit count into SysTick ticks only for runtime timing.
+
+Brownout and reset paths de-energize outputs without delay and suppress the
+sequencer while recovery is pending. OFF operations are never rate-limited;
+only inrush-producing OFF-to-ON transitions are spaced.
 
 `SET_OUTPUTS` changes live state only and never writes EEPROM. If qualifying
 traffic stops for the configured interval, the persistent timeout mask is
@@ -99,7 +131,8 @@ deadline. The first deadline starts after boot configuration is loaded.
 The local SOT-23-5 24C02-class EEPROM is a 2 Kbit (256-byte) I2C device on
 PC1/PC2. It stores configuration separately from program Flash. Persistent
 fields are the commissioned address, startup mask, timeout in milliseconds,
-timeout mask, LED brightness, schema version, sequence number, and CRC-32.
+timeout mask, LED brightness, one-byte output activation delay in 100 ms units,
+schema version, sequence number, and CRC-32.
 Serialization is explicit; native C structure layout is never stored.
 
 | Range | Allocation |
@@ -232,6 +265,9 @@ commands; `main` composes modules and owns initialization and scheduling.
 - There is no dynamic allocation, recursion, or unbounded input buffer.
 - All outputs are OFF before their GPIO pins become actively driven.
 - Only validated unicast commands alter live outputs.
+- Only the foreground output sequencer creates OFF-to-ON transitions; each HAL
+  activation contains exactly one channel and consecutive activations respect
+  the configured delay.
 - Settings become active only after verified EEPROM commit.
 - Broadcasts never receive replies; RS-485 is released only after USART TC.
 - Timer/DMA generates every WS2812 pulse.

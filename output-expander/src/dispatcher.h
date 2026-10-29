@@ -20,6 +20,8 @@
 #define DISPATCHER_COMMAND_PING 0x01U
 #define DISPATCHER_COMMAND_SET_OUTPUTS 0x10U
 #define DISPATCHER_COMMAND_GET_OUTPUTS 0x11U
+#define DISPATCHER_COMMAND_GET_OUTPUT_DELAY 0x12U
+#define DISPATCHER_COMMAND_SET_OUTPUT_DELAY 0x13U
 #define DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID 0x30U
 
 /*
@@ -148,11 +150,11 @@ bool dispatcher_parse_set_outputs(const protocol_packet_t *request,
  *
  * WHAT:
  * Validate the original request and construct a response
- * containing the logical mask actually applied.
+ * containing the logical target accepted by the sequencer.
  *
  * WHY:
- * The protocol requires the APPLIED mask, not simply
- * the mask requested by the master.
+ * Activation is asynchronous, so success confirms that the target was stored.
+ * GET_OUTPUTS separately reports the physically applied mask while sequencing.
  *
  * Calling this function does not apply GPIO outputs.
  * The foreground must first execute the output change,
@@ -167,7 +169,7 @@ bool dispatcher_parse_set_outputs(const protocol_packet_t *request,
  */
 bool dispatcher_prepare_set_outputs_response(const protocol_packet_t *request,
                                              uint8_t device_address,
-                                             uint8_t applied_mask,
+                                             uint8_t accepted_mask,
                                              protocol_packet_t *response);
 
 #endif

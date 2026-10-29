@@ -11,6 +11,8 @@ A small, open, binary master/device protocol for CH32V003-based output expanders
 | `PING` | Implemented |
 | `GET_OUTPUTS` | Implemented |
 | `SET_OUTPUTS` | Implemented |
+| `GET_OUTPUT_DELAY` | Implemented |
+| `SET_OUTPUT_DELAY` | Implemented; 500–10000 ms |
 | `ASSIGN_ADDRESS_BY_UID` | Implemented with verified EEPROM persistence |
 | `RESET` | Implemented; acknowledgement is transmitted before watchdog reset |
 | `GET_STATUS` | Implemented |
@@ -99,8 +101,10 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 |---|---|---|---|---|
 | `0x01` | `PING` | None | `UID[12]`, firmware major `u8`, minor `u8` | No |
 | `0x02` | `GET_STATUS` | None | outputs `u8`, inputs `u8`, status `u16 LE` | No |
-| `0x10` | `SET_OUTPUTS` | output mask `u8` | applied mask `u8` | No |
+| `0x10` | `SET_OUTPUTS` | output mask `u8` | accepted target mask `u8` | No |
 | `0x11` | `GET_OUTPUTS` | None | current mask `u8` | No |
+| `0x12` | `GET_OUTPUT_DELAY` | None | activation delay `u8`, in 100 ms units | No |
+| `0x13` | `SET_OUTPUT_DELAY` | activation delay `u8`, in 100 ms units | accepted delay `u8`, in 100 ms units | No |
 | `0x20` | `GET_CONFIG` | None | address `u8`, startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | No |
 | `0x21` | `SET_CONFIG` | startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | same 5 bytes on successful EEPROM commit | No |
 | `0x30` | `ASSIGN_ADDRESS_BY_UID` | UID `[12]`, new address `u8` | None | Yes |
@@ -108,7 +112,9 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 
 ### Command details
 
-**SET_OUTPUTS:** Bit 0 controls channel 1 and bit 7 controls channel 8. `1` = logical ON. Physical outputs are active LOW. This changes volatile output state only and **must not write EEPROM**.
+**SET_OUTPUTS:** Bit 0 controls channel 1 and bit 7 controls channel 8. `1` = logical ON. Physical outputs are active LOW. The response confirms the complete target mask accepted by the activation sequencer; `GET_OUTPUTS` reports the mask currently applied to GPIO. OFF transitions occur immediately, while OFF-to-ON transitions are applied one channel at a time with the configured delay between them. A newer command replaces the complete target and cancels obsolete pending activations. This changes volatile output state only and **must not write EEPROM**.
+
+**GET_OUTPUT_DELAY / SET_OUTPUT_DELAY:** The delay is one `u8` expressed in units of 100 ms. Values from 5 through 100 represent 500 ms through 10000 ms. Values outside that range are rejected with `BAD_VALUE` because the lower bound is a hardware-safety constraint and the upper bound defines this setting's supported operating range. The factory default is 5 (500 ms). The one-byte representation is stored directly in EEPROM. `SET_OUTPUT_DELAY` commits the new value using the verified transactional EEPROM configuration mechanism before activating it and acknowledging success.
 
 **SET_CONFIG:** Validate every field before writing. Commit the new record to the inactive EEPROM slot, verify by readback, then activate it in RAM. Respond only after success. A failure leaves the last valid record active and returns `STORAGE_ERROR` if communication is still operational.
 
@@ -150,7 +156,7 @@ A valid addressed `SET_OUTPUTS` request or controller heartbeat refreshes the co
 
 ## 9. EEPROM configuration storage
 
-The device uses a local SOT-23-5 24C02-class I²C EEPROM (nominal 256 bytes). Two independent 64-byte versioned configuration records occupy `0x00..0x3F` and `0x40..0x7F`; each contains a sequence number and CRC-32. The remaining 128 bytes are reserved. Writes are limited to explicit configuration changes, use EEPROM page boundaries, and require ACK polling plus full readback verification. The previous valid slot is retained until the replacement is verified. A blank or invalid EEPROM results in safe defaults and an uncommissioned address. **The exact chip's datasheet controls electrical pins, address and page size.**
+The device uses a local SOT-23-5 24C02-class I²C EEPROM (nominal 256 bytes). Two independent 64-byte versioned configuration records occupy `0x00..0x3F` and `0x40..0x7F`; each contains a sequence number and CRC-32. The output activation delay occupies one configuration byte in the same 100 ms units used on the wire. The remaining 128 bytes are reserved. Writes are limited to explicit configuration changes, use EEPROM page boundaries, and require ACK polling plus full readback verification. The previous valid slot is retained until the replacement is verified. A blank or invalid EEPROM results in safe defaults and an uncommissioned address. **The exact chip's datasheet controls electrical pins, address and page size.**
 
 ## 10. Reference examples and testing
 
