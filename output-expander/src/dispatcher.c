@@ -44,8 +44,9 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
    * An uncommissioned device has no valid unicast address
    * but must still recognize broadcast ASSIGN_ADDRESS_BY_UID.
    *
-   * Other broadcast commands are silently discarded,
-   * preventing multiple devices from responding together.
+   * Other broadcast commands are silently discarded. The discovery commands
+   * below are only classified here; the application schedules their replies
+   * so multiple devices do not begin transmitting together.
    *
    * UID matching and persistent address assignment
    * are separate operations not performed here.
@@ -53,6 +54,22 @@ dispatcher_route_t dispatcher_route_request(const protocol_packet_t *packet,
   if (packet->destination == PROTOCOL_BROADCAST_ADDRESS) {
     if (packet->command == DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID) {
       return DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID;
+    }
+
+    /*
+     * Device discovery is deliberately routed as a special broadcast rather
+     * than as an ordinary command. Every expander must hear the request even
+     * when its configured address is unknown to the master, while the
+     * communications application must still apply a randomized delay before
+     * it is allowed to answer. The matching cancel command is routed through
+     * the same special path so a master can promptly silence pending replies.
+     */
+    if (packet->command == DISPATCHER_COMMAND_DISCOVER_DEVICES) {
+      return DISPATCHER_BROADCAST_DISCOVER_DEVICES;
+    }
+
+    if (packet->command == DISPATCHER_COMMAND_CANCEL_DISCOVERY) {
+      return DISPATCHER_BROADCAST_CANCEL_DISCOVERY;
     }
 
     return DISPATCHER_IGNORE;

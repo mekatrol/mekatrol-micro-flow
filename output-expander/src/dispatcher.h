@@ -13,9 +13,11 @@
  * Keep these values consistent with docs/protocol.md
  * and the protocol contract.
  *
- * ASSIGN_ADDRESS_BY_UID is recognized for routing only.
- * UID comparison and EEPROM persistence are not yet
- * implemented in this portable dispatcher.
+ * Broadcast commissioning and discovery commands are recognized for routing
+ * only. UID comparison, randomized reply scheduling, cancellation and EEPROM
+ * persistence belong to the foreground communications application; keeping
+ * those side effects out of this portable classifier makes it impossible for
+ * routing alone to transmit or alter an address.
  */
 #define DISPATCHER_COMMAND_PING 0x01U
 #define DISPATCHER_COMMAND_SET_OUTPUTS 0x10U
@@ -23,6 +25,8 @@
 #define DISPATCHER_COMMAND_GET_OUTPUT_DELAY 0x12U
 #define DISPATCHER_COMMAND_SET_OUTPUT_DELAY 0x13U
 #define DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID 0x30U
+#define DISPATCHER_COMMAND_DISCOVER_DEVICES 0x31U
+#define DISPATCHER_COMMAND_CANCEL_DISCOVERY 0x32U
 
 /*
  * Fixed protocol response sizes.
@@ -44,21 +48,24 @@
  * Request routing classifications.
  *
  * WHAT:
- * Separate ignored traffic, addressed unicast requests
- * and broadcast UID commissioning.
+ * Separate ignored traffic, addressed unicast requests, broadcast UID
+ * commissioning, and the two discovery-control messages.
  *
  * WHY:
  * All devices on an RS-485 multidrop bus may receive
  * the same traffic, but only the addressed device may
  * execute a unicast command or transmit a response.
  *
- * Broadcast commissioning is special: it may be
- * processed after UID validation but must never reply.
+ * Broadcast commissioning is processed after UID validation but never
+ * replies. Discovery is also special: its route arms or cancels a delayed
+ * foreground reply instead of transmitting directly from packet handling.
  */
 typedef enum {
   DISPATCHER_IGNORE = 0,
   DISPATCHER_UNICAST_REQUEST,
-  DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID
+  DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID,
+  DISPATCHER_BROADCAST_DISCOVER_DEVICES,
+  DISPATCHER_BROADCAST_CANCEL_DISCOVERY
 } dispatcher_route_t;
 
 /*

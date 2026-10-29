@@ -5,8 +5,9 @@ The framing functions intentionally mirror the no-heap firmware codec.
 An independent host implementation verifies byte order, COBS encoding,
 CRC validation, and response matching without special libraries.
 
-The current firmware implements PING, GET_OUTPUTS, SET_OUTPUTS,
-GET_OUTPUT_DELAY, SET_OUTPUT_DELAY, RESET, and UID-targeted address assignment.
+The current firmware implements bus-wide UID/address discovery, PING,
+GET_OUTPUTS, SET_OUTPUTS, GET_OUTPUT_DELAY, SET_OUTPUT_DELAY, RESET, and
+UID-targeted address assignment.
 Other persistent configuration and status commands remain part of protocol
 version one but are not exposed by this utility.
 """
@@ -14,7 +15,7 @@ version one but are not exposed by this utility.
 import argparse
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 # These values are part of protocol version one rather than user preferences.
@@ -327,6 +328,68 @@ class OutputExpander:
         if self.ping(new_address)[0] != uid:
             raise ProtocolError("UID verification failed")
 
+    def discover(
+        self,
+        duration: float,
+        on_discovered: Callable[[bytes, int], None] | None = None,
+    ) -> list[tuple[bytes, int]]:
+        """Return UID/address pairs and optionally report each as it arrives."""
+
+        if not 0.1 <= duration <= 15.0:
+            raise ValueError("discovery duration must be between 0.1 and 15 seconds")
+
+        sequence = self.sequence
+        self.sequence = (self.sequence + 1) & 0xFF
+        self.port.reset_input_buffer()
+        self.port.write(encode_packet(Packet(0, sequence, REQUEST, 0x31)))
+        self.port.flush()
+
+        # Keep the first response for each physical UID. Duplicate configured
+        # addresses are intentionally retained because finding that fault is a
+        # primary reason for address-independent discovery.
+        found: dict[bytes, int] = {}
+        deadline = time.monotonic() + duration
+        try:
+            while time.monotonic() < deadline:
+                try:
+                    reply = decode_packet(self._read_frame())
+                except ProtocolError:
+                    # A timeout means no complete response arrived in this
+                    # short interval. A malformed frame may be the residue of
+                    # two devices choosing the same initial slot. In both cases
+                    # keep listening: later responders must still be collected,
+                    # and the firmware's own hard deadline bounds the scan.
+                    continue
+
+                if (
+                    reply.kind != RESPONSE
+                    or reply.command != 0x31
+                    or reply.sequence != sequence
+                    or len(reply.payload) != 13
+                ):
+                    continue
+
+                uid, current_address = reply.payload[:12], reply.payload[12]
+                if reply.address != current_address:
+                    raise ProtocolError("discovery response address mismatch")
+                # Notify only when this UID is first discovered or its reported
+                # address changes. A repeated response must not produce noisy
+                # duplicate lines, but the callback runs here—inside the read
+                # loop—so an operator does not wait for the scan duration to
+                # expire before seeing a device that has already answered.
+                if found.get(uid) != current_address:
+                    found[uid] = current_address
+                    if on_discovered is not None:
+                        on_discovered(uid, current_address)
+        finally:
+            # Always cancel at the end of the listening window, including when
+            # decoding fails. This promptly disarms devices that are still
+            # deferring instead of relying on their 15-second safety deadline.
+            self.port.write(encode_packet(Packet(0, sequence, REQUEST, 0x32)))
+            self.port.flush()
+
+        return sorted(found.items(), key=lambda item: (item[1], item[0]))
+
     def reset(self, addr: int) -> None:
         """Request reset, waiting for acknowledgement before returning."""
 
@@ -365,6 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     command_help = {
+        "scan": "discover every connected device UID and current address",
         "info": "show UID, firmware version, and outputs",
         "outputs": "read or replace the complete output mask",
         "output-delay": "read or set the output activation delay",
@@ -373,6 +437,14 @@ def build_parser() -> argparse.ArgumentParser:
     }
     for name, help_text in command_help.items():
         command = commands.add_parser(name, help=help_text)
+        if name == "scan":
+            command.add_argument(
+                "--duration",
+                type=float,
+                default=1.0,
+                help="listening window in seconds, 0.1 through 15 (default: 1)",
+            )
+            continue
         command.add_argument(
             "--address",
             required=True,
@@ -433,7 +505,19 @@ def run(args: argparse.Namespace) -> None:
         write_timeout=args.timeout,
     ) as port:
         device = OutputExpander(port, args.timeout)
-        if args.command == "info":
+        if args.command == "scan":
+            def show_discovered(uid: bytes, current_address: int) -> None:
+                # Explicit flushing also gives immediate output when this tool
+                # is launched through a service, pipe, or logging supervisor
+                # whose stdout is block-buffered rather than attached to a TTY.
+                print(
+                    f"address: 0x{current_address:02x} uid: {uid.hex()}",
+                    flush=True,
+                )
+
+            discovered = device.discover(args.duration, show_discovered)
+            print(f"devices: {len(discovered)}")
+        elif args.command == "info":
             uid, major, minor = device.ping(args.address)
             print(f"address: {args.address}")
             print(f"firmware: {major}.{minor}")

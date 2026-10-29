@@ -119,6 +119,125 @@ static protocol_packet_t make_assign(uint8_t address) {
   return request;
 }
 
+static protocol_packet_t make_discovery(uint8_t command) {
+  return make_request(PROTOCOL_BROADCAST_ADDRESS, command);
+}
+
+/*
+ * Verify that discovery never answers directly from the receive path. The
+ * foreground service must wait for the UID-seeded delay and then return the
+ * complete identity and current address using the master's sequence number.
+ */
+static void test_discovery_delayed_response(void) {
+  reset_fakes();
+
+  comms_app_t app = {0};
+  init_app(&app, 0x23U);
+  const uint32_t started = UINT32_C(1234567);
+  const protocol_packet_t discover =
+      make_discovery(DISPATCHER_COMMAND_DISCOVER_DEVICES);
+
+  assert(comms_app_process_at(&app, &discover, started) == COMMS_APP_IGNORED);
+  assert(comms_app_discovery_pending(&app));
+  assert(response_count == 0U);
+  assert(comms_app_service(&app, started) == COMMS_APP_IGNORED);
+
+  /* Every legal random delay is at most 100 ms, so 101 ms must be due. */
+  assert(comms_app_service(&app, started + 101U * COMMS_TICKS_PER_MS) ==
+         COMMS_APP_RESPONSE_SENT);
+  assert(response_count == 1U);
+  assert(!comms_app_discovery_pending(&app));
+  assert(last_response.destination == 0x23U);
+  assert(last_response.sequence == discover.sequence);
+  assert(last_response.type == PROTOCOL_TYPE_RESPONSE);
+  assert(last_response.command == DISPATCHER_COMMAND_DISCOVER_DEVICES);
+  assert(last_response.payload_length == DISPATCHER_UID_SIZE + 1U);
+  assert(memcmp(last_response.payload, test_uid, sizeof(test_uid)) == 0);
+  assert(last_response.payload[DISPATCHER_UID_SIZE] == 0x23U);
+
+  /* A device reports only once for a request that completed successfully. */
+  assert(comms_app_service(&app, started + 200U * COMMS_TICKS_PER_MS) ==
+         COMMS_APP_IGNORED);
+  assert(response_count == 1U);
+}
+
+/*
+ * A peer reply means the bus was occupied. The waiting device must begin a
+ * new random quiet gap after that complete frame rather than transmitting on
+ * the old deadline and risking overlap with the peer's final bytes.
+ */
+static void test_discovery_peer_defers_response(void) {
+  reset_fakes();
+
+  comms_app_t app = {0};
+  init_app(&app, 0x23U);
+  const protocol_packet_t discover =
+      make_discovery(DISPATCHER_COMMAND_DISCOVER_DEVICES);
+  assert(comms_app_process_at(&app, &discover, 0U) == COMMS_APP_IGNORED);
+
+  protocol_packet_t peer = {0};
+  peer.destination = 0x44U;
+  peer.sequence = discover.sequence;
+  peer.type = PROTOCOL_TYPE_RESPONSE;
+  peer.command = DISPATCHER_COMMAND_DISCOVER_DEVICES;
+  peer.payload_length = DISPATCHER_UID_SIZE + 1U;
+
+  const uint32_t peer_finished = 100U * COMMS_TICKS_PER_MS;
+  assert(comms_app_process_at(&app, &peer, peer_finished) == COMMS_APP_IGNORED);
+  assert(comms_app_service(&app, peer_finished) == COMMS_APP_IGNORED);
+  assert(response_count == 0U);
+
+  assert(comms_app_service(&app, peer_finished + 101U * COMMS_TICKS_PER_MS) ==
+         COMMS_APP_RESPONSE_SENT);
+  assert(response_count == 1U);
+}
+
+/* Cancel and the hard deadline must both disarm a reply without transmitting. */
+static void test_discovery_cancel_and_timeout(void) {
+  reset_fakes();
+
+  comms_app_t app = {0};
+  init_app(&app, 0x23U);
+  protocol_packet_t discover =
+      make_discovery(DISPATCHER_COMMAND_DISCOVER_DEVICES);
+  assert(comms_app_process_at(&app, &discover, 0U) == COMMS_APP_IGNORED);
+
+  protocol_packet_t cancel =
+      make_discovery(DISPATCHER_COMMAND_CANCEL_DISCOVERY);
+  cancel.sequence = 0x99U; /* Cancel applies even if the master's SEQ changed. */
+  assert(comms_app_process_at(&app, &cancel, COMMS_TICKS_PER_MS) ==
+         COMMS_APP_IGNORED);
+  assert(!comms_app_discovery_pending(&app));
+  assert(comms_app_service(&app, 200U * COMMS_TICKS_PER_MS) ==
+         COMMS_APP_IGNORED);
+  assert(response_count == 0U);
+
+  assert(comms_app_process_at(&app, &discover, 500U) == COMMS_APP_IGNORED);
+  assert(comms_app_discovery_pending(&app));
+  assert(comms_app_service(
+             &app, 500U + COMMS_DISCOVERY_TIMEOUT_MS * COMMS_TICKS_PER_MS) ==
+         COMMS_APP_IGNORED);
+  assert(!comms_app_discovery_pending(&app));
+  assert(response_count == 0U);
+}
+
+/* The current address byte also represents the reserved uncommissioned state. */
+static void test_discovery_uncommissioned_address(void) {
+  reset_fakes();
+
+  comms_app_t app = {0};
+  init_app(&app, PROTOCOL_UNCOMMISSIONED_ADDRESS);
+  const protocol_packet_t discover =
+      make_discovery(DISPATCHER_COMMAND_DISCOVER_DEVICES);
+
+  assert(comms_app_process_at(&app, &discover, 0U) == COMMS_APP_IGNORED);
+  assert(comms_app_service(&app, 101U * COMMS_TICKS_PER_MS) ==
+         COMMS_APP_RESPONSE_SENT);
+  assert(last_response.destination == PROTOCOL_UNCOMMISSIONED_ADDRESS);
+  assert(last_response.payload[DISPATCHER_UID_SIZE] ==
+         PROTOCOL_UNCOMMISSIONED_ADDRESS);
+}
+
 static void test_uid_serialization(void) {
   uint8_t uid[DEVICE_UID_SIZE] = {0};
 
@@ -525,6 +644,7 @@ static void test_invalid_arguments(void) {
 
   assert(comms_app_address(NULL) == 0xFFU);
   assert(!comms_app_watchdog_feed_allowed(NULL));
+  assert(!comms_app_discovery_pending(NULL));
 
   assert(response_count == 0U);
   assert(comms_app_watchdog_feed_allowed(&app));
@@ -532,6 +652,10 @@ static void test_invalid_arguments(void) {
 
 int main(void) {
   test_uid_serialization();
+  test_discovery_delayed_response();
+  test_discovery_peer_defers_response();
+  test_discovery_cancel_and_timeout();
+  test_discovery_uncommissioned_address();
   test_ping();
   test_output_round_trip();
   test_commissioning();

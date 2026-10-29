@@ -142,17 +142,25 @@ int main(void) {
        * The command indication below takes priority for its visible window. */
       frame_receiver_clear_fault(&receiver);
 
-      command_activity_started = hal_ticks();
-      command_activity_valid = true;
+      const bool discovery_traffic =
+          request.command == DISPATCHER_COMMAND_DISCOVER_DEVICES ||
+          request.command == DISPATCHER_COMMAND_CANCEL_DISCOVERY;
 
-      /* Start the command indication at packet acceptance, before the
-       * blocking response transmitter runs. Merely selecting blue in the
-       * end-of-loop policy can delay its first WS2812 update behind response
-       * transmission and any waveform already in progress. The normal policy
-       * below keeps this colour selected for the complete visible window. */
-      ws2812_set_color(&status_led,
-                       (rgb_t){0U, 0U, STATUS_LED_COMMAND_BRIGHTNESS});
-      ws2812_service(&status_led, command_activity_started);
+      /*
+       * Discovery has its own flashing indication, so do not also arm the
+       * ordinary solid-blue command window for its request, peer responses, or
+       * cancellation. Otherwise solid blue could remain visible after this
+       * device answered, contradicting the requirement to return immediately
+       * to normal green status. Other valid packets retain the established
+       * command indication and its eager first LED update.
+       */
+      if (!discovery_traffic) {
+        command_activity_started = hal_ticks();
+        command_activity_valid = true;
+        ws2812_set_color(&status_led,
+                         (rgb_t){0U, 0U, STATUS_LED_COMMAND_BRIGHTNESS});
+        ws2812_service(&status_led, command_activity_started);
+      }
 
       /*
        * Execute decoded commands in foreground context.
@@ -164,7 +172,7 @@ int main(void) {
        * The USART transmit driver waits for TC before
        * releasing DE on any successful response.
        */
-      (void)comms_app_process(&app, &request);
+      (void)comms_app_process_at(&app, &request, hal_ticks());
 
       /*
        * A valid RESET acknowledgement has already
@@ -189,6 +197,15 @@ int main(void) {
       }
     }
 
+    /*
+     * Discovery replies are serviced only after all complete received frames
+     * have been drained. This lets a waiting device observe a peer's response
+     * and move its own deadline before it enables the RS-485 transmitter.
+     */
+    if (!pvd_brownout_detected()) {
+      (void)comms_app_service(&app, hal_ticks());
+    }
+
     /* Status policy and LED servicing are bounded foreground work. Timer/DMA
      * continue the 30 us waveform independently while USART IRQs run. */
     const uint32_t now_ticks = hal_ticks();
@@ -203,6 +220,7 @@ int main(void) {
     ws2812_set_color(&status_led, status_led_pattern(
                                       now_ms, STATUS_LED_BRIGHTNESS,
                                       receive_fault, command_active,
+                                      comms_app_discovery_pending(&app),
                                       command_elapsed_ticks / UINT32_C(48000)));
     ws2812_service(&status_led, now_ticks);
 

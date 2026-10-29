@@ -293,6 +293,24 @@ static void test_invalid_destination(void) {
 
   reset_transmitter();
 
+  /* Discovery is the second narrowly defined response allowed at 0xFF. It
+   * reports the UID and current uncommissioned address after arbitration. */
+  packet.command = DISPATCHER_COMMAND_DISCOVER_DEVICES;
+  packet.payload_length = DISPATCHER_UID_SIZE + 1U;
+
+  assert(response_tx_send(&packet));
+  assert_transmitted_packet(&packet);
+
+  reset_transmitter();
+
+  /* A discovery-shaped response with the wrong length is not allowed to use
+   * the otherwise reserved uncommissioned destination. */
+  packet.payload_length = DISPATCHER_UID_SIZE;
+  assert(!response_tx_send(&packet));
+  assert(transmission_count == 0U);
+
+  packet.command = DISPATCHER_COMMAND_PING;
+
   packet.type = PROTOCOL_TYPE_ERROR;
   packet.payload_length = 1U;
 

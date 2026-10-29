@@ -8,6 +8,7 @@
 #define STATUS_LED_BRIGHTNESS 16U
 #define STATUS_LED_COMMAND_BRIGHTNESS 64U
 #define STATUS_LED_COMMAND_DURATION_MS UINT32_C(200)
+#define STATUS_LED_DISCOVERY_FLASH_MS UINT32_C(25)
 
 typedef struct {
   uint8_t red;
@@ -26,6 +27,7 @@ typedef enum {
 rgb_t status_led_color(status_led_status_t status, uint8_t brightness);
 rgb_t status_led_pattern(uint32_t now_ms, uint8_t brightness,
                          bool error_present, bool command_active,
+                         bool discovery_pending,
                          uint32_t command_elapsed_ms);
 uint32_t status_led_grb_word(rgb_t color);
 bool rgb_equal(rgb_t left, rgb_t right);

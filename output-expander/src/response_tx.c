@@ -56,18 +56,26 @@ bool response_tx_send(const protocol_packet_t *packet) {
    *   broadcast messages, so responding could cause bus contention.
    *
    * Uncommissioned address (PROTOCOL_UNCOMMISSIONED_ADDRESS / 0xFF):
-   *   Only permit a successful PING information response. This allows a
-   *   single isolated, uncommissioned device to be discovered before its
-   *   unique address is assigned using its UID.
+   *   Permit a successful PING information response for an isolated device,
+   *   or a correctly shaped delayed DISCOVER_DEVICES response. The latter is
+   *   safe here because comms_app owns the random delay and cancellation; this
+   *   transport function still refuses arbitrary traffic at the reserved
+   *   destination.
    *
    * All other destination addresses:
    *   Responses are permitted, subject to normal address validation.
    */
+  const bool valid_discovery_response =
+      packet->type == PROTOCOL_TYPE_RESPONSE &&
+      packet->command == DISPATCHER_COMMAND_DISCOVER_DEVICES &&
+      packet->payload_length == DISPATCHER_UID_SIZE + 1U;
+
   if (packet->destination == PROTOCOL_BROADCAST_ADDRESS ||
       (packet->destination == PROTOCOL_UNCOMMISSIONED_ADDRESS &&
        (packet->type != PROTOCOL_TYPE_RESPONSE ||
-        packet->command != DISPATCHER_COMMAND_PING ||
-        packet->payload_length != DISPATCHER_PING_RESPONSE_SIZE))) {
+        !((packet->command == DISPATCHER_COMMAND_PING &&
+           packet->payload_length == DISPATCHER_PING_RESPONSE_SIZE) ||
+          valid_discovery_response)))) {
     return false;
   }
   /*

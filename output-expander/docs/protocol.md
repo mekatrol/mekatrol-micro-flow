@@ -14,6 +14,8 @@ A small, open, binary master/device protocol for CH32V003-based output expanders
 | `GET_OUTPUT_DELAY` | Implemented |
 | `SET_OUTPUT_DELAY` | Implemented; 500–10000 ms |
 | `ASSIGN_ADDRESS_BY_UID` | Implemented with verified EEPROM persistence |
+| `DISCOVER_DEVICES` | Implemented with randomized, collision-avoiding replies |
+| `CANCEL_DISCOVERY` | Implemented; cancels replies still waiting to transmit |
 | `RESET` | Implemented; acknowledgement is transmitted before watchdog reset |
 | `GET_STATUS` | Implemented |
 | `GET_CONFIG` | Implemented with EEPROM-backed configuration |
@@ -25,8 +27,8 @@ and diagnostic operations used by installers and service tools.
 ## 2. Physical layer and bus ownership
 
 - Two-wire half-duplex RS-485, initially **19,200 baud, 8 data bits, no parity, 1 stop bit (8N1)**.
-- A single master initiates all traffic. Devices transmit only in response to a valid unicast request addressed to them.
-- Broadcast requests receive **no response**. No unsolicited telemetry or discovery replies are permitted in v1.
+- A single master initiates all traffic. Devices normally transmit only in response to a valid unicast request addressed to them. `DISCOVER_DEVICES` is the deliberate exception described below: every reply still originates from one explicit master request.
+- Broadcast requests receive **no response** except for the delayed, collision-avoiding `DISCOVER_DEVICES` replies. No unsolicited telemetry is permitted in v1.
 - The master must wait for a response or timeout before sending the next request. A device must release DE only after USART transmission-complete (TC), not merely when the transmit register is empty.
 - Bus termination, biasing, grounding and surge/ESD protection are hardware responsibilities. CRC does not substitute for proper wiring.
 
@@ -86,11 +88,11 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 
 ## 4. Addressing and transaction rules
 
-- `0x00`: broadcast. Only commands explicitly marked broadcast-capable may use it; no replies.
+- `0x00`: broadcast. Only commands explicitly marked broadcast-capable may use it. Broadcasts do not reply except for the explicitly defined delayed discovery operation.
 - `0x01..0xFE`: commissioned device addresses.
 - `0xFF`: uncommissioned discovery address. Only `PING` is accepted, and only
   for isolated-device UID discovery; all other commands are ignored.
-- The response copies `DEST`, `SEQ` and `CMD` from the request. An error frame uses `TYPE=0x02` and a one-byte error-code payload.
+- A normal unicast response copies `DEST`, `SEQ` and `CMD` from the request. A discovery response instead uses the responder's current address as `DEST`, while preserving the broadcast request's `SEQ` and `CMD`. An error frame uses `TYPE=0x02` and a one-byte error-code payload.
 - The master accepts a response only if address, sequence, command, CRC and response type are valid for its outstanding request. At most one request may be outstanding on the bus.
 - A device processes a valid unicast request and sends at most one response. To avoid repeating side effects after a lost reply, the master should retry with the same `SEQ`; the device should cache the most recent transaction result for its own address when feasible. **Persistence commands must be idempotent**, regardless of whether a reply cache is implemented.
 - Initial master response timeout: **100 ms**, configurable in the host. Initial retry count: **2**. These are host defaults, not guaranteed device timing limits; validate against EEPROM write latency and RS-485 turnaround.
@@ -108,6 +110,8 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 | `0x20` | `GET_CONFIG` | None | address `u8`, startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | No |
 | `0x21` | `SET_CONFIG` | startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | same 5 bytes on successful EEPROM commit | No |
 | `0x30` | `ASSIGN_ADDRESS_BY_UID` | UID `[12]`, new address `u8` | None | Yes |
+| `0x31` | `DISCOVER_DEVICES` | None | UID `[12]`, current address `u8` | Yes |
+| `0x32` | `CANCEL_DISCOVERY` | None | None | Yes |
 | `0x40` | `RESET` | None | None; see reset rule | No |
 
 ### Command details
@@ -119,6 +123,10 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 **SET_CONFIG:** Validate every field before writing. Commit the new record to the inactive EEPROM slot, verify by readback, then activate it in RAM. Respond only after success. A failure leaves the last valid record active and returns `STORAGE_ERROR` if communication is still operational.
 
 **ASSIGN_ADDRESS_BY_UID:** This command supports isolated-device commissioning. With exactly one uncommissioned device connected, send `PING` to `0xFF` to read its factory UID, then broadcast `ASSIGN_ADDRESS_BY_UID` with that UID and a new address in `0x01..0xFE`. Every device compares all 12 UID bytes; only the matching device commits the address to EEPROM and activates it after readback verification. The command does not assign or modify the UID. Because assignment is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned UID. Do not discover multiple uncommissioned devices together: they would all respond to `PING 0xFF` and collide. Readdressing an already commissioned unit is permitted on a trusted bus.
+
+**DISCOVER_DEVICES / CANCEL_DISCOVERY:** The master broadcasts an empty `DISCOVER_DEVICES` request when it needs an inventory that does not depend on configured addresses. Every device records the request sequence and starts a deterministic pseudo-random delay of 10–100 ms. The random generator is seeded from the device's 96-bit UID, so different physical devices normally choose different slots without requiring an entropy peripheral. When the delay expires, the device sends one `DISCOVER_DEVICES` response whose `DEST` and final payload byte both contain its current address; the first 12 payload bytes contain its UID. Address `0xFF` is valid in this response and identifies an uncommissioned device.
+
+All devices continue listening while their response is pending. When a device receives another device's discovery response with the active sequence, it waits for that complete frame to finish and starts a new 10–100 ms random delay. It does not require another master request. This listen-and-defer rule serializes replies after an initial tie; CRC or framing failures are not treated as successful peer replies. A device abandons the pending reply 15 seconds after the original request, regardless of how many times it deferred, so continuous traffic cannot keep discovery armed forever. An empty broadcast `CANCEL_DISCOVERY` immediately disarms every reply that has not already completed. Cancellation intentionally does not require the original sequence number, which lets a restarted master stop an earlier scan. Neither discovery command changes outputs, configuration, or the persistent address.
 
 **RESET:** The device must finish transmitting a valid response before triggering reset or intentionally allowing the watchdog to expire. The successful response has an empty payload. This is an unauthenticated maintenance command and must only be exposed on a trusted bus.
 

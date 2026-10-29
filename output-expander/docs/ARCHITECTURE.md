@@ -165,7 +165,9 @@ address assignment uses this same commit-before-activate path.
 USART1 operates at 19,200 bit/s, 8N1. PC6 controls tied DE and `/RE`: it stays
 LOW while receiving, goes HIGH for a response, and returns LOW only after the
 USART transmission-complete flag confirms the final stop bit has left. The
-master initiates every transaction and devices never answer broadcasts.
+master initiates every transaction. Devices normally never answer broadcasts;
+the explicitly bounded discovery exchange below is the sole exception and
+exists so configured addresses do not have to be known first.
 
 The ISR places bytes/errors into a fixed ring. Foreground code collects through
 the `0x00` delimiter, COBS-decodes, then validates version, lengths, type, and
@@ -181,6 +183,7 @@ no reflection, and xorout zero (`123456789` gives `0x29B1`).
 | `SET_OUTPUTS` / `GET_OUTPUTS` | Change or read live outputs |
 | `GET_CONFIG` / `SET_CONFIG` | Read or transactionally commit settings |
 | `ASSIGN_ADDRESS_BY_UID` | Persist an address on the matching device |
+| `DISCOVER_DEVICES` / `CANCEL_DISCOVERY` | Inventory UID/address pairs or stop a pending scan |
 | `RESET` | Acknowledge, release the bus, then permit watchdog reset |
 
 Payload layouts, error codes, and routing rules are in
@@ -189,11 +192,46 @@ Payload layouts, error codes, and routing rules are in
 ## Identity and commissioning
 
 Every MCU has a factory 96-bit UID. Address `0xFF` denotes an uncommissioned
-device, `0x00` is broadcast, and `0x01..0xFE` are normal addresses. A host
-reads an isolated new unit's UID with `PING` to `0xFF`, then broadcasts the UID
-and selected address. Only the complete UID match commits it, and broadcasts
-remain silent. The host verifies by pinging the new address. Only one new unit
-is connected during discovery because multiple `0xFF` replies would collide.
+device, `0x00` is broadcast, and `0x01..0xFE` are normal addresses. A host can
+still read an isolated new unit's UID with `PING` to `0xFF`, then broadcast the
+UID and selected address. Only the complete UID match commits it, and the
+assignment broadcast remains silent. The host verifies by pinging the new
+address.
+
+### Address-independent bus discovery
+
+For installation and fault finding, the master may broadcast
+`DISCOVER_DEVICES` with an empty payload. Each device remembers the request
+sequence and the original receive time, then schedules one response after a
+10--100 ms pseudo-random gap. Its immutable 96-bit UID seeds the small xorshift
+generator, which gives physically different expanders different delay streams
+without adding an entropy peripheral. A response contains all 12 UID bytes and
+the current address, including `0xFF` for an uncommissioned unit. The response
+header also uses the current address, allowing the master to associate normal
+framing metadata with the reported identity even when two devices have been
+misconfigured to the same address.
+
+The scheduler is foreground-owned and non-blocking. Reception, output
+sequencing, LED updates, and watchdog feeding continue during the wait. While
+its reply is pending, a device flashes its status LED blue in 25 ms on/off
+phases so an installer can identify every unit participating in the scan. A
+successful response, cancellation, or the hard timeout clears that indication
+immediately and returns the LED to its normal green/error policy. The
+main loop drains all complete received frames before servicing a due discovery
+reply. When a waiting device observes a valid discovery response carrying the
+same sequence, that observation proves the other frame has finished because
+COBS decoding publishes it only after its delimiter. The device then chooses
+a fresh 10--100 ms gap from that point. This listen-and-defer behavior allows
+the bus to serialize the remaining responders without another request from
+the master.
+
+Every pending state retains the timestamp of the original request. Deferrals
+never move the hard deadline: at 15 seconds the device abandons the reply. An
+empty `CANCEL_DISCOVERY` broadcast also disarms any reply that has not already
+completed, irrespective of sequence number, so a restarted master can clean
+up an older scan. Starting a new valid discovery replaces any previous one.
+Neither operation touches outputs, EEPROM, the commissioned address, or the
+communications fail-safe heartbeat.
 
 ## Status LED
 
@@ -202,6 +240,7 @@ is connected during discovery because multiple `0xFF` replies would collide.
 | Unconfigured pattern | No valid commissioned configuration |
 | Gentle green pulse | Healthy operation |
 | Blue for 300 ms | A valid command was accepted |
+| Flashing blue, 25 ms on/off | Discovery reply pending |
 | Amber pattern | Communications timeout and fail-safe outputs active |
 | Red pattern | Receive/protocol or EEPROM storage fault |
 
@@ -269,7 +308,8 @@ commands; `main` composes modules and owns initialization and scheduling.
   activation contains exactly one channel and consecutive activations respect
   the configured delay.
 - Settings become active only after verified EEPROM commit.
-- Broadcasts never receive replies; RS-485 is released only after USART TC.
+- Broadcasts receive no replies except the randomized, deadline-bounded
+  discovery exchange; RS-485 is released only after USART TC.
 - Timer/DMA generates every WS2812 pulse.
 - Only healthy foreground progress feeds the watchdog.
 - A detected brownout is latched until reset and immediately forces every

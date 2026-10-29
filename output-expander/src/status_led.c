@@ -29,7 +29,21 @@ rgb_t status_led_color(status_led_status_t status, uint8_t brightness) {
 
 rgb_t status_led_pattern(uint32_t now_ms, uint8_t brightness,
                          bool error_present, bool command_active,
+                         bool discovery_pending,
                          uint32_t command_elapsed_ms) {
+  /*
+   * Discovery owns the visible indication only while this device still owes
+   * the master a reply. Alternate equal blue and OFF phases to make the scan
+   * unmistakably different from the solid 200 ms command acknowledgement.
+   * As soon as communications clears the pending flag after response, cancel,
+   * or timeout, this branch is skipped and normal green/error policy resumes.
+   */
+  if (discovery_pending) {
+    return (((now_ms / STATUS_LED_DISCOVERY_FLASH_MS) & UINT32_C(1)) == 0U)
+               ? (rgb_t){0U, 0U, STATUS_LED_COMMAND_BRIGHTNESS}
+               : RGB_OFF;
+  }
+
   if (command_active &&
       command_elapsed_ms < STATUS_LED_COMMAND_DURATION_MS) {
     return (rgb_t){0U, 0U, STATUS_LED_COMMAND_BRIGHTNESS};

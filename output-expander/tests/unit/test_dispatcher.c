@@ -140,12 +140,15 @@ static void test_unicast_routing(void) {
 }
 
 /*
- * Only ASSIGN_ADDRESS_BY_UID may be routed from broadcast traffic.
+ * Only the three explicitly broadcast-capable commands may be routed from
+ * broadcast traffic. Their distinct routes prevent ordinary command handling
+ * from accidentally replying before discovery's delay has elapsed.
  *
  * A broadcast commissioning request is not a permission
  * to alter the address until the full UID is checked.
  *
- * No broadcast packet may generate a response.
+ * The dispatcher only classifies discovery here; its response scheduler is
+ * tested at the communications-application layer.
  */
 static void test_broadcast_routing(void) {
   protocol_packet_t packet = make_request(DISPATCHER_COMMAND_PING);
@@ -169,6 +172,18 @@ static void test_broadcast_routing(void) {
 
   assert(dispatcher_route_request(&packet, 0xFFU) ==
          DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID);
+
+  packet.command = DISPATCHER_COMMAND_DISCOVER_DEVICES;
+  assert(dispatcher_route_request(&packet, 0x23U) ==
+         DISPATCHER_BROADCAST_DISCOVER_DEVICES);
+  assert(dispatcher_route_request(&packet, 0xFFU) ==
+         DISPATCHER_BROADCAST_DISCOVER_DEVICES);
+
+  packet.command = DISPATCHER_COMMAND_CANCEL_DISCOVERY;
+  assert(dispatcher_route_request(&packet, 0x23U) ==
+         DISPATCHER_BROADCAST_CANCEL_DISCOVERY);
+  assert(dispatcher_route_request(&packet, 0xFFU) ==
+         DISPATCHER_BROADCAST_CANCEL_DISCOVERY);
 }
 
 /*

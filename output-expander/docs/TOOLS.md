@@ -69,6 +69,9 @@ frames. It requires `pyserial`. Global options are required `--port` and
 optional response `--timeout`.
 
 - `info --address ADDRESS`: read UID/version and, when commissioned, outputs.
+- `scan [--duration SECONDS]`: broadcast address-independent discovery, list
+  every UID/current-address pair received during the listening window, then
+  broadcast cancellation so devices still waiting do not answer later.
 - `outputs --address ADDRESS [--set MASK]`: read or replace all outputs.
 - `output-delay --address ADDRESS [--set MILLISECONDS]`: read or set the
   staggered activation interval. Set values must be 500–10000 ms in 100 ms

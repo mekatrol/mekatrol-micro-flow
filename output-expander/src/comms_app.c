@@ -40,6 +40,52 @@ void comms_app_init(comms_app_t *app, uint8_t boot_address,
    */
   app->command = initial;
   app->reset_requested = false;
+  app->discovery_pending = false;
+  app->discovery_sequence = 0U;
+  app->discovery_started_ticks = 0U;
+  app->discovery_reply_due_ticks = 0U;
+
+  /*
+   * Fold all twelve UID bytes into a non-zero PRNG state. The UID is stable
+   * for a physical device and differs between devices, which gives otherwise
+   * identical expanders different delay streams without needing entropy
+   * hardware. This is collision avoidance, not cryptography.
+   */
+  app->discovery_random_state = UINT32_C(0x6D2B79F5);
+  for (size_t i = 0U; i < DISPATCHER_UID_SIZE; ++i) {
+    app->discovery_random_state ^= (uint32_t)uid[i] << ((i & 3U) * 8U);
+    app->discovery_random_state =
+        app->discovery_random_state * UINT32_C(1664525) + UINT32_C(1013904223);
+  }
+  if (app->discovery_random_state == 0U) {
+    /* Xorshift's all-zero state cannot advance, so substitute a fixed non-zero
+     * value for the one theoretical UID fold that could produce it. */
+    app->discovery_random_state = UINT32_C(0xA341316C);
+  }
+}
+
+static uint32_t discovery_random_delay_ticks(comms_app_t *app) {
+  /*
+   * Xorshift32 is tiny, deterministic and sufficient for distributing bus
+   * replies. Advance the state for every postponement so two devices that
+   * happened to choose the same first slot are unlikely to remain locked
+   * together after hearing another response.
+   */
+  uint32_t value = app->discovery_random_state;
+  value ^= value << 13U;
+  value ^= value >> 17U;
+  value ^= value << 5U;
+  app->discovery_random_state = value;
+
+  const uint32_t delay_ms = COMMS_DISCOVERY_MIN_DELAY_MS +
+                            (value % COMMS_DISCOVERY_DELAY_SPAN_MS);
+  return delay_ms * COMMS_TICKS_PER_MS;
+}
+
+static bool discovery_has_expired(const comms_app_t *app,
+                                  uint32_t now_ticks) {
+  return (uint32_t)(now_ticks - app->discovery_started_ticks) >=
+         COMMS_DISCOVERY_TIMEOUT_MS * COMMS_TICKS_PER_MS;
 }
 
 uint8_t comms_app_address(const comms_app_t *app) {
@@ -59,6 +105,11 @@ bool comms_app_watchdog_feed_allowed(const comms_app_t *app) {
    * cannot re-enable watchdog refreshes.
    */
   return app != NULL && !app->reset_requested;
+}
+
+bool comms_app_discovery_pending(const comms_app_t *app) {
+  /* A missing application cannot own a valid pending discovery operation. */
+  return app != NULL && app->discovery_pending;
 }
 
 /*
@@ -133,8 +184,9 @@ process_reset_request(comms_app_t *app, const protocol_packet_t *request) {
   return COMMS_APP_RESPONSE_SENT;
 }
 
-comms_app_result_t comms_app_process(comms_app_t *app,
-                                     const protocol_packet_t *request) {
+comms_app_result_t comms_app_process_at(comms_app_t *app,
+                                        const protocol_packet_t *request,
+                                        uint32_t now_ticks) {
   if (app == NULL || request == NULL) {
     return COMMS_APP_IGNORED;
   }
@@ -173,6 +225,62 @@ comms_app_result_t comms_app_process(comms_app_t *app,
    */
   const dispatcher_route_t route =
       dispatcher_route_request(request, app->command.device_address);
+
+  if (route == DISPATCHER_BROADCAST_DISCOVER_DEVICES) {
+    /*
+     * Only an empty request is meaningful. A malformed broadcast remains
+     * silent because several devices returning an error would recreate the
+     * collision that discovery is designed to avoid.
+     *
+     * A new valid request replaces an older scan. Record one common absolute
+     * expiry point, then choose this device's first UID-seeded response gap.
+     */
+    if (request->payload_length != 0U) {
+      return COMMS_APP_IGNORED;
+    }
+
+    app->discovery_pending = true;
+    app->discovery_sequence = request->sequence;
+    app->discovery_started_ticks = now_ticks;
+    app->discovery_reply_due_ticks =
+        now_ticks + discovery_random_delay_ticks(app);
+    return COMMS_APP_IGNORED;
+  }
+
+  if (route == DISPATCHER_BROADCAST_CANCEL_DISCOVERY) {
+    /*
+     * Cancel is intentionally independent of sequence number. It means
+     * "stop the outstanding bus scan" and therefore remains useful if the
+     * master's sequence state changed after a restart. Invalid payloads do
+     * not cancel anything, avoiding accidental cancellation by malformed
+     * traffic.
+     */
+    if (request->payload_length == 0U) {
+      app->discovery_pending = false;
+    }
+    return COMMS_APP_IGNORED;
+  }
+
+  /*
+   * Every device receives discovery responses sent by its peers. If this
+   * device is still waiting in the same scan, start a fresh random quiet gap
+   * after the peer's complete frame. frame_receiver publishes packets only
+   * after the delimiter and CRC have arrived, so now_ticks is already the
+   * end of that transmission. The original fifteen-second deadline is never
+   * extended, which guarantees eventual abandonment on a continuously busy
+   * or pathological bus.
+   */
+  if (app->discovery_pending && request->type == PROTOCOL_TYPE_RESPONSE &&
+      request->command == DISPATCHER_COMMAND_DISCOVER_DEVICES &&
+      request->sequence == app->discovery_sequence) {
+    if (discovery_has_expired(app, now_ticks)) {
+      app->discovery_pending = false;
+    } else {
+      app->discovery_reply_due_ticks =
+          now_ticks + discovery_random_delay_ticks(app);
+    }
+    return COMMS_APP_IGNORED;
+  }
 
   if (route == DISPATCHER_BROADCAST_ASSIGN_ADDRESS_BY_UID) {
     uint8_t proposed_address = PROTOCOL_UNCOMMISSIONED_ADDRESS;
@@ -233,5 +341,59 @@ comms_app_result_t comms_app_process(comms_app_t *app,
     return COMMS_APP_TRANSMIT_FAILED;
   }
 
+  return COMMS_APP_RESPONSE_SENT;
+}
+
+comms_app_result_t comms_app_process(comms_app_t *app,
+                                     const protocol_packet_t *request) {
+  /*
+   * Preserve the original API for host code that has no clock. Production
+   * firmware uses comms_app_process_at(); ordinary immediate commands behave
+   * identically when the synthetic timestamp is zero.
+   */
+  return comms_app_process_at(app, request, 0U);
+}
+
+comms_app_result_t comms_app_service(comms_app_t *app, uint32_t now_ticks) {
+  if (app == NULL || !app->discovery_pending || app->reset_requested) {
+    return COMMS_APP_IGNORED;
+  }
+
+  if (discovery_has_expired(app, now_ticks)) {
+    app->discovery_pending = false;
+    return COMMS_APP_IGNORED;
+  }
+
+  /* Signed subtraction is the conventional wrap-safe "deadline reached"
+   * test. All discovery intervals are far below half the uint32_t tick range. */
+  if ((int32_t)(now_ticks - app->discovery_reply_due_ticks) < 0) {
+    return COMMS_APP_IGNORED;
+  }
+
+  protocol_packet_t response = {0};
+  response.destination = app->command.device_address;
+  response.sequence = app->discovery_sequence;
+  response.type = PROTOCOL_TYPE_RESPONSE;
+  response.command = DISPATCHER_COMMAND_DISCOVER_DEVICES;
+  response.payload_length = DISPATCHER_UID_SIZE + 1U;
+
+  for (size_t i = 0U; i < DISPATCHER_UID_SIZE; ++i) {
+    response.payload[i] = app->command.uid[i];
+  }
+  response.payload[DISPATCHER_UID_SIZE] = app->command.device_address;
+
+  /*
+   * A successful send completes this device's participation. If the local
+   * transmitter rejects the packet, retain the request and choose another
+   * short delay so a transient failure can recover without a new master
+   * request, while the original timeout still provides the hard stop.
+   */
+  if (!response_tx_send(&response)) {
+    app->discovery_reply_due_ticks =
+        now_ticks + discovery_random_delay_ticks(app);
+    return COMMS_APP_TRANSMIT_FAILED;
+  }
+
+  app->discovery_pending = false;
   return COMMS_APP_RESPONSE_SENT;
 }
