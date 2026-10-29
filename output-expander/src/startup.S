@@ -35,12 +35,20 @@ _start:
     j reset_handler
     .option pop
 
-    # Interrupt vector slots 1 through 31.
+    # Interrupt vector slots 1 through 16.
     #
     # These interrupts are not currently supported.
     # Point them to a default handler so an unexpected
     # interrupt stops in a known location.
-    .rept 31
+    .rept 16
+    .word default_irq_handler
+    .endr
+
+    # PVD is interrupt number 17.
+    .word pvd_irq_entry
+
+    # Interrupt vector slots 18 through 31.
+    .rept 14
     .word default_irq_handler
     .endr
 
@@ -305,3 +313,53 @@ usart1_irq_entry:
     mret
 
     .size usart1_irq_entry, . - usart1_irq_entry
+
+
+    # ---------------------------------------------------------
+    # PVD assembly interrupt wrapper
+    # ---------------------------------------------------------
+
+    .section .text.pvd_irq_entry, "ax", @progbits
+    .globl pvd_irq_entry
+    .type pvd_irq_entry, @function
+    .balign 4
+
+pvd_irq_entry:
+    # Preserve every writable RV32E register because an interrupt may arrive
+    # at any instruction and the C handler is an ordinary function.
+    addi sp, sp, -64
+    sw ra,  0(sp)
+    sw gp,  4(sp)
+    sw tp,  8(sp)
+    sw t0, 12(sp)
+    sw t1, 16(sp)
+    sw t2, 20(sp)
+    sw s0, 24(sp)
+    sw s1, 28(sp)
+    sw a0, 32(sp)
+    sw a1, 36(sp)
+    sw a2, 40(sp)
+    sw a3, 44(sp)
+    sw a4, 48(sp)
+    sw a5, 52(sp)
+
+    call pvd_irq_handler
+
+    lw a5, 52(sp)
+    lw a4, 48(sp)
+    lw a3, 44(sp)
+    lw a2, 40(sp)
+    lw a1, 36(sp)
+    lw a0, 32(sp)
+    lw s1, 28(sp)
+    lw s0, 24(sp)
+    lw t2, 20(sp)
+    lw t1, 16(sp)
+    lw t0, 12(sp)
+    lw tp,  8(sp)
+    lw gp,  4(sp)
+    lw ra,  0(sp)
+    addi sp, sp, 64
+    mret
+
+    .size pvd_irq_entry, . - pvd_irq_entry

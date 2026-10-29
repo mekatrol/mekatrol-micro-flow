@@ -12,6 +12,7 @@
 #define RCC_CFGR0 REG32(UINT32_C(0x40021004))
 #define RCC_APB2PCENR REG32(UINT32_C(0x40021018))
 #define RCC_AHBPCENR REG32(UINT32_C(0x40021014))
+#define RCC_APB1PCENR REG32(UINT32_C(0x4002101C))
 
 /*
  * USART1 receives its peripheral clock from APB2.
@@ -35,6 +36,21 @@
 #define RCC_AFIOEN (UINT32_C(1) << 0)
 #define RCC_TIM1EN (UINT32_C(1) << 11)
 #define RCC_DMA1EN (UINT32_C(1) << 0)
+#define RCC_PWREN (UINT32_C(1) << 28)
+
+/* Programmable voltage detector. EXTI line 8 rises when VDD falls below the
+ * selected PLS threshold and is routed to dedicated interrupt number 17. */
+#define PWR_CTLR REG32(UINT32_C(0x40007000))
+#define PWR_CSR REG32(UINT32_C(0x40007004))
+#define PWR_CTLR_PVDE (UINT32_C(1) << 4)
+#define PWR_CTLR_PLS_MASK (UINT32_C(7) << 5)
+#define PWR_CSR_PVDO (UINT32_C(1) << 2)
+
+#define EXTI_INTENR REG32(UINT32_C(0x40010400))
+#define EXTI_RTENR REG32(UINT32_C(0x40010408))
+#define EXTI_FTENR REG32(UINT32_C(0x4001040C))
+#define EXTI_INTFR REG32(UINT32_C(0x40010414))
+#define EXTI_PVD_LINE (UINT32_C(1) << 8)
 
 /*
  * RCC_CFGR0 HPRE[3:0] occupies bits 7:4.
@@ -264,8 +280,10 @@
  * We will configure the interrupt vector table
  * and CPU interrupt state before using this.
  */
+#define PFIC_IENR1 REG32(UINT32_C(0xE000E100))
 #define PFIC_IENR2 REG32(UINT32_C(0xE000E104))
 
+#define PVD_IRQ_ENABLE_MASK (UINT32_C(1) << 17)
 #define USART1_IRQ_NUMBER 32U
 #define USART1_IRQ_ENABLE_MASK UINT32_C(1)
 

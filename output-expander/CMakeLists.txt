@@ -31,6 +31,7 @@ if(CMAKE_CROSSCOMPILING)
     src/device_uid.c
     src/comms_app.c
     src/watchdog.c
+    src/pvd.c
     src/status_led.c
     src/ws2812.c
     src/ws2812_hw.c

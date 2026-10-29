@@ -47,7 +47,9 @@ interrupt entries, and calls `main`. Initialization is deliberately ordered:
 6. Validate both EEPROM slots and select the newest valid configuration, or
    safe factory defaults when storage is blank.
 7. Apply the stored startup mask only after GPIO and configuration are valid.
-8. Enable USART receive/error interrupts and start the watchdog.
+8. Configure the programmable voltage detector (PVD) and its dedicated
+   interrupt before enabling global interrupt delivery.
+9. Enable USART receive/error interrupts and start the watchdog.
 
 The USART ISR only captures a byte or error marker in a bounded ring buffer.
 The foreground owns framing, commands, EEPROM transactions, transmission,
@@ -176,6 +178,24 @@ Brightness comes from EEPROM. `status_led.c` chooses policy,
 
 ## Watchdog and fault containment
 
+The CH32V003 programmable voltage detector monitors the MCU's regulated 3.3 V
+VCC rail (the board's 6219P33M regulator output), not the upstream 5 V input.
+Firmware selects PLS `001`, which asserts on a falling supply at approximately
+2.9 V and deasserts on recovery at approximately 3.05 V. This retains margin
+above the MCU's 2.7 V minimum operating voltage. The detector is not
+active after hardware reset; `pvd_init()` explicitly enables the PWR peripheral
+clock, PVD, EXTI line 8 rising-edge trigger, and dedicated PFIC interrupt 17.
+Initialization also reads the live PVD status so a rail that is already low
+cannot evade the edge-triggered interrupt.
+
+The PVD ISR performs only bounded fail-safe work: it latches the brownout state,
+atomically drives all eight active-low outputs OFF, clears the EXTI flag, and
+returns. The latch prevents foreground command processing from re-energizing an
+output after the event. It clears only at reset; foreground watchdog feeding is
+withheld after brownout so the independent watchdog restarts the controller.
+If the rail remains unsafe, startup detection keeps the outputs OFF and the
+device repeats this fail-safe recovery rather than resuming normal operation.
+
 The independent watchdog uses the nominal 128 kHz LSI divided by 128 with
 reload 4095, giving a nominal 4.096-second expiry independent of the main
 clock. Only the final step of a completed foreground loop feeds it; no ISR or
@@ -202,7 +222,7 @@ output or configuration changes.
 | Configuration | `config_fields.c`, EEPROM/store modules | Codec, I2C, dual-slot persistence |
 | Identity | `device_uid.c`, `commissioning.c` | UID and targeted assignment |
 | LED | `status_led.c`, `ws2812.c`, `ws2812_hw.c` | Policy and timer/DMA waveform |
-| Recovery | `watchdog.c` | Independent watchdog primitive |
+| Recovery | `pvd.c`, `watchdog.c` | Brownout containment and independent watchdog reset |
 
 Portable codecs and policy never access hardware; drivers do not interpret
 commands; `main` composes modules and owns initialization and scheduling.
@@ -216,6 +236,8 @@ commands; `main` composes modules and owns initialization and scheduling.
 - Broadcasts never receive replies; RS-485 is released only after USART TC.
 - Timer/DMA generates every WS2812 pulse.
 - Only healthy foreground progress feeds the watchdog.
+- A detected brownout is latched until reset and immediately forces every
+  output OFF.
 
 Builds enforce the 16 KiB Flash and 2 KiB static SRAM limits. Host tests cover
 portable framing, commands, configuration, commissioning, outputs, and LED

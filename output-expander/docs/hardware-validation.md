@@ -11,6 +11,8 @@ validation remains incomplete.
   startup assembly and linker script.
 - USART1 uses PD5/TX and PD6/RX; PD1 is SWIO and PD7 can be NRST.
 - The supplied schematic uses PC6 for RS-485 DE and PC7 for `/RE`.
+- The CH32V003 VDD rail is regulated 3.3 V VCC from the 6219P33M; PVD uses
+  its 2.9 V falling / 3.05 V recovery setting rather than a 5 V threshold.
 - Firmware output artifacts are checked against the 16 KiB Flash and 2 KiB
   SRAM limits after linking.
 

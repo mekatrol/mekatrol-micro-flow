@@ -5,6 +5,7 @@
 #include "hal.h"
 #include "irq_rx.h"
 #include "output_driver.h"
+#include "pvd.h"
 #include "rs485.h"
 #include "status_led.h"
 #include "usart.h"
@@ -96,6 +97,10 @@ int main(void) {
    */
   usart_init();
 
+  /* Monitor the regulated 3.3 V MCU rail. A drop below 2.9 V invokes the
+   * dedicated PVD interrupt and immediately de-energizes all eight outputs. */
+  pvd_init();
+
   /*
    * Enable USART receive/error interrupts only after
    * queue, receiver and application initialization.
@@ -123,7 +128,8 @@ int main(void) {
      * The packet is published only after decoding
      * and protocol validation complete.
      */
-    while (frame_receiver_poll(&receiver, &request)) {
+    while (!pvd_brownout_detected() &&
+           frame_receiver_poll(&receiver, &request)) {
       /* A valid decoded message clears a previously latched receive fault.
        * The command indication below takes priority for its visible window. */
       frame_receiver_clear_fault(&receiver);
@@ -191,12 +197,16 @@ int main(void) {
      *
      * Once RESET is acknowledged, the flag remains
      * false, so the watchdog will expire naturally.
+     * A latched PVD event follows the same policy:
+     * outputs stay OFF and watchdog expiry restarts the
+     * firmware only after the supply has had time to recover.
      *
      * The foreground continues looping rather than
      * issuing another software reset. This matches
      * the watchdog-based reset mechanism.
      */
-    if (comms_app_watchdog_feed_allowed(&app)) {
+    if (comms_app_watchdog_feed_allowed(&app) &&
+        !pvd_brownout_detected()) {
       watchdog_feed();
     }
   }
