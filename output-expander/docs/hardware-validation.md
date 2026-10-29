@@ -21,8 +21,8 @@ validation remains incomplete.
 - Confirm whether the populated output stage is ULN2803A, triac, or FET.
 - Bench-check 19,200 8N1 baud error, DE timing through transmission complete,
   COBS framing, WS2812 voltage/timing, watchdog tolerance, and reset causes.
-- Validate persistent-storage erase granularity, endurance, and power-failure
-  behavior before enabling configuration writes.
+- Confirm the selected 24C02 EEPROM's page size, address, endurance, write-cycle
+  timing, and pinout, then repeat transactional power-failure tests on the PCB.
 
 Until these gates close, outputs must remain OFF during startup and all pin or
 peripheral assumptions must be checked against the actual board revision.

@@ -2,24 +2,23 @@
 
 ## 1. Purpose
 
-A small, open, binary master/device protocol for CH32V003-based output expanders and related automation peripherals. The bus is controlled by the project's own controller or a gateway exposing a Python API to software such as Home Assistant. This document defines the version-one target contract. The command set is larger than the current C firmware implementation.
+A small, open, binary master/device protocol for CH32V003-based output expanders and related automation peripherals. The bus is controlled by the project's own controller or a gateway exposing a Python API to software such as Home Assistant. This document defines the production version-one contract.
 
-### Current C firmware status
+### Firmware support
 
-| Command | Current behavior |
+| Command | Production behavior |
 |---|---|
 | `PING` | Implemented |
 | `GET_OUTPUTS` | Implemented |
 | `SET_OUTPUTS` | Implemented |
-| `ASSIGN_ADDRESS_BY_UID` | Implemented in RAM only; reset or power loss restores the configured boot address (`0xFF` by default) |
+| `ASSIGN_ADDRESS_BY_UID` | Implemented with verified EEPROM persistence |
 | `RESET` | Implemented; acknowledgement is transmitted before watchdog reset |
-| `GET_STATUS` | Defined but returns `UNSUPPORTED` |
-| `GET_CONFIG` | Defined but returns `UNSUPPORTED` |
-| `SET_CONFIG` | Defined but returns `UNSUPPORTED` |
+| `GET_STATUS` | Implemented |
+| `GET_CONFIG` | Implemented with EEPROM-backed configuration |
+| `SET_CONFIG` | Implemented with verified transactional EEPROM commit |
 
-The Python CLI exposes only implemented operations. Persistent address and
-configuration behavior described later remains the target for future EEPROM
-integration.
+The Python CLI exposes the commissioning, inspection, output-control, reset,
+and diagnostic operations used by installers and service tools.
 
 ## 2. Physical layer and bus ownership
 
@@ -113,7 +112,7 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 
 **SET_CONFIG:** Validate every field before writing. Commit the new record to the inactive EEPROM slot, verify by readback, then activate it in RAM. Respond only after success. A failure leaves the last valid record active and returns `STORAGE_ERROR` if communication is still operational.
 
-**ASSIGN_ADDRESS_BY_UID:** Intended for isolated-device commissioning. With exactly one uncommissioned device connected, send `PING` to `0xFF` to read its factory UID, then broadcast `ASSIGN_ADDRESS_BY_UID` with that UID and a new address in `0x01..0xFE`. Every device compares all 12 UID bytes; only the device whose immutable factory UID matches accepts the new address. The command does not assign or modify the UID. The current C firmware activates the address in RAM only, so reset or power loss restores `0xFF`. Because assignment is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned UID. Do not discover multiple uncommissioned devices together: they would all respond to `PING 0xFF` and collide. Readdressing an already commissioned unit is permitted on a trusted bus.
+**ASSIGN_ADDRESS_BY_UID:** This command supports isolated-device commissioning. With exactly one uncommissioned device connected, send `PING` to `0xFF` to read its factory UID, then broadcast `ASSIGN_ADDRESS_BY_UID` with that UID and a new address in `0x01..0xFE`. Every device compares all 12 UID bytes; only the matching device commits the address to EEPROM and activates it after readback verification. The command does not assign or modify the UID. Because assignment is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned UID. Do not discover multiple uncommissioned devices together: they would all respond to `PING 0xFF` and collide. Readdressing an already commissioned unit is permitted on a trusted bus.
 
 **RESET:** The device must finish transmitting a valid response before triggering reset or intentionally allowing the watchdog to expire. The successful response has an empty payload. This is an unauthenticated maintenance command and must only be exposed on a trusted bus.
 
@@ -147,7 +146,7 @@ Bad CRC, malformed COBS, wrong address and unsupported frame version are **silen
 
 ## 8. Communications timeout and fail-safe behavior
 
-A valid addressed `SET_OUTPUTS` request or a defined controller heartbeat refreshes the communications timeout. In v1, `PING` is also a heartbeat. Broadcast commissioning does not refresh it. A timeout of zero disables monitoring; otherwise, after the configured number of milliseconds without qualifying traffic, apply the configured fallback output mask. `GET_STATUS` reports the timeout condition. A subsequent valid control request clears the timeout condition and resumes normal control. Define startup grace behavior in firmware and tests so a newly powered device does not unexpectedly energize loads.
+A valid addressed `SET_OUTPUTS` request or controller heartbeat refreshes the communications timeout. In v1, `PING` is also a heartbeat. Broadcast commissioning does not refresh it. A timeout of zero disables monitoring; otherwise, after the configured number of milliseconds without qualifying traffic, the device applies the configured fallback output mask. `GET_STATUS` reports the condition. A subsequent valid control request clears it and resumes normal control. The first timeout interval starts after boot configuration has been validated and the startup mask applied.
 
 ## 9. EEPROM configuration storage
 
@@ -155,7 +154,7 @@ The device uses a local SOT-23-5 24C02-class I²C EEPROM (nominal 256 bytes). Tw
 
 ## 10. Reference examples and testing
 
-The Python reference implementation must expose COBS encoding/decoding, CRC-16, frame parsing, timeouts, UID commissioning, configuration and output commands. Required interoperability tests include:
+The Python reference implementation exposes COBS encoding/decoding, CRC-16, frame parsing, timeouts, UID commissioning, configuration, and output commands. Interoperability coverage includes:
 
 - CRC vector `123456789` → `0x29B1`; payloads containing zero bytes; maximum 32-byte decoded frames.
 - Invalid COBS, truncated frames, incorrect CRC, excessive length, unsupported version and wrong destination.
@@ -164,4 +163,4 @@ The Python reference implementation must expose COBS encoding/decoding, CRC-16, 
 - EEPROM blank/corrupt slots, interrupted writes, failed readback, sequence wraparound and repeated commits.
 - RS-485 DE/TC timing and power-up output safety.
 
-The v1 protocol format should be finalized only after the host-side reference encoder/decoder and embedded parser pass the same test vectors.
+The host-side reference encoder/decoder and embedded parser use the same version-1 test vectors.
