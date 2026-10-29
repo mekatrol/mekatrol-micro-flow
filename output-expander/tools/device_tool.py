@@ -5,10 +5,10 @@ The framing functions intentionally mirror the no-heap firmware codec.
 An independent host implementation verifies byte order, COBS encoding,
 CRC validation, and response matching without special libraries.
 
-The current firmware implements PING, GET_OUTPUTS, SET_OUTPUTS, RESET, and
-UID-targeted address assignment. Persistent configuration and status
-commands remain part of protocol version one but are not exposed here until
-the firmware implements them.
+The current firmware implements PING, GET_OUTPUTS, SET_OUTPUTS,
+GET_OUTPUT_DELAY, SET_OUTPUT_DELAY, RESET, and UID-targeted address assignment.
+Other persistent configuration and status commands remain part of protocol
+version one but are not exposed by this utility.
 """
 
 import argparse

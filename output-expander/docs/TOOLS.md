@@ -70,6 +70,9 @@ optional response `--timeout`.
 
 - `info --address ADDRESS`: read UID/version and, when commissioned, outputs.
 - `outputs --address ADDRESS [--set MASK]`: read or replace all outputs.
+- `output-delay --address ADDRESS [--set MILLISECONDS]`: read or set the
+  staggered activation interval. Set values must be 500–10000 ms in 100 ms
+  increments.
 - `output --address ADDRESS CHANNEL on|off`: change one channel.
 - `set-address --uid UID --new-address ADDRESS`: commission and verify an
   EEPROM-backed address.
@@ -79,6 +82,7 @@ optional response `--timeout`.
 
 ```sh
 python3 tools/device_tool.py --port /dev/ttyUSB0 info --address 0x23
+python3 tools/device_tool.py --port /dev/ttyUSB0 output-delay --address 0x23 --set 1000
 ```
 
 See [COMMISSIONING.md](COMMISSIONING.md) for the installation workflow.

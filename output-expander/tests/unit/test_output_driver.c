@@ -115,11 +115,39 @@ static void test_tick_wrap(void) {
   assert(hardware_mask == 0x03U);
 }
 
+/*
+ * Exercise the maximum encoded value through the real tick calculation.
+ *
+ * WHAT:
+ * Configure 100 units, which represents 10,000 ms, and verify the second
+ * output remains pending until the complete ten-second interval has elapsed.
+ *
+ * WHY:
+ * This catches accidental eight- or sixteen-bit overflow while expanding the
+ * compact EEPROM/protocol value into the 48 MHz SysTick timebase.
+ */
+static void test_maximum_delay(void) {
+  reset_device();
+  assert(output_driver_set_activation_delay_units(100U));
+  output_driver_request(0x03U);
+  output_driver_service(1234U);
+  assert(hardware_mask == 0x01U);
+
+  output_driver_service(1234U + 9999U * TICKS_PER_MS);
+  assert(hardware_mask == 0x01U);
+  assert(on_calls == 1U);
+
+  output_driver_service(1234U + 10000U * TICKS_PER_MS);
+  assert(hardware_mask == 0x03U);
+  assert(on_calls == 2U);
+}
+
 int main(void) {
   test_defaults_and_validation();
   test_staggered_activation();
   test_replacement_and_immediate_off();
   test_mixed_change_preserves_interval();
   test_tick_wrap();
+  test_maximum_delay();
   return 0;
 }

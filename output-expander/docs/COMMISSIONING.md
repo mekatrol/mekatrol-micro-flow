@@ -104,6 +104,23 @@ Repeat for channels 2 through 8. Finish with every channel OFF:
 python3 tools/device_tool.py --port /dev/ttyUSB0 outputs --address 0x23 --set 0x00
 ```
 
+Read the interval used to stagger OFF-to-ON transitions:
+
+```sh
+python3 tools/device_tool.py --port /dev/ttyUSB0 output-delay --address 0x23
+```
+
+If the installation requires a different interval, set a value from 500 ms to
+10000 ms in 100 ms increments. For example, configure a one-second interval:
+
+```sh
+python3 tools/device_tool.py --port /dev/ttyUSB0 output-delay --address 0x23 --set 1000
+```
+
+Requesting several outputs together is safe: the board accepts the complete
+target immediately, then energizes at most one new output per configured
+interval. Turning outputs OFF is immediate and is never delayed.
+
 ## 7. Power-cycle check
 
 Turn the unit off, wait a few seconds, restore power, and run `info` at the new
