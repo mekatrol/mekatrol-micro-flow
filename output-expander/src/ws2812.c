@@ -26,7 +26,7 @@
  */
 
 /*
- * The hardware starts DMA at duty[2] and then walks linearly through the rest
+ * The hardware starts DMA at duty[0] and then walks linearly through the rest
  * of ws2812_waveform_t. This assertion proves that the compiler inserted no
  * padding between the 24 data duties and the zero-duty tail. Without this
  * guarantee DMA could transmit padding bytes as compare values.
@@ -77,9 +77,9 @@ static void start_pending(ws2812_t *driver) {
   driver->displayed = color;
   driver->displayed_valid = true;
 
-  /* ws2812_hw_start() stages the first two compare values and starts TIM1 and
-   * DMA. It returns immediately. The hardware stream contains 24 data periods
-   * plus 16 tail periods: (24 + 16) * 1.25 us = 50 us total. */
+  /* ws2812_hw_start() stages the first compare value behind a LOW guard period
+   * and starts TIM1 and DMA. It returns immediately. The hardware stream
+   * contains one LOW guard, 24 data periods, and 16 tail periods. */
   ws2812_hw_start(&driver->waveform);
   driver->state = WS2812_TRANSMITTING;
 }
@@ -130,7 +130,7 @@ void ws2812_set_color(ws2812_t *driver, rgb_t color) {
 
 void ws2812_service(ws2812_t *driver, uint32_t now_ticks) {
   /* DMA transfer-complete is intentionally delayed until it has written all
-   * 22 non-staged data duties and the 16-entry LOW tail. At that point the
+   * 24 DMA-fed data duties and the 16-entry LOW tail. At that point the
    * final colour bit is far behind the timer's active/preload pipeline and it
    * is safe to stop the peripheral without shortening the blue byte. */
   if (driver->state == WS2812_TRANSMITTING && ws2812_hw_complete()) {

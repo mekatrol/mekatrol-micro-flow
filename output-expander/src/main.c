@@ -13,35 +13,6 @@
 
 #include <stdint.h>
 
-/*
- * Debugger-visible foreground diagnostics.
- *
- * All writes occur in main context. No ISR accesses
- * these variables, so no atomic synchronization is needed.
- *
- * Volatile retains actual memory writes for GDB.
- * It does not make a compound operation atomic.
- */
-volatile uint32_t debug_valid_packet_count;
-volatile uint32_t debug_response_count;
-volatile uint32_t debug_address_change_count;
-volatile uint32_t debug_transmit_failure_count;
-volatile uint32_t debug_reset_request_count;
-volatile uint32_t debug_receive_fault_count;
-
-volatile uint8_t debug_device_address;
-volatile uint8_t debug_last_destination;
-volatile uint8_t debug_last_sequence;
-volatile uint8_t debug_last_type;
-volatile uint8_t debug_last_command;
-volatile uint8_t debug_last_payload_length;
-
-/*
- * The actual 12-byte silicon UID remains available
- * to the debugger in protocol byte order.
- */
-volatile uint8_t debug_device_uid[DEVICE_UID_SIZE];
-
 int main(void) {
   /*
    * Establish the verified 48 MHz clock and safe GPIO
@@ -96,10 +67,6 @@ int main(void) {
   uint8_t uid[DEVICE_UID_SIZE];
   device_uid_read(uid);
 
-  for (uint32_t i = 0U; i < DEVICE_UID_SIZE; ++i) {
-    debug_device_uid[i] = uid[i];
-  }
-
   /*
    * Set the temporary development address and
    * foreground application identity.
@@ -128,24 +95,6 @@ int main(void) {
    * Interrupts are enabled separately below.
    */
   usart_init();
-
-  /*
-   * Clear all debugger-visible state before
-   * enabling receive interrupts or watchdog.
-   */
-  debug_valid_packet_count = 0U;
-  debug_response_count = 0U;
-  debug_address_change_count = 0U;
-  debug_transmit_failure_count = 0U;
-  debug_reset_request_count = 0U;
-  debug_receive_fault_count = 0U;
-
-  debug_device_address = comms_app_address(&app);
-  debug_last_destination = 0U;
-  debug_last_sequence = 0U;
-  debug_last_type = 0U;
-  debug_last_command = 0U;
-  debug_last_payload_length = 0U;
 
   /*
    * Enable USART receive/error interrupts only after
@@ -179,16 +128,6 @@ int main(void) {
        * The command indication below takes priority for its visible window. */
       frame_receiver_clear_fault(&receiver);
 
-      /*
-       * Record request metadata before dispatch.
-       */
-      debug_last_destination = request.destination;
-      debug_last_sequence = request.sequence;
-      debug_last_type = request.type;
-      debug_last_command = request.command;
-      debug_last_payload_length = request.payload_length;
-
-      debug_valid_packet_count++;
       command_activity_started = hal_ticks();
       command_activity_valid = true;
 
@@ -211,17 +150,7 @@ int main(void) {
        * The USART transmit driver waits for TC before
        * releasing DE on any successful response.
        */
-      const comms_app_result_t result = comms_app_process(&app, &request);
-
-      if (result == COMMS_APP_RESPONSE_SENT) {
-        debug_response_count++;
-      } else if (result == COMMS_APP_ADDRESS_CHANGED) {
-        debug_address_change_count++;
-      } else if (result == COMMS_APP_TRANSMIT_FAILED) {
-        debug_transmit_failure_count++;
-      }
-
-      debug_device_address = comms_app_address(&app);
+      (void)comms_app_process(&app, &request);
 
       /*
        * A valid RESET acknowledgement has already
@@ -231,7 +160,6 @@ int main(void) {
        * so no additional commands can change GPIO state.
        */
       if (!comms_app_watchdog_feed_allowed(&app)) {
-        debug_reset_request_count++;
         break;
       }
     }
@@ -239,7 +167,6 @@ int main(void) {
     /* Status policy and LED servicing are bounded foreground work. Timer/DMA
      * continue the 30 us waveform independently while USART IRQs run. */
     const uint32_t now_ticks = hal_ticks();
-    debug_receive_fault_count = frame_receiver_fault_count(&receiver);
     const uint32_t now_ms = now_ticks / UINT32_C(48000);
     const uint32_t command_elapsed_ticks =
         (uint32_t)(now_ticks - command_activity_started);

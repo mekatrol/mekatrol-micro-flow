@@ -136,8 +136,8 @@ ws2812_state_t ws2812_state(const ws2812_t *driver);
 /* Configure the CH32V003 peripherals without starting a frame. */
 void ws2812_hw_init(void);
 
-/* Stage the first two duties, configure DMA for the remainder, and start TIM1.
- */
+/* Stage the first duty behind a LOW guard period, configure DMA to prime that
+ * same duty before advancing through the waveform, and start TIM1. */
 void ws2812_hw_start(const ws2812_waveform_t *waveform);
 
 /* Poll DMA1 channel 3's sticky transfer-complete flag. */
