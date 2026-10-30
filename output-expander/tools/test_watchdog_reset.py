@@ -20,9 +20,27 @@ import serial
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from device_tool import OutputExpander, ProtocolError
 
-D = 0x40
+RESET_COMMAND = 0x40
 ALL_ON = 0xFF
 ALL_OFF = 0x00
+
+
+def wait_for_outputs(device, address: int, expected: int, timeout: float,
+                     poll_interval: float) -> int:
+    """Poll the physically applied output mask until it reaches expected."""
+
+    deadline = time.monotonic() + timeout
+    state = device.outputs(address)
+    print(f"   Output mask: 0x{state:02X}")
+
+    while state != expected and time.monotonic() < deadline:
+        time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
+        updated = device.outputs(address)
+        if updated != state:
+            state = updated
+            print(f"   Output mask: 0x{state:02X}")
+
+    return state
 
 
 def main() -> int:
@@ -48,6 +66,8 @@ def main() -> int:
             uid_before, major, minor = device.ping(args.address)
             print(f"   UID: {uid_before.hex()}  Firmware: {major}.{minor}")
 
+            activation_delay_ms = device.output_delay(args.address)
+
             print("2. Set all eight outputs ON (0xFF)")
             applied = device.set_outputs(args.address, ALL_ON)
             if applied != ALL_ON:
@@ -55,11 +75,28 @@ def main() -> int:
                     f"SET_OUTPUTS returned 0x{applied:02X}, expected 0xFF"
                 )
 
-            print("3. Verify outputs are ON")
-            state = device.outputs(args.address)
-            print(f"   Output mask: 0x{state:02X}")
+            # The first output can turn on immediately, but the remaining seven
+            # are deliberately staggered to limit inrush current. Allow one
+            # configured interval per remaining output plus request-timeout
+            # headroom for scheduling and serial transport.
+            activation_wait = (7 * activation_delay_ms / 1000.0) + args.timeout
+            poll_interval = min(0.5, max(0.1, activation_delay_ms / 2000.0))
+            print(
+                "3. Wait for outputs to turn ON "
+                f"(up to {activation_wait:g} seconds)"
+            )
+            state = wait_for_outputs(
+                device,
+                args.address,
+                ALL_ON,
+                activation_wait,
+                poll_interval,
+            )
             if state != ALL_ON:
-                raise AssertionError(f"Expected ON mask 0xFF, received 0x{state:02X}")
+                raise AssertionError(
+                    f"Expected ON mask 0xFF after {activation_wait:g} seconds, "
+                    f"received 0x{state:02X}"
+                )
 
             print("4. Send RESET and verify acknowledgment")
             response = device.request(args.address, RESET_COMMAND)
