@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
 project(output_expander C ASM)
 
+# Select only physical EEPROM geometry here; storage and protocol code remain
+# unchanged.  1 = development AT24C256, 2 = production XBLW 24C02S.
+set(OUTPUT_EXPANDER_EEPROM_PROFILE "1" CACHE STRING
+    "EEPROM profile: 1=AT24C256, 2=XBLW 24C02S")
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
@@ -28,6 +33,8 @@ if(CMAKE_CROSSCOMPILING)
     src/response_tx.c
     src/commissioning.c
     src/config_fields.c
+    src/config_store.c
+    src/eeprom.c
     src/device_uid.c
     src/comms_app.c
     src/watchdog.c
@@ -50,6 +57,8 @@ if(CMAKE_CROSSCOMPILING)
     COMPILE_OPTIONS "-fno-tree-loop-distribute-patterns")
 
   target_include_directories(output-expander PRIVATE src)
+  target_compile_definitions(output-expander PRIVATE
+    OUTPUT_EXPANDER_EEPROM=${OUTPUT_EXPANDER_EEPROM_PROFILE})
   # RV32E has no hardware divide extension. GCC lowers the millisecond policy
   # divisions to its pinned, freestanding compiler-runtime helpers.
   target_link_libraries(output-expander PRIVATE gcc)
@@ -417,6 +426,17 @@ else()
   set_tests_properties(config_fields PROPERTIES
     ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
 
+  add_executable(output_expander_config_store_test
+    tests/unit/test_config_store.c
+    src/config_store.c
+    src/config_fields.c)
+  target_include_directories(output_expander_config_store_test PRIVATE src)
+  output_expander_warnings(output_expander_config_store_test)
+  output_expander_sanitizers(output_expander_config_store_test)
+  add_test(NAME config_store COMMAND output_expander_config_store_test)
+  set_tests_properties(config_store PROPERTIES
+    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+
     # Test the complete foreground communications application.
   #
   # WHAT:
@@ -436,6 +456,10 @@ else()
     src/device_uid.c
     src/command_processor.c
     src/commissioning.c)
+
+  target_sources(output_expander_comms_app_test PRIVATE
+    src/config_fields.c
+    src/config_store.c)
 
   target_include_directories(output_expander_comms_app_test
     PRIVATE src)

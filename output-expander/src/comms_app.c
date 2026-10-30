@@ -2,7 +2,10 @@
 #include "comms_app.h"
 
 #include "commissioning.h"
+#include "config_fields.h"
+#include "config_store.h"
 #include "dispatcher.h"
+#include "output_driver.h"
 #include "response_tx.h"
 
 #include <stddef.h>
@@ -44,6 +47,9 @@ void comms_app_init(comms_app_t *app, uint8_t boot_address,
   app->discovery_sequence = 0U;
   app->discovery_started_ticks = 0U;
   app->discovery_reply_due_ticks = 0U;
+  app->config_fields = (config_fields_t){0U, 0U, 0U,
+                                         CONFIG_STORE_DEFAULT_BRIGHTNESS};
+  app->persistent_storage_enabled = false;
 
   /*
    * Fold all twelve UID bytes into a non-zero PRNG state. The UID is stable
@@ -62,6 +68,42 @@ void comms_app_init(comms_app_t *app, uint8_t boot_address,
      * value for the one theoretical UID fold that could produce it. */
     app->discovery_random_state = UINT32_C(0xA341316C);
   }
+}
+
+void comms_app_enable_persistent_storage(comms_app_t *app) {
+  if (app == NULL) {
+    return;
+  }
+  const config_store_values_t *stored = config_store_get();
+  app->command.device_address = stored->address;
+  app->config_fields = stored->fields;
+  (void)output_driver_set_activation_delay_units(stored->output_delay_units);
+  app->persistent_storage_enabled = true;
+}
+
+static bool send_simple_response(const protocol_packet_t *request,
+                                 const uint8_t *payload, uint8_t length) {
+  protocol_packet_t response = {0};
+  response.destination = request->destination;
+  response.sequence = request->sequence;
+  response.type = PROTOCOL_TYPE_RESPONSE;
+  response.command = request->command;
+  response.payload_length = length;
+  for (uint8_t i = 0U; i < length; ++i) {
+    response.payload[i] = payload[i];
+  }
+  return response_tx_send(&response);
+}
+
+static bool send_app_error(const protocol_packet_t *request, uint8_t error) {
+  protocol_packet_t response = {0};
+  response.destination = request->destination;
+  response.sequence = request->sequence;
+  response.type = PROTOCOL_TYPE_ERROR;
+  response.command = request->command;
+  response.payload_length = 1U;
+  response.payload[0] = error;
+  return response_tx_send(&response);
 }
 
 static uint32_t discovery_random_delay_ticks(comms_app_t *app) {
@@ -297,6 +339,17 @@ comms_app_result_t comms_app_process_at(comms_app_t *app,
     }
 
     if (app->command.device_address != proposed_address) {
+      if (app->persistent_storage_enabled) {
+        config_store_values_t replacement = *config_store_get();
+        replacement.address = proposed_address;
+        /* A broadcast must remain silent even when storage fails.  The old
+         * address stays active because config_store_commit publishes only a
+         * verified record.  The commissioner detects failure when PING at the
+         * requested address receives no matching UID. */
+        if (!config_store_commit(&replacement)) {
+          return COMMS_APP_IGNORED;
+        }
+      }
       app->command.device_address = proposed_address;
     }
 
@@ -320,6 +373,98 @@ comms_app_result_t comms_app_process_at(comms_app_t *app,
    */
   if (request->command == COMMS_COMMAND_RESET) {
     return process_reset_request(app, request);
+  }
+
+  if (app->persistent_storage_enabled &&
+      request->command == COMMS_COMMAND_GET_CONFIG) {
+    uint8_t payload[CONFIG_FIELDS_GET_RESPONSE_SIZE];
+    if (request->payload_length != 0U) {
+      return send_app_error(request, COMMAND_ERROR_BAD_LENGTH)
+                 ? COMMS_APP_RESPONSE_SENT
+                 : COMMS_APP_TRANSMIT_FAILED;
+    }
+    (void)config_fields_encode_get(app->command.device_address,
+                                   &app->config_fields, payload,
+                                   sizeof(payload));
+    return send_simple_response(request, payload, sizeof(payload))
+               ? COMMS_APP_RESPONSE_SENT
+               : COMMS_APP_TRANSMIT_FAILED;
+  }
+
+  if (app->persistent_storage_enabled &&
+      request->command == COMMS_COMMAND_SET_CONFIG) {
+    config_fields_t requested = {0};
+    if (!config_fields_decode(request->payload, request->payload_length,
+                              &requested)) {
+      return send_app_error(request, COMMAND_ERROR_BAD_LENGTH)
+                 ? COMMS_APP_RESPONSE_SENT
+                 : COMMS_APP_TRANSMIT_FAILED;
+    }
+    config_store_values_t replacement = *config_store_get();
+    replacement.fields = requested;
+    if (!config_store_commit(&replacement)) {
+      return send_app_error(request, COMMAND_ERROR_STORAGE_ERROR)
+                 ? COMMS_APP_RESPONSE_SENT
+                 : COMMS_APP_TRANSMIT_FAILED;
+    }
+    app->config_fields = requested;
+    return send_simple_response(request, request->payload,
+                                CONFIG_FIELDS_PAYLOAD_SIZE)
+               ? COMMS_APP_RESPONSE_SENT
+               : COMMS_APP_TRANSMIT_FAILED;
+  }
+
+  if (app->persistent_storage_enabled &&
+      request->command == DISPATCHER_COMMAND_SET_OUTPUT_DELAY) {
+    if (request->payload_length != 1U) {
+      return send_app_error(request, COMMAND_ERROR_BAD_LENGTH)
+                 ? COMMS_APP_RESPONSE_SENT
+                 : COMMS_APP_TRANSMIT_FAILED;
+    }
+    const uint8_t delay = request->payload[0];
+    if (delay < OUTPUT_DRIVER_MIN_ACTIVATION_DELAY_UNITS ||
+        delay > OUTPUT_DRIVER_MAX_ACTIVATION_DELAY_UNITS) {
+      return send_app_error(request, COMMAND_ERROR_BAD_VALUE)
+                 ? COMMS_APP_RESPONSE_SENT
+                 : COMMS_APP_TRANSMIT_FAILED;
+    }
+    config_store_values_t replacement = *config_store_get();
+    replacement.output_delay_units = delay;
+    if (!config_store_commit(&replacement)) {
+      return send_app_error(request, COMMAND_ERROR_STORAGE_ERROR)
+                 ? COMMS_APP_RESPONSE_SENT
+                 : COMMS_APP_TRANSMIT_FAILED;
+    }
+    (void)output_driver_set_activation_delay_units(delay);
+    return send_simple_response(request, &delay, 1U) ? COMMS_APP_RESPONSE_SENT
+                                                     : COMMS_APP_TRANSMIT_FAILED;
+  }
+
+  if (app->persistent_storage_enabled &&
+      request->command == COMMS_COMMAND_FACTORY_RESET) {
+    if (request->payload_length != 0U) {
+      return send_app_error(request, COMMAND_ERROR_BAD_LENGTH)
+                 ? COMMS_APP_RESPONSE_SENT
+                 : COMMS_APP_TRANSMIT_FAILED;
+    }
+    if (!config_store_factory_reset()) {
+      return send_app_error(request, COMMAND_ERROR_STORAGE_ERROR)
+                 ? COMMS_APP_RESPONSE_SENT
+                 : COMMS_APP_TRANSMIT_FAILED;
+    }
+    /* Acknowledge on the old address first.  Only after the complete frame has
+     * left RS-485 do we activate 0xff and defaults, allowing the commissioner
+     * to correlate the response that caused the identity change. */
+    if (!send_simple_response(request, NULL, 0U)) {
+      return COMMS_APP_TRANSMIT_FAILED;
+    }
+    const config_store_values_t *defaults = config_store_get();
+    app->command.device_address = defaults->address;
+    app->config_fields = defaults->fields;
+    (void)output_driver_set_activation_delay_units(
+        defaults->output_delay_units);
+    (void)output_driver_request(defaults->fields.startup_mask);
+    return COMMS_APP_ADDRESS_CHANGED;
   }
 
   /*

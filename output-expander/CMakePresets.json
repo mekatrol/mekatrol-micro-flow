@@ -25,7 +25,11 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/ch32v003-debug",
       "toolchainFile": "${sourceDir}/cmake/toolchains/xpack-riscv-none-elf-gcc.cmake",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS_DEBUG": "-Og -g3",
+        "CMAKE_ASM_FLAGS_DEBUG": "-g3"
+      }
     },
     {
       "name": "ch32v003-release",

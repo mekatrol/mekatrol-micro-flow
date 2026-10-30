@@ -5,11 +5,9 @@ The framing functions intentionally mirror the no-heap firmware codec.
 An independent host implementation verifies byte order, COBS encoding,
 CRC validation, and response matching without special libraries.
 
-The current firmware implements bus-wide UID/address discovery, PING,
-GET_OUTPUTS, SET_OUTPUTS, GET_OUTPUT_DELAY, SET_OUTPUT_DELAY, RESET, and
-UID-targeted address assignment.
-Other persistent configuration and status commands remain part of protocol
-version one but are not exposed by this utility.
+The current firmware implements bus-wide UID/address discovery, output control,
+persistent configuration, factory reinitialisation, RESET, and UID-targeted
+address assignment.
 """
 
 import argparse
@@ -314,6 +312,25 @@ class OutputExpander:
             raise ProtocolError("invalid SET_OUTPUT_DELAY response")
         return payload[0] * 100
 
+    def config(self, addr: int) -> tuple[int, int, int, int, int]:
+        """Read address, startup mask, timeout, timeout mask, and brightness."""
+        payload = self.request(addr, 0x20)
+        if len(payload) != 6:
+            raise ProtocolError("invalid GET_CONFIG response")
+        return payload[0], payload[1], int.from_bytes(payload[2:4], "little"), payload[4], payload[5]
+
+    def set_config(self, addr: int, startup: int, timeout_ms: int,
+                   timeout_mask: int, brightness: int) -> None:
+        """Commit the complete configurable field group transactionally."""
+        payload = bytes((startup,)) + timeout_ms.to_bytes(2, "little") + bytes((timeout_mask, brightness))
+        if self.request(addr, 0x21, payload) != payload:
+            raise ProtocolError("invalid SET_CONFIG response")
+
+    def factory_reset(self, addr: int) -> None:
+        """Restore defaults, including the uncommissioned address 0xff."""
+        if self.request(addr, 0x22):
+            raise ProtocolError("invalid FACTORY_RESET response")
+
     def assign(self, uid: bytes, new_address: int) -> None:
         """Assign a persistent address, then verify it by PING."""
 
@@ -432,6 +449,8 @@ def build_parser() -> argparse.ArgumentParser:
         "info": "show UID, firmware version, and outputs",
         "outputs": "read or replace the complete output mask",
         "output-delay": "read or set the output activation delay",
+        "config": "read or replace persistent configuration fields",
+        "factory-reset": "restore defaults and address 0xff",
         "reset": "request an acknowledged watchdog reset",
         "simulate-error": "send a deliberately invalid-CRC PING",
     }
@@ -456,6 +475,11 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument(
                 "--set", type=int, choices=range(500, 10001, 100)
             )
+        if name == "config":
+            command.add_argument("--startup-mask", type=mask)
+            command.add_argument("--timeout-ms", type=int, choices=range(0, 65536))
+            command.add_argument("--timeout-mask", type=mask)
+            command.add_argument("--brightness", type=int, choices=range(0, 256))
 
     one = commands.add_parser("output", help="change one output channel")
     one.add_argument("--address", required=True, type=address)
@@ -538,6 +562,21 @@ def run(args: argparse.Namespace) -> None:
                 else device.output_delay(args.address)
             )
             print(f"output activation delay: {value} ms")
+        elif args.command == "config":
+            supplied = (args.startup_mask, args.timeout_ms, args.timeout_mask, args.brightness)
+            if any(value is not None for value in supplied):
+                if not all(value is not None for value in supplied):
+                    raise ValueError("setting config requires all four configuration options")
+                device.set_config(args.address, *supplied)
+            current = device.config(args.address)
+            print(f"address: 0x{current[0]:02x}")
+            print(f"startup mask: 0x{current[1]:02x}")
+            print(f"timeout: {current[2]} ms")
+            print(f"timeout mask: 0x{current[3]:02x}")
+            print(f"brightness: {current[4]}")
+        elif args.command == "factory-reset":
+            device.factory_reset(args.address)
+            print(f"board {args.address} restored to defaults; address is now 0xff")
         elif args.command == "output":
             # Read-modify-write preserves every channel except the requested one.
             value = device.outputs(args.address)

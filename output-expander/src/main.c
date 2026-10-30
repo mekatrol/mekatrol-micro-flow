@@ -1,5 +1,7 @@
 
 #include "comms_app.h"
+#include "config_store.h"
+#include "eeprom.h"
 #include "device_uid.h"
 #include "frame_receiver.h"
 #include "hal.h"
@@ -32,6 +34,12 @@ int main(void) {
    * No output should energize during initialization.
    */
   output_driver_init();
+
+  /* Initialize the physical I2C bus before inspecting either redundant record.
+   * Invalid/blank storage intentionally yields safe factory defaults; an I/O
+   * fault does the same and never energizes an output. */
+  eeprom_init();
+  (void)config_store_init();
 
   ws2812_t status_led;
   ws2812_init(&status_led);
@@ -78,6 +86,12 @@ int main(void) {
 
   comms_app_init(&app, COMMS_BOOT_ADDRESS, uid, COMMS_FIRMWARE_MAJOR,
                  COMMS_FIRMWARE_MINOR);
+  comms_app_enable_persistent_storage(&app);
+
+  /* The HAL and output driver were deliberately initialized OFF first.  Only
+   * after EEPROM validation may the stored startup target be requested.  ON
+   * channels still pass through the normal staggered activation sequencer. */
+  (void)output_driver_request(config_store_get()->fields.startup_mask);
 
   /*
    * The request packet owns fixed-capacity storage,
@@ -217,8 +231,11 @@ int main(void) {
         command_elapsed_ticks <
             STATUS_LED_COMMAND_DURATION_MS * UINT32_C(48000);
     const bool receive_fault = frame_receiver_fault_active(&receiver);
+    /* Brightness is read from the active verified store, so a successful
+     * SET_CONFIG takes effect immediately without reboot.  The store publishes
+     * replacement values only after EEPROM readback verification. */
     ws2812_set_color(&status_led, status_led_pattern(
-                                      now_ms, STATUS_LED_BRIGHTNESS,
+                                      now_ms, config_store_get()->fields.brightness,
                                       receive_fault, command_active,
                                       comms_app_discovery_pending(&app),
                                       command_elapsed_ticks / UINT32_C(48000)));

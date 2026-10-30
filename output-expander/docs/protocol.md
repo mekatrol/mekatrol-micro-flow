@@ -109,6 +109,7 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 | `0x13` | `SET_OUTPUT_DELAY` | activation delay `u8`, in 100 ms units | accepted delay `u8`, in 100 ms units | No |
 | `0x20` | `GET_CONFIG` | None | address `u8`, startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | No |
 | `0x21` | `SET_CONFIG` | startup mask `u8`, timeout `u16 LE`, timeout mask `u8`, brightness `u8` | same 5 bytes on successful EEPROM commit | No |
+| `0x22` | `FACTORY_RESET` | None | None | No |
 | `0x30` | `ASSIGN_ADDRESS_BY_UID` | UID `[12]`, new address `u8` | None | Yes |
 | `0x31` | `DISCOVER_DEVICES` | None | UID `[12]`, current address `u8` | Yes |
 | `0x32` | `CANCEL_DISCOVERY` | None | None | Yes |
@@ -121,6 +122,8 @@ Multi-byte integers in payloads are little-endian. The 96-bit UID is transmitted
 **GET_OUTPUT_DELAY / SET_OUTPUT_DELAY:** The delay is one `u8` expressed in units of 100 ms. Values from 5 through 100 represent 500 ms through 10000 ms. Values outside that range are rejected with `BAD_VALUE` because the lower bound is a hardware-safety constraint and the upper bound defines this setting's supported operating range. The factory default is 5 (500 ms). The one-byte representation is stored directly in EEPROM. `SET_OUTPUT_DELAY` commits the new value using the verified transactional EEPROM configuration mechanism before activating it and acknowledging success.
 
 **SET_CONFIG:** Validate every field before writing. Commit the new record to the inactive EEPROM slot, verify by readback, then activate it in RAM. Respond only after success. A failure leaves the last valid record active and returns `STORAGE_ERROR` if communication is still operational.
+
+**FACTORY_RESET:** Commit safe defaults through the same redundant verified storage path, acknowledge the request on the old address, and then activate defaults. The defaults are address `0xFF`, startup/timeout masks zero, timeout disabled, LED brightness 30, and output activation delay 500 ms. The device is therefore ready for commissioning exactly as a new unit. This maintenance command is unauthenticated and must only be exposed on a trusted bus.
 
 **ASSIGN_ADDRESS_BY_UID:** This command supports isolated-device commissioning. With exactly one uncommissioned device connected, send `PING` to `0xFF` to read its factory UID, then broadcast `ASSIGN_ADDRESS_BY_UID` with that UID and a new address in `0x01..0xFE`. Every device compares all 12 UID bytes; only the matching device commits the address to EEPROM and activates it after readback verification. The command does not assign or modify the UID. Because assignment is broadcast, **no device responds**. The master verifies assignment by sending `PING` to the new address and comparing the returned UID. Do not discover multiple uncommissioned devices together: they would all respond to `PING 0xFF` and collide. Readdressing an already commissioned unit is permitted on a trusted bus.
 
@@ -164,7 +167,7 @@ A valid addressed `SET_OUTPUTS` request or controller heartbeat refreshes the co
 
 ## 9. EEPROM configuration storage
 
-The device uses a local SOT-23-5 24C02-class I²C EEPROM (nominal 256 bytes). Two independent 64-byte versioned configuration records occupy `0x00..0x3F` and `0x40..0x7F`; each contains a sequence number and CRC-32. The output activation delay occupies one configuration byte in the same 100 ms units used on the wire. The remaining 128 bytes are reserved. Writes are limited to explicit configuration changes, use EEPROM page boundaries, and require ACK polling plus full readback verification. The previous valid slot is retained until the replacement is verified. A blank or invalid EEPROM results in safe defaults and an uncommissioned address. **The exact chip's datasheet controls electrical pins, address and page size.**
+The common layout uses only the first 256 bytes of the selected EEPROM. Two independent 64-byte versioned configuration records occupy `0x00..0x3F` and `0x40..0x7F`; each contains a sequence number and CRC-32. The output activation delay occupies one configuration byte in the same 100 ms units used on the wire. The remaining bytes through `0xFF` are reserved. Writes are limited to explicit configuration changes, use EEPROM page boundaries, and require ACK polling plus full readback verification. The previous valid slot is retained until the replacement is verified. A blank or invalid EEPROM results in safe defaults and an uncommissioned address. Development builds default to AT24C256 (two address bytes, 64-byte pages); production builds select XBLW 24C02S (one address byte, 16-byte pages) with `OUTPUT_EXPANDER_EEPROM`. No runtime device probing is performed.
 
 ## 10. Reference examples and testing
 

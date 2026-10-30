@@ -37,6 +37,14 @@
 #define RCC_TIM1EN (UINT32_C(1) << 11)
 #define RCC_DMA1EN (UINT32_C(1) << 0)
 #define RCC_PWREN (UINT32_C(1) << 28)
+/* RCC_APB1PCENR.I2C1EN supplies the APB1 clock to the complete I2C1 peripheral.
+ * The I2C registers and bus state machine do not operate while this bit is zero. */
+#define RCC_I2C1EN (UINT32_C(1) << 21)
+
+/* RCC_CFGR0.PPRE1 occupies bits 10:8 and selects the APB1 clock divider.  The
+ * 100 encoding divides 48 MHz HCLK by two, giving I2C1 a 24 MHz input clock. */
+#define RCC_APB1_PPRE1_MASK (UINT32_C(7) << 8)
+#define RCC_APB1_PPRE1_DIV2 (UINT32_C(4) << 8)
 
 /* Programmable voltage detector. EXTI line 8 rises when VDD falls below the
  * selected PLS threshold and is routed to dedicated interrupt number 17. */
@@ -98,6 +106,10 @@
 #define GPIO_AF_OUTPUT_10MHZ UINT32_C(0x9)
 #define GPIO_AF_OUTPUT_50MHZ UINT32_C(0xB)
 #define GPIO_INPUT_FLOATING UINT32_C(0x4)
+/* One GPIO CFGLR pin field is CNF[1:0]:MODE[1:0].  Binary 1101 selects
+ * alternate-function open-drain output with the 10 MHz output-speed setting,
+ * which is required for wired-AND I2C SDA/SCL operation with external pull-ups. */
+#define GPIO_AF_OUTPUT_OPEN_DRAIN_10MHZ UINT32_C(0xD)
 
 /*
  * GPIO configuration fields are four bits wide.
@@ -299,6 +311,79 @@
 #define AFIO_PCFR1 REG32(UINT32_C(0x40010004))
 
 #define AFIO_USART1_REMAP_MASK ((UINT32_C(1) << 2) | (UINT32_C(1) << 21))
+/* I2C mapping is encoded by two non-adjacent AFIO bits.  Both zero select the
+ * PCB's default mapping: PC2=SCL and PC1=SDA.  Masking both together prevents a
+ * stale remap bit from producing a mixed/invalid pin selection. */
+#define AFIO_I2C1_REMAP_MASK ((UINT32_C(1) << 1) | (UINT32_C(1) << 22))
+
+/*
+ * I2C1 register block at peripheral base 0x40005400.
+ *
+ * CTLR1 controls enable, START/STOP generation, receive acknowledgements, and
+ * software reset.  CTLR2 declares the APB1 input frequency used internally for
+ * timing.  DATAR is the single-byte transmit/receive data port.  STAR1 contains
+ * event/error flags; STAR2 contains the companion status whose read is required
+ * after STAR1 to clear ADDR.  CKCFGR divides APB1 into SCL, and RTR configures
+ * the permitted signal rise time.  Registers unused by EEPROM controller mode
+ * are intentionally not defined here.
+ */
+#define I2C1_CTLR1 REG32(UINT32_C(0x40005400))
+#define I2C1_CTLR2 REG32(UINT32_C(0x40005404))
+#define I2C1_DATAR REG32(UINT32_C(0x40005410))
+#define I2C1_STAR1 REG32(UINT32_C(0x40005414))
+#define I2C1_STAR2 REG32(UINT32_C(0x40005418))
+#define I2C1_CKCFGR REG32(UINT32_C(0x4000541C))
+#define I2C1_RTR REG32(UINT32_C(0x40005420))
+/* CTLR1.PE: peripheral enable.  Zero holds the I2C state machine disabled. */
+#define I2C_CTLR1_PE (UINT32_C(1) << 0)
+
+/* CTLR1.START: request START (or repeated START while already controller). */
+#define I2C_CTLR1_START (UINT32_C(1) << 8)
+
+/* CTLR1.STOP: request STOP and release controller ownership of SDA/SCL. */
+#define I2C_CTLR1_STOP (UINT32_C(1) << 9)
+
+/* CTLR1.ACK: drive ACK after received bytes.  Clearing it before a one-byte
+ * receive makes hardware NACK that byte, ending the EEPROM's sequential read. */
+#define I2C_CTLR1_ACK (UINT32_C(1) << 10)
+
+/* CTLR1.SWRST: reset the I2C peripheral's internal state machine and flags. */
+#define I2C_CTLR1_SWRST (UINT32_C(1) << 15)
+
+/* STAR1.SB: the requested START condition has completed on the bus. */
+#define I2C_STAR1_SB (UINT32_C(1) << 0)
+
+/* STAR1.ADDR: the transmitted address was acknowledged.  In controller mode,
+ * read STAR1 followed by STAR2 to clear this flag and advance the transfer. */
+#define I2C_STAR1_ADDR (UINT32_C(1) << 1)
+
+/* STAR1.BTF: both DATAR and the serial shift register completed their byte. */
+#define I2C_STAR1_BTF (UINT32_C(1) << 2)
+
+/* STAR1.RXNE: DATAR contains a complete received byte and must be read. */
+#define I2C_STAR1_RXNE (UINT32_C(1) << 6)
+
+/* STAR1.TXE: transmit DATAR is empty and can accept the next outgoing byte. */
+#define I2C_STAR1_TXE (UINT32_C(1) << 7)
+
+/* STAR1.BERR: hardware observed an invalid START or STOP condition. */
+#define I2C_STAR1_BERR (UINT32_C(1) << 8)
+
+/* STAR1.ARLO: this controller lost arbitration to another controller. */
+#define I2C_STAR1_ARLO (UINT32_C(1) << 9)
+
+/* STAR1.AF: acknowledge failure; the addressed slave left SDA high during the
+ * ninth clock.  EEPROM ACK polling expects this while internal writing is busy. */
+#define I2C_STAR1_AF (UINT32_C(1) << 10)
+
+/* STAR1.OVR: software serviced DATAR too late, losing transmit/receive data. */
+#define I2C_STAR1_OVR (UINT32_C(1) << 11)
+
+/* Any of these flags prevents the ordinary awaited event from proving a valid
+ * transfer.  AF is also inspected separately during the documented EEPROM-busy
+ * polling sequence. */
+#define I2C_STAR1_ERRORS                                                   \
+  (I2C_STAR1_BERR | I2C_STAR1_ARLO | I2C_STAR1_AF | I2C_STAR1_OVR)
 
 /* Production WS2812: PC7/TIM1_CH2 remap group 1 and DMA1 channel 3. */
 #define AFIO_TIM1_RM_MASK (UINT32_C(3) << 6)

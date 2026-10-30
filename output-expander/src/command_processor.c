@@ -33,6 +33,7 @@
 #define COMMAND_GET_STATUS 0x02U
 #define COMMAND_GET_CONFIG 0x20U
 #define COMMAND_SET_CONFIG 0x21U
+#define COMMAND_FACTORY_RESET 0x22U
 #define COMMAND_RESET 0x40U
 #define OUTPUT_DELAY_PAYLOAD_SIZE 1U
 
@@ -324,6 +325,7 @@ command_processor_process(const command_processor_context_t *context,
   case COMMAND_GET_STATUS:
   case COMMAND_GET_CONFIG:
   case COMMAND_SET_CONFIG:
+  case COMMAND_FACTORY_RESET:
   case DISPATCHER_COMMAND_ASSIGN_ADDRESS_BY_UID:
   case COMMAND_RESET:
     /*

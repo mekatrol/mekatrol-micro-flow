@@ -3,6 +3,7 @@
 #define OUTPUT_EXPANDER_COMMS_APP_H
 
 #include "command_processor.h"
+#include "config_fields.h"
 #include "protocol.h"
 
 #include <stdbool.h>
@@ -32,6 +33,9 @@
  * has completely left the USART and RS-485 DE is released.
  */
 #define COMMS_COMMAND_RESET 0x40U
+#define COMMS_COMMAND_GET_CONFIG 0x20U
+#define COMMS_COMMAND_SET_CONFIG 0x21U
+#define COMMS_COMMAND_FACTORY_RESET 0x22U
 
 /*
  * Discovery is allowed to remain pending for no more than fifteen seconds.
@@ -69,6 +73,8 @@ typedef struct {
   uint32_t discovery_started_ticks;
   uint32_t discovery_reply_due_ticks;
   uint32_t discovery_random_state;
+  config_fields_t config_fields;
+  bool persistent_storage_enabled;
 } comms_app_t;
 
 typedef enum {
@@ -93,6 +99,12 @@ typedef enum {
 void comms_app_init(comms_app_t *app, uint8_t boot_address,
                     const uint8_t uid[DISPATCHER_UID_SIZE],
                     uint8_t firmware_major, uint8_t firmware_minor);
+
+/* Attach the already initialized persistent store and copy its active values
+ * into the application.  Keeping this separate preserves hardware-free unit
+ * construction and makes the boot ordering (I2C, store, then communications)
+ * explicit at the call site. */
+void comms_app_enable_persistent_storage(comms_app_t *app);
 
 /*
  * Process one fully decoded and CRC-validated packet.

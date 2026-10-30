@@ -2,6 +2,7 @@
 #include "comms_app.h"
 #include "device_uid.h"
 #include "dispatcher.h"
+#include "eeprom.h"
 #include "output_driver.h"
 #include "protocol.h"
 #include "response_tx.h"
@@ -11,6 +12,27 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+/* The communications executable links the production transactional store.
+ * This byte array supplies its hardware boundary, allowing persistent-command
+ * behavior to be exercised without memory-mapped I2C registers. */
+static uint8_t fake_eeprom[256];
+
+bool eeprom_read(uint16_t address, uint8_t *data, size_t length) {
+  if ((data == NULL && length != 0U) || (size_t)address + length > sizeof(fake_eeprom)) {
+    return false;
+  }
+  memcpy(data, &fake_eeprom[address], length);
+  return true;
+}
+
+bool eeprom_write(uint16_t address, const uint8_t *data, size_t length) {
+  if ((data == NULL && length != 0U) || (size_t)address + length > sizeof(fake_eeprom)) {
+    return false;
+  }
+  memcpy(&fake_eeprom[address], data, length);
+  return true;
+}
 
 /*
  * Simulated output driver.
