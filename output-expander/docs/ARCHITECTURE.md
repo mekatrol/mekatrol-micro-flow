@@ -17,8 +17,8 @@ specified in [protocol.md](protocol.md).
 ## Hardware and pin allocation
 
 The internal 24 MHz HSI and PLL provide a 48 MHz system clock. PA1/XI and
-PA2/XO remain reserved for an optional crystal. PD1/SWIO and PD7/NRST remain
-dedicated to programming and reset.
+PA2/XO are reserved for the external 24 MHz oscillator. PD1/SWIO and PD7/NRST
+remain dedicated to programming and reset.
 
 | Function | Pin | Peripheral/mode | Behavior |
 |---|---|---|---|
@@ -28,6 +28,7 @@ dedicated to programming and reset.
 | Status LED | PC7 | TIM1_CH2, remap group 1 | WS2812 data, idle LOW |
 | RS-485 TX/RX | PD5/PD6 | USART1 | 19,200 bit/s, 8N1 |
 | RS-485 direction | PC6 | GPIO output | LOW receive, HIGH transmit |
+| External 24 MHz oscillator | PA1/XI, PA2/XO | HSE oscillator | Oscillator input/output |
 | Programming/reset | PD1/PD7 | SWIO/NRST | Debug and external reset |
 
 The assignments keep storage on I2C1 and timing-sensitive LED generation on a
