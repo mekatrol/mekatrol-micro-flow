@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.25)
 project(output_expander C ASM)
 
 # Select only physical EEPROM geometry here; storage and protocol code remain
-# unchanged.  1 = development AT24C256, 2 = production XBLW 24C02S.
+# unchanged.  1 = development AT24C02, 2 = production XBLW 24C02S.
 set(OUTPUT_EXPANDER_EEPROM_PROFILE "1" CACHE STRING
-    "EEPROM profile: 1=AT24C256, 2=XBLW 24C02S")
+    "EEPROM profile: 1=AT24C02, 2=XBLW 24C02S")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

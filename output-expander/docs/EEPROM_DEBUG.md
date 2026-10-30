@@ -5,7 +5,7 @@
 This document records the complete context needed to resume debugging the
 output expander's external EEPROM without relying on chat history.
 
-The development board currently has an AT24C256 connected to the CH32V003:
+The development board currently has an AT24C02 connected to the CH32V003:
 
 | Signal | CH32V003 pin | Function |
 |---|---:|---|
@@ -17,7 +17,7 @@ geometry at compile time rather than probing the device at runtime.
 
 | CMake profile value | Device | Capacity | Internal address bytes | Page size |
 |---:|---|---:|---:|---:|
-| `1` | AT24C256 development device | 32,768 bytes | 2 | 64 bytes |
+| `1` | AT24C02 development device | 256 bytes | 1 | 8 bytes |
 | `2` | XBLW 24C02S production device | 256 bytes | 1 | 16 bytes |
 
 The default profile is `1`. A production build is selected with:
@@ -115,8 +115,8 @@ optimisation. The verified sizes at the time this document was written were:
 
 | Build | Flash | Static RAM |
 |---|---:|---:|
-| CH32V003 debug, AT24C256 | 13,070 / 16,384 bytes | 112 / 2,048 bytes |
-| CH32V003 release, AT24C256 | 10,750 / 16,384 bytes | 112 / 2,048 bytes |
+| CH32V003 debug, AT24C02 | 13,054 / 16,384 bytes | 112 / 2,048 bytes |
+| CH32V003 release, AT24C02 | 10,742 / 16,384 bytes | 112 / 2,048 bytes |
 
 Build the image used for GDB with:
 
@@ -336,7 +336,7 @@ address 0x0003: 0x31  ('1')
 ```
 
 If `actual` remains `0xff` while `data[i]` is one of these programmed values,
-check the AT24C256 `WP` pin first. `WP` must be LOW for writes. A high or floating
+check the AT24C02 `WP` pin first. `WP` must be LOW for writes. A high or floating
 high write-protect input can allow successful reads while preventing array
 programming.
 
@@ -344,8 +344,8 @@ Also verify:
 
 - SDA and SCL have external pull-up resistors.
 - EEPROM ground and supply are correct.
-- The AT24C256 hardware address pins select I2C address `0x50`.
-- The fitted part is actually an AT24C256-compatible device.
+- The AT24C02 hardware address pins select I2C address `0x50`.
+- The fitted part is actually an AT24C02-compatible device.
 
 ### Check for write-cycle ACK-poll timeout
 

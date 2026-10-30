@@ -163,10 +163,9 @@ static bool send_byte(uint8_t value) {
  *
  * This "word address" is unrelated to a C machine word.  It is the EEPROM
  * datasheets' name for the internal byte location following the I2C control
- * byte.  AT24C256 transfers the most-significant byte first and then the least-
- * significant byte.  XBLW 24C02S has only 256 bytes, so it transfers only the
- * low byte.  EEPROM_WORD_ADDRESS_BYTES is supplied by the selected device
- * profile, keeping this difference out of the storage layer.
+ * byte.  Both supported 24C02 devices have 256 bytes, so they transfer only
+ * the low byte.  EEPROM_WORD_ADDRESS_BYTES is supplied by the selected device
+ * profile so this transaction remains tied to the reviewed device geometry.
  */
 static bool send_word_address(uint16_t address) {
 #if EEPROM_WORD_ADDRESS_BYTES == 2U
@@ -432,8 +431,7 @@ void eeprom_init(void) {
  * A NULL pointer is valid only for a zero-length no-op.  The capacity check is
  * performed before touching the bus so an overflow into a device-specific
  * address wrap can never make a request read unrelated bytes.  uint32_t is
- * used for the sum because the AT24C256's final valid address plus a length
- * does not safely fit in uint16_t during validation.
+ * used for the sum so address-plus-length validation cannot wrap.
  */
 bool eeprom_read(uint16_t address, uint8_t *data, size_t length) {
   if ((data == NULL && length != 0U) ||
@@ -459,7 +457,7 @@ bool eeprom_read(uint16_t address, uint8_t *data, size_t length) {
  * controller sends too many data bytes, the device wraps to the beginning of
  * the current page and overwrites earlier bytes.  This function therefore
  * divides every request at the selected profile's physical page boundary:
- * 64 bytes for AT24C256 and 16 bytes for XBLW 24C02S.
+ * 8 bytes for AT24C02 and 16 bytes for XBLW 24C02S.
  *
  * Each page fragment follows:
  *
